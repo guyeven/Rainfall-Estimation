@@ -1,0 +1,326 @@
+// BenchmarkPanel.jsx
+import React, { useState, useEffect } from "react";
+
+const PANEL_STYLE = {
+  display: "flex",
+  flexDirection: "row",
+  gap: "16px",
+  height: "100%",
+  boxSizing: "border-box",
+};
+
+const SIDEBAR_STYLE = {
+  width: "260px",
+  minWidth: "220px",
+  borderRight: "1px solid #ddd",
+  padding: "12px",
+  boxSizing: "border-box",
+  overflowY: "auto",
+};
+
+const MAIN_STYLE = {
+  flex: 1,
+  padding: "12px",
+  boxSizing: "border-box",
+  display: "flex",
+  flexDirection: "column",
+  gap: "12px",
+};
+
+const IMAGES_ROW_STYLE = {
+  display: "flex",
+  flexDirection: "row",
+  gap: "8px",
+  flex: 1,
+  minHeight: 0,
+};
+
+const IMAGE_CARD_STYLE = {
+  flex: 1,
+  border: "1px solid #ddd",
+  borderRadius: "4px",
+  padding: "8px",
+  boxSizing: "border-box",
+  display: "flex",
+  flexDirection: "column",
+};
+
+const IMAGE_STYLE = {
+  width: "100%",
+  height: "100%",
+  objectFit: "contain",
+};
+
+const BUTTON_STYLE = {
+  padding: "6px 10px",
+  borderRadius: "4px",
+  border: "1px solid #888",
+  background: "#f4f4f4",
+  cursor: "pointer",
+};
+
+const SELECT_STYLE = {
+  padding: "4px 6px",
+  borderRadius: "4px",
+  border: "1px solid #ccc",
+};
+
+const INPUT_STYLE = {
+  padding: "4px 6px",
+  borderRadius: "4px",
+  border: "1px solid #ccc",
+  width: "64px",
+};
+
+export default function BenchmarkPanel({ apiBase = "http://127.0.0.1:8201" }) {
+  const [fileContent, setFileContent] = useState(null);
+  const [patchIds, setPatchIds] = useState([]);
+  const [selectedPatchId, setSelectedPatchId] = useState(null);
+  const [method, setMethod] = useState("gaussian");
+  const [maxComponents, setMaxComponents] = useState(3);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const [rawUrl, setRawUrl] = useState("");
+  const [smoothUrl, setSmoothUrl] = useState("");
+  const [diffUrl, setDiffUrl] = useState("");
+
+  // Read local JSON file from ExportButton
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target.result;
+        const json = JSON.parse(text);
+        // Allow either {patches: [...]} or full selected_patches.json
+        const patches = Array.isArray(json) ? json : json.patches;
+        if (!patches || !Array.isArray(patches)) {
+          throw new Error("JSON must contain a 'patches' array.");
+        }
+        setFileContent(json);
+        setError("");
+      } catch (err) {
+        console.error(err);
+        setError("Failed to parse JSON: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // POST JSON content to backend to register patches
+  const handleLoadPatches = async () => {
+    if (!fileContent) {
+      setError("Please select a selected_patches.json first.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const payload = Array.isArray(fileContent)
+        ? { detection_params: null, patches: fileContent }
+        : {
+            detection_params: fileContent.detection_params || null,
+            patches: fileContent.patches || [],
+          };
+      const res = await fetch(`${apiBase}/benchmark/load_patches`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || res.statusText);
+      }
+      const data = await res.json();
+      setPatchIds(data.patch_ids || []);
+      setSelectedPatchId(data.patch_ids?.[0] || null);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to load patches on backend.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update image URLs whenever selection / params change
+  useEffect(() => {
+    if (!selectedPatchId) {
+      setRawUrl("");
+      setSmoothUrl("");
+      setDiffUrl("");
+      return;
+    }
+    const ts = Date.now(); // cache buster
+    setRawUrl(
+      `${apiBase}/benchmark/patch_image/${encodeURIComponent(
+        selectedPatchId
+      )}?t=${ts}`
+    );
+    const q = `method=${encodeURIComponent(
+      method
+    )}&max_components=${encodeURIComponent(maxComponents)}&t=${ts}`;
+    setSmoothUrl(
+      `${apiBase}/benchmark/smooth_image/${encodeURIComponent(
+        selectedPatchId
+      )}?${q}`
+    );
+    setDiffUrl(
+      `${apiBase}/benchmark/diff_image/${encodeURIComponent(
+        selectedPatchId
+      )}?${q}`
+    );
+  }, [selectedPatchId, method, maxComponents, apiBase]);
+
+  return (
+    <div style={PANEL_STYLE}>
+      {/* LEFT: file + patch list */}
+      <div style={SIDEBAR_STYLE}>
+        <h3 style={{ marginTop: 0 }}>Smoothing benchmark</h3>
+        <div style={{ marginBottom: "8px" }}>
+          <div style={{ fontSize: "12px", marginBottom: "4px" }}>
+            1. Export selection (JSON) in main app.
+          </div>
+          <input
+            type="file"
+            accept=".json"
+            onChange={handleFileChange}
+            style={{ marginBottom: "6px" }}
+          />
+          <button
+            style={BUTTON_STYLE}
+            onClick={handleLoadPatches}
+            disabled={!fileContent || loading}
+          >
+            {loading ? "Loading..." : "Load patches"}
+          </button>
+        </div>
+        <div style={{ fontSize: "12px", color: "#444", marginBottom: "4px" }}>
+          Loaded patches: {patchIds.length}
+        </div>
+        <div
+          style={{
+            borderTop: "1px solid #ddd",
+            marginTop: "8px",
+            paddingTop: "8px",
+          }}
+        >
+          <div style={{ fontWeight: 600, marginBottom: "4px" }}>Patches</div>
+          <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
+            {patchIds.map((id) => (
+              <div
+                key={id}
+                onClick={() => setSelectedPatchId(id)}
+                style={{
+                  padding: "4px 6px",
+                  marginBottom: "2px",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  background:
+                    id === selectedPatchId ? "#e6f0ff" : "transparent",
+                }}
+              >
+                {id}
+              </div>
+            ))}
+            {!patchIds.length && (
+              <div style={{ fontSize: "12px", color: "#777" }}>
+                No patches loaded yet.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* RIGHT: controls + images */}
+      <div style={MAIN_STYLE}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "row",
+            gap: "16px",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>
+            Selected patch:{" "}
+            <span style={{ fontFamily: "monospace" }}>
+              {selectedPatchId || "—"}
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <label style={{ fontSize: "12px" }}>
+              Method{" "}
+              <select
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+                style={SELECT_STYLE}
+              >
+                <option value="gaussian">Gaussian</option>
+                <option value="bspline">B-spline</option>
+              </select>
+            </label>
+            <label style={{ fontSize: "12px" }}>
+              Max components{" "}
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={maxComponents}
+                onChange={(e) =>
+                  setMaxComponents(
+                    Math.max(1, Math.min(20, Number(e.target.value) || 1))
+                  )
+                }
+                style={INPUT_STYLE}
+              />
+            </label>
+          </div>
+        </div>
+
+        {error && (
+          <div
+            style={{
+              padding: "6px 8px",
+              borderRadius: "4px",
+              background: "#ffe6e6",
+              border: "1px solid #ffb3b3",
+              fontSize: "12px",
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div style={IMAGES_ROW_STYLE}>
+          <div style={IMAGE_CARD_STYLE}>
+            <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: 4 }}>
+              Raw pixels
+            </div>
+            {rawUrl && (
+              <img src={rawUrl} alt="raw patch" style={IMAGE_STYLE} />
+            )}
+          </div>
+          <div style={IMAGE_CARD_STYLE}>
+            <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: 4 }}>
+              Smoothed ({method})
+            </div>
+            {smoothUrl && (
+              <img src={smoothUrl} alt="smooth patch" style={IMAGE_STYLE} />
+            )}
+          </div>
+          <div style={IMAGE_CARD_STYLE}>
+            <div style={{ fontSize: "12px", fontWeight: 600, marginBottom: 4 }}>
+              Difference (raw − smooth)
+            </div>
+            {diffUrl && (
+              <img src={diffUrl} alt="diff patch" style={IMAGE_STYLE} />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,33 @@
+# Path to estimator input JSON
+input:
+  est_input_json: "/Users/guyeven/Projects/RainfallMap/Compute-Link-Attenuations/output-for-estimator/est_input_RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301312000_patch001.json"
+
+# Output control
+output:
+  out_npz: "Solver-Output/solution_RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301312000_patch001.npz"
+
+# Optimization parameters
+optimization:
+  solver: "L-BFGS-B"
+  maxiter: 300
+
+  # Regularization weights
+  lambda: 1.0e-2        # smoothness weight
+  mu: 1.0e-6            # shrinkage weight
+
+  # Log-stability
+  epsilon: 0.01         # mm/h
+
+  # Initialization
+  R0: 0.1               # initial rainfall [mm/h]
+
+# Numerical tolerances (optional overrides)
+tolerances:
+  ftol: 1.0e-5
+  gtol: 1.0e-4
+  maxls: 20
+
+# Notes (ignored by solver, just for you)
+meta:
+  description: "Baseline run, lambda tuned for patch000"
+  author: "me"

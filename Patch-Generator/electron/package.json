@@ -1,0 +1,31 @@
+{
+  "name": "patch-generator",
+  "version": "1.0.0",
+  "description": "Patch Generator",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.guyeven.patchgenerator",
+    "productName": "Patch Generator",
+    "mac": {
+      "target": "dmg"
+    },
+    "extraResources": [
+      {
+        "from": "../dist/backend",
+        "to": "dist/backend"
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "ui"
+      }
+    ]
+  }
+}
