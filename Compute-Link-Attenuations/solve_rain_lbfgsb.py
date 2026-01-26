@@ -34,6 +34,15 @@ from typing import Dict, Tuple, Any, Optional, List
 import numpy as np
 from scipy.optimize import minimize
 
+
+# Optional: IDW baseline initialisation (shared with batch_analyze)
+# Only required when solve_lbfgsb_and_save is called with R0_from_IDW=True.
+try:
+    from idw_baseline import idw_field_from_est_input  # type: ignore
+except Exception:
+    idw_field_from_est_input = None  # type: ignore
+
+
 # Uses your repo's ITU implementation
 from itu_r_p_8383 import k_alpha
 
@@ -336,11 +345,38 @@ def solve_lbfgsb_and_save(
     maxls: int = 20,
     npz_out: str | Path = "solution.npz",
     warn: bool = True,
+    # --- NEW: optional IDW-based initialisation ---
+    R0_from_IDW: bool = False,
+    idw_r_max_m: float = 3125.0,
+    idw_power: float = 2.0,
+    idw_eps_m: float = 1.0,
+    idw_default_value: float = 0.0,
 ) -> dict:
     prob = load_est_input_json(est_input_json, warn=warn)
     fun, jac = make_objective(prob, lam=lam, mu=mu, eps=eps)
 
-    x0 = np.full(prob.P, float(R0), dtype=np.float64)
+    # ----------------------------
+    # Initialisation
+    # ----------------------------
+    init_method = "constant"
+    if R0_from_IDW:
+        init_method = "idw"
+        if idw_field_from_est_input is None:
+            raise RuntimeError(
+                "R0_from_IDW=True but idw_baseline.py could not be imported. "
+                "Place idw_baseline.py next to solve_rain_lbfgsb.py and ensure scipy is installed."
+            )
+        R0_grid, _ = idw_field_from_est_input(
+            Path(est_input_json),
+            r_max_m=float(idw_r_max_m),
+            power=float(idw_power),
+            eps_m=float(idw_eps_m),
+            default_value=float(idw_default_value),
+        )
+        x0 = np.asarray(R0_grid, dtype=np.float64).reshape(prob.P)
+    else:
+        x0 = np.full(prob.P, float(R0), dtype=np.float64)
+
     bounds = [(0.0, None)] * prob.P
 
     res = minimize(
@@ -375,6 +411,7 @@ def solve_lbfgsb_and_save(
         pol=np.array(prob.pol, dtype="U1"),
         k=prob.k.astype(np.float64),
         alpha=prob.alpha.astype(np.float64),
+        # provenance / meta
         meta_success=bool(res.success),
         meta_status=int(res.status),
         meta_message=str(res.message),
@@ -388,9 +425,20 @@ def solve_lbfgsb_and_save(
         meta_lambda=float(lam),
         meta_mu=float(mu),
         meta_eps=float(eps),
+        meta_R0=float(R0),
+        meta_maxiter=int(maxiter),
+        meta_ftol=float(ftol),
+        meta_gtol=float(gtol),
+        meta_maxls=int(maxls),
         meta_est_input_json=str(Path(est_input_json)),
         meta_num_valid_links=int(np.sum(prob.valid_links)),
         meta_num_invalid_links=int(np.sum(~prob.valid_links)),
+        meta_init_method=str(init_method),
+        meta_R0_from_IDW=bool(R0_from_IDW),
+        meta_idw_r_max_m=float(idw_r_max_m),
+        meta_idw_power=float(idw_power),
+        meta_idw_eps_m=float(idw_eps_m),
+        meta_idw_default_value=float(idw_default_value),
     )
 
     return {
@@ -399,21 +447,9 @@ def solve_lbfgsb_and_save(
         "message": str(res.message),
         "nit": int(getattr(res, "nit", -1)),
         "fun": float(res.fun),
-        "npz_out": str(npz_out),
-        "H": prob.H,
-        "W": prob.W,
-        "L": prob.L,
-        "P": prob.P,
-        "nnz": int(prob.pix_idx.size),
-        "num_valid_links": int(np.sum(prob.valid_links)),
-        "num_invalid_links": int(np.sum(~prob.valid_links)),
+        "out_npz": str(npz_out),
+        "init_method": str(init_method),
     }
-
-
-# ----------------------------
-# Config -> run(s)
-# ----------------------------
-
 def run_from_config(cfg: dict) -> List[dict]:
     """
     Supports two styles:
