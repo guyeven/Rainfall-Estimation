@@ -10,14 +10,14 @@ optimization:
   mu: 1.0e-06
   epsilon: 0.01
   R0: 0.1
-  maxiter: false
-  R0_from_IDW: true
+  maxiter: 300
+  R0_from_IDW: false
 tolerances:
   ftol: 1.0e-05
   gtol: 0.0001
   maxls: 20
 idw:
-  r_max_m: 3125.0
+  r_max_m: 15000.0
   power: 2.0
   eps_m: 1.0
   default_value: 0.0
