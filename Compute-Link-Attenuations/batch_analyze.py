@@ -1575,7 +1575,7 @@ def main():
                     abs_vals = abs_vals[np.isfinite(abs_vals)]
                     st = compute_group_stats(signed_vals, abs_vals)
                     l1_abs_sum_bucket = float(np.nansum(abs_diff_gi[gmask]))
-                distance_rows_gt_idw.append({
+                    distance_rows_gt_idw.append({
                         "patch_key": k,
                         "mask_type": "rainy",
                         "distance_bin_m": lab,
@@ -1603,7 +1603,7 @@ def main():
                     abs_vals = abs_vals[np.isfinite(abs_vals)]
                     st = compute_group_stats(signed_vals, abs_vals)
                     l1_abs_sum_bucket = float(np.nansum(abs_diff_gi[gmask]))
-                distance_rows_gt_idw.append({
+                    distance_rows_gt_idw.append({
                         "patch_key": k,
                         "mask_type": "nonrainy",
                         "distance_bin_m": lab,
