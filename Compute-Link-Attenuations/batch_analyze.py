@@ -211,6 +211,7 @@ class GroupStats:
     n_pixels: int
     mean_signed: float
     mean_abs: float
+    std_abs: float
     median_signed: float
     median_abs: float
     p90_abs: float
@@ -226,6 +227,7 @@ def compute_group_stats(signed_err: np.ndarray, abs_err: np.ndarray) -> GroupSta
             n_pixels=0,
             mean_signed=float("nan"),
             mean_abs=float("nan"),
+            std_abs=float("nan"),
             median_signed=float("nan"),
             median_abs=float("nan"),
             p90_abs=float("nan"),
@@ -240,6 +242,7 @@ def compute_group_stats(signed_err: np.ndarray, abs_err: np.ndarray) -> GroupSta
         n_pixels=n,
         mean_signed=float(np.nanmean(signed_err)),
         mean_abs=float(np.nanmean(abs_err)),
+        std_abs=float(np.nanstd(abs_err)),
         median_signed=med_s,
         median_abs=med_a,
         p90_abs=p["p90"],
@@ -607,6 +610,7 @@ def _write_long_tidy_sheet(wb: Workbook, title: str, headers: List[str], rows: L
         "mean_signed",
         "median_signed",
         "mean_abs",
+        "std_abs",
         "median_abs",
         "p90_abs",
         "p99_abs",
@@ -877,6 +881,7 @@ def write_excel_report(
         "mean_signed",
         "median_signed",
         "mean_abs",
+        "std_abs",
         "median_abs",
         "p90_abs",
         "p99_abs",
@@ -896,6 +901,7 @@ def write_excel_report(
         "mean_signed",
         "median_signed",
         "mean_abs",
+        "std_abs",
         "median_abs",
         "p90_abs",
         "p99_abs",
@@ -1001,7 +1007,171 @@ def coverage_bin_label(b: int, exact_bins, ge_bin):
         return f"{int(ge_bin)}+"
     return str(int(b))
 
+
+
+def _get_plot_labels(cfg: Dict[str, Any]) -> Tuple[str, str, str]:
+    """
+    Optional config:
+      plot_labels:
+        gt: "GT"
+        sol: "SOL"
+        idw: "IDW"
+    Defaults: ("GT","SOL","IDW")
+    """
+    pl = cfg.get("plot_labels") or {}
+    gt = str(pl.get("gt", "GT"))
+    sol = str(pl.get("sol", "SOL"))
+    idw = str(pl.get("idw", "IDW"))
+    return gt, sol, idw
+
+
+def aggregate_distance_bin_median_iqr(
+    distance_rows: List[dict],
+    dist_labels: List[str],
+    mask_type: str,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Aggregate across patches for a fixed mask_type ("rainy" or "nonrainy"):
+
+    For each (patch, bin) we already have median_abs in DistanceStats:
+      - rainy: median_abs = median over pixels of abs_rel = |GT-SOL|/GT
+      - nonrainy: median_abs = median over pixels of abs_diff = |GT-SOL|
+
+    Here we compute, per bin across patches, the IQR of those per-patch medians:
+      - p50_of_medians (center)
+      - p25_of_medians (low)
+      - p75_of_medians (high)
+
+    Bins with no contributing patches return NaN.
+    """
+    # Collect per-bin per-patch medians
+    meds_per_bin: Dict[str, List[float]] = {lab: [] for lab in dist_labels}
+
+    for r in distance_rows:
+        if r.get("mask_type") != mask_type:
+            continue
+        lab = r.get("distance_bin_m")
+        if lab not in meds_per_bin:
+            continue
+        n = int(r.get("n_pixels", 0) or 0)
+        if n <= 0:
+            continue
+        v = r.get("median_abs")
+        if v is None:
+            continue
+        try:
+            fv = float(v)
+        except Exception:
+            continue
+        if not np.isfinite(fv):
+            continue
+        meds_per_bin[lab].append(fv)
+
+    p50 = np.full((len(dist_labels),), np.nan, dtype=np.float64)
+    p25 = np.full((len(dist_labels),), np.nan, dtype=np.float64)
+    p75 = np.full((len(dist_labels),), np.nan, dtype=np.float64)
+
+    for i, lab in enumerate(dist_labels):
+        vals = meds_per_bin[lab]
+        if not vals:
+            continue
+        arr = np.asarray(vals, dtype=np.float64)
+        p25[i] = float(np.percentile(arr, 25))
+        p50[i] = float(np.percentile(arr, 50))
+        p75[i] = float(np.percentile(arr, 75))
+
+    return p50, p25, p75
+
+
+
+def plot_distance_median_iqr(
+    *,
+    dist_labels: List[str],
+    p50_sol: np.ndarray,
+    p25_sol: np.ndarray,
+    p75_sol: np.ndarray,
+    p50_idw: np.ndarray,
+    p25_idw: np.ndarray,
+    p75_idw: np.ndarray,
+    gt_label: str,
+    sol_label: str,
+    idw_label: str,
+        mask_type: str,
+    out_png: Path,
+    automatic_vertical_scaling: bool = True,
+    vertical_scale: float | None = None,
+):
+    """
+    Plot, per distance bin, the distribution across patches of the per-patch *median* error.
+
+    For each bin we have:
+      - p50_*: median across patches of (per-patch median_abs)
+      - p25_*, p75_*: 25th/75th percentiles across patches of (per-patch median_abs)
+    We draw a vertical bar from p25 to p75 (IQR) with dotted caps, and a marker at p50.
+
+    We overlay GT vs SOL and GT vs IDW with slight x-offset per bin.
+    """
+    import matplotlib.pyplot as plt
+
+    x = np.arange(len(dist_labels), dtype=np.float64)
+    off = 0.12  # side-by-side offset
+    cap = 0.08  # cap half-width
+
+    fig, ax = plt.subplots(figsize=(10, 4.5))
+
+    def draw_series(x0: np.ndarray, p50: np.ndarray, p25: np.ndarray, p75: np.ndarray, label: str, color: str):
+        # Use a single consistent color for all glyphs in this series.
+        for xi, m, lo, hi in zip(x0, p50, p25, p75):
+            if not (np.isfinite(m) and np.isfinite(lo) and np.isfinite(hi)):
+                continue
+            ax.vlines(xi, lo, hi, linewidth=2, color=color)
+            ax.hlines(lo, xi - cap, xi + cap, linestyles="dotted", linewidth=1.5, color=color)
+            ax.hlines(hi, xi - cap, xi + cap, linestyles="dotted", linewidth=1.5, color=color)
+            ax.plot([xi], [m], marker="o", markersize=5, color=color)
+        # Dummy handle for legend
+        ax.plot([], [], marker="o", linestyle="-", label=label, color=color)
+
+
+    # Pick two distinct colors from the active Matplotlib color cycle.
+    _cycle_cols = plt.rcParams.get("axes.prop_cycle", None)
+    if _cycle_cols is not None:
+        _cols = _cycle_cols.by_key().get("color", [])
+    else:
+        _cols = []
+    c_sol = _cols[0] if len(_cols) > 0 else None
+    c_idw = _cols[1] if len(_cols) > 1 else None
+    if c_sol is None: c_sol = "C0"
+    if c_idw is None: c_idw = "C1"
+
+    draw_series(x - off, p50_sol, p25_sol, p75_sol, f"{gt_label} vs {sol_label}", c_sol)
+    draw_series(x + off, p50_idw, p25_idw, p75_idw, f"{gt_label} vs {idw_label}", c_idw)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(dist_labels, rotation=0)
+
+    # Vertical scaling (y-axis)
+    if not automatic_vertical_scaling:
+        if vertical_scale is None or (not isinstance(vertical_scale, (int, float))):
+            raise ValueError("plots.vertical_scale must be provided as a real number when plots.automatic_vertical_scaling is false")
+        if not np.isfinite(vertical_scale) or vertical_scale < 0:
+            raise ValueError("plots.vertical_scale must be a finite, non-negative number")
+        ax.set_ylim(0.0, float(vertical_scale))
+    ax.set_xlabel("Distance bin to 3rd closest link (m)")
+    if mask_type == "rainy":
+        ax.set_ylabel("Relative absolute error median (per-patch), IQR across patches")
+        ax.set_title("Rainy pixels: IQR across patches of per-patch median |(GT - X)/GT|")
+    else:
+        ax.set_ylabel("Absolute error median (per-patch), IQR across patches")
+        ax.set_title("Non-rainy pixels: IQR across patches of per-patch median |GT - X|")
+
+    ax.grid(True, axis="y", linestyle=":", linewidth=0.8)
+    ax.legend()
+    fig.tight_layout()
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, dpi=150)
+    plt.close(fig)
 def main():
+
     ap = argparse.ArgumentParser(description="Batch GT vs SOL analysis with rainy/non-rainy split + coverage bins.")
     ap.add_argument("--config", type=str, required=True, help="Path to YAML/JSON config file")
     args = ap.parse_args()
@@ -1302,6 +1472,7 @@ def main():
                 "mean_signed": st.mean_signed,
                 "median_signed": st.median_signed,
                 "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                 "median_abs": st.median_abs,
                 "p90_abs": st.p90_abs,
                 "p99_abs": st.p99_abs,
@@ -1332,6 +1503,7 @@ def main():
                 "mean_signed": st.mean_signed,
                 "median_signed": st.median_signed,
                 "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                 "median_abs": st.median_abs,
                 "p90_abs": st.p90_abs,
                 "p99_abs": st.p99_abs,
@@ -1372,6 +1544,7 @@ def main():
                     "mean_signed": st.mean_signed,
                     "median_signed": st.median_signed,
                     "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                     "median_abs": st.median_abs,
                     "p90_abs": st.p90_abs,
                     "p99_abs": st.p99_abs,
@@ -1398,6 +1571,7 @@ def main():
                     "mean_signed": st.mean_signed,
                     "median_signed": st.median_signed,
                     "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                     "median_abs": st.median_abs,
                     "p90_abs": st.p90_abs,
                     "p99_abs": st.p99_abs,
@@ -1436,6 +1610,7 @@ def main():
                     "mean_signed": st.mean_signed,
                     "median_signed": st.median_signed,
                     "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                     "median_abs": st.median_abs,
                     "p90_abs": st.p90_abs,
                     "p99_abs": st.p99_abs,
@@ -1460,6 +1635,7 @@ def main():
                     "mean_signed": st.mean_signed,
                     "median_signed": st.median_signed,
                     "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                     "median_abs": st.median_abs,
                     "p90_abs": st.p90_abs,
                     "p99_abs": st.p99_abs,
@@ -1512,6 +1688,7 @@ def main():
                     "mean_signed": st.mean_signed,
                     "median_signed": st.median_signed,
                     "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                     "median_abs": st.median_abs,
                     "p90_abs": st.p90_abs,
                     "p99_abs": st.p99_abs,
@@ -1541,6 +1718,7 @@ def main():
                     "mean_signed": st.mean_signed,
                     "median_signed": st.median_signed,
                     "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                     "median_abs": st.median_abs,
                     "p90_abs": st.p90_abs,
                     "p99_abs": st.p99_abs,
@@ -1583,6 +1761,7 @@ def main():
                         "mean_signed": st.mean_signed,
                         "median_signed": st.median_signed,
                         "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                         "median_abs": st.median_abs,
                         "p90_abs": st.p90_abs,
                         "p99_abs": st.p99_abs,
@@ -1611,6 +1790,7 @@ def main():
                         "mean_signed": st.mean_signed,
                         "median_signed": st.median_signed,
                         "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                         "median_abs": st.median_abs,
                         "p90_abs": st.p90_abs,
                         "p99_abs": st.p99_abs,
@@ -1651,6 +1831,7 @@ def main():
                         "mean_signed": st.mean_signed,
                         "median_signed": st.median_signed,
                         "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                         "median_abs": st.median_abs,
                         "p90_abs": st.p90_abs,
                         "p99_abs": st.p99_abs,
@@ -1677,6 +1858,7 @@ def main():
                         "mean_signed": st.mean_signed,
                         "median_signed": st.median_signed,
                         "mean_abs": st.mean_abs,
+                    "std_abs": st.std_abs,
                         "median_abs": st.median_abs,
                         "p90_abs": st.p90_abs,
                         "p99_abs": st.p99_abs,
@@ -1700,6 +1882,66 @@ def main():
         distance_rows_idw_sol=distance_rows_idw_sol,
         link_attn_rows=link_attn_rows,
     )
+
+    # Aggregate and plot distance-bin profiles (avg over patches)
+
+    auto_vertical_scaling = bool(deep_get(cfg, "plots.automatic_vertical_scaling", True))
+    vertical_scale = deep_get(cfg, "plots.vertical_scale", None)
+    if not auto_vertical_scaling:
+        # Validate early so we crash clearly if misconfigured
+        try:
+            vertical_scale = float(vertical_scale)
+        except Exception as e:
+            raise ValueError("plots.vertical_scale must be a real number when plots.automatic_vertical_scaling is false") from e
+        if not np.isfinite(vertical_scale) or vertical_scale < 0:
+            raise ValueError("plots.vertical_scale must be a finite, non-negative number")
+
+    # Compute IQR-of-medians profiles across patches, per distance bin.
+    # For each patch+bin we use median_abs (median over pixels).
+    # Then across patches we compute p25/p50/p75 of those medians.
+    gt_label_plot, sol_label_plot, idw_label_plot = _get_plot_labels(cfg)
+
+    # Rainy: relative abs error |(GT-X)/GT| (median_abs in rows)
+    p50_sol_rainy, p25_sol_rainy, p75_sol_rainy = aggregate_distance_bin_median_iqr(distance_rows, dist_labels, "rainy")
+    p50_idw_rainy, p25_idw_rainy, p75_idw_rainy = aggregate_distance_bin_median_iqr(distance_rows_gt_idw, dist_labels, "rainy")
+
+    # Non-rainy: absolute diff |GT-X| (median_abs in rows)
+    p50_sol_non, p25_sol_non, p75_sol_non = aggregate_distance_bin_median_iqr(distance_rows, dist_labels, "nonrainy")
+    p50_idw_non, p25_idw_non, p75_idw_non = aggregate_distance_bin_median_iqr(distance_rows_gt_idw, dist_labels, "nonrainy")
+
+    plot_distance_median_iqr(
+        dist_labels=dist_labels,
+        p50_sol=p50_sol_rainy,
+        p25_sol=p25_sol_rainy,
+        p75_sol=p75_sol_rainy,
+        p50_idw=p50_idw_rainy,
+        p25_idw=p25_idw_rainy,
+        p75_idw=p75_idw_rainy,
+        gt_label=gt_label_plot,
+        sol_label=sol_label_plot,
+        idw_label=idw_label_plot,
+        mask_type="rainy",
+        out_png=img_dir / "distance_iqr_medians_rainy_GTvsSOL_vs_GTvsIDW.png",
+        automatic_vertical_scaling=auto_vertical_scaling,
+        vertical_scale=vertical_scale,
+    )
+    plot_distance_median_iqr(
+        dist_labels=dist_labels,
+        p50_sol=p50_sol_non,
+        p25_sol=p25_sol_non,
+        p75_sol=p75_sol_non,
+        p50_idw=p50_idw_non,
+        p25_idw=p25_idw_non,
+        p75_idw=p75_idw_non,
+        gt_label=gt_label_plot,
+        sol_label=sol_label_plot,
+        idw_label=idw_label_plot,
+        mask_type="nonrainy",
+        out_png=img_dir / "distance_iqr_medians_nonrainy_GTvsSOL_vs_GTvsIDW.png",
+        automatic_vertical_scaling=auto_vertical_scaling,
+        vertical_scale=vertical_scale,
+    )
+
     print(f"Wrote Excel: {xlsx_path}")
     print(f"Wrote PNGs to: {img_dir}")
 

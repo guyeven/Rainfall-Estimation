@@ -1,0 +1,80 @@
+# ============================================================
+# analyze_config.yaml
+# Configuration file for batch_analyze.py
+# ============================================================
+
+input:
+  gt_dir: "HundredPatches/gt_dir"
+  sol_dir: "HundredPatches/sol_dir_idw_init"
+  gt_prefix: "gt"
+  sol_prefix: "est"
+  # Needed for coverage c(pixel)=#links intersecting pixel
+  # Point this at the directory containing est_input_*.json files.
+  est_input_dir: "HundredPatches/est_dir"
+
+data:
+  gt_key_preference:
+    - "R_gt"
+    - "rain"
+    - "gt"
+  sol_key_preference:
+    - "R_hat"
+
+  allow_shape_mismatch: false
+
+output:
+  out_dir: "HundredPatches/batch_analyze_output_idw_init"
+  images_subdir: "images"
+  excel_filename: "coverage_stats_long_idw_init.xlsx"
+
+plots:
+  dpi: 150
+  show: false
+
+  cmap_gt: "viridis"
+  cmap_sol: "viridis"
+
+  # Additive diff for non-rainy
+  cmap_diff: "seismic"
+  cmap_abs_diff: "magma"
+
+  # Relative error maps for rainy
+  cmap_rel: "seismic"
+  cmap_abs_rel: "magma"
+
+plot_labels:
+  gt: GT
+  sol: SOL_IDW
+  idw: IDW
+
+plots:
+  automatic_vertical_scaling: true   # default
+  vertical_scale: 1.5               # only used if automatic_vertical_scaling: false
+  
+idw:
+  r_max_m: 15000.0
+  power: 2.0
+  eps_m: 1.0
+  default_value: 0.0
+
+# Rain / non-rain split
+rain:
+  # Pixels with GT >= threshold are "rainy" (relative stats + relative PNG)
+  # Default per your request:
+  threshold_mmph: 0.6
+
+coverage:
+  enabled: true
+  # bins for c(pixel). ints are exact counts; "5+" means >=5.
+  bins: [0, 1, 2, 3, 4, "5+"]
+
+meta:
+  notes: |
+    - Rainy pixels (GT>=thr): signed rel=(GT-SOL)/GT, abs rel=|GT-SOL|/GT
+    - Non-rainy pixels (GT<thr): signed diff=SOL-GT, abs diff=|SOL-GT|
+    - PNGs: one _rainy and one _nonrainy per patch
+    - Scaling:
+        GT/SOL/ABS_DIFF share [0, Rmax_global]
+        DIFF shares [-Dmax_global, +Dmax_global]
+        Rel maps use global RelMax, RelAbsMax
+    - Excel output is long/tidy: (patch_key, mask_type, coverage_bin)
