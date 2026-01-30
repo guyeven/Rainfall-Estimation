@@ -1191,7 +1191,7 @@ def plot_distance_iqr_medians(
         hi = p75[valid]
 
         # median line + markers
-        ax.plot(xv, md, marker='o', linewidth=2, label=label, color=color)
+        ax.plot(xv, md, marker='o', linestyle='None', linewidth=2, label=label, color=color)
 
         # IQR bars + dotted caps
         for xi, l, h in zip(xv, lo, hi):
