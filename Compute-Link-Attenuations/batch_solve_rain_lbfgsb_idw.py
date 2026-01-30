@@ -121,7 +121,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Optional: IDW-based initialization (requires a patched solve_rain_lbfgsb.py)
     R0_from_IDW = bool(solver.deep_get(cfg, "optimization.R0_from_IDW", False))
-    idw_r_max_m = float(solver.deep_get(cfg, "idw.r_max_m", 3125.0))
+    idw_r_max_m = float(solver.deep_get(cfg, "idw.r_max_m", 15000.0))
     idw_power = float(solver.deep_get(cfg, "idw.power", 2.0))
     idw_eps_m = float(solver.deep_get(cfg, "idw.eps_m", 1.0))
     idw_default_value = float(solver.deep_get(cfg, "idw.default_value", 0.0))
