@@ -1025,151 +1025,215 @@ def _get_plot_labels(cfg: Dict[str, Any]) -> Tuple[str, str, str]:
     return gt, sol, idw
 
 
-def aggregate_distance_bin_median_iqr(
-    distance_rows: List[dict],
+def aggregate_distance_bin_mean_std(
+    rows: List[Dict[str, Any]],
     dist_labels: List[str],
     mask_type: str,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Aggregate across patches for a fixed mask_type ("rainy" or "nonrainy"):
-
-    For each (patch, bin) we already have median_abs in DistanceStats:
-      - rainy: median_abs = median over pixels of abs_rel = |GT-SOL|/GT
-      - nonrainy: median_abs = median over pixels of abs_diff = |GT-SOL|
-
-    Here we compute, per bin across patches, the IQR of those per-patch medians:
-      - p50_of_medians (center)
-      - p25_of_medians (low)
-      - p75_of_medians (high)
-
-    Bins with no contributing patches return NaN.
+    For each distance bin label, compute:
+      avg_mean = average over patches of mean_abs for that bin
+      avg_std  = average over patches of std_abs for that bin
+    Skips rows with n_pixels == 0 or non-finite values.
     """
-    # Collect per-bin per-patch medians
-    meds_per_bin: Dict[str, List[float]] = {lab: [] for lab in dist_labels}
+    means_per_bin: Dict[str, List[float]] = {lab: [] for lab in dist_labels}
+    stds_per_bin: Dict[str, List[float]] = {lab: [] for lab in dist_labels}
 
-    for r in distance_rows:
+    for r in rows:
         if r.get("mask_type") != mask_type:
             continue
         lab = r.get("distance_bin_m")
-        if lab not in meds_per_bin:
+        if lab not in means_per_bin:
             continue
         n = int(r.get("n_pixels", 0) or 0)
         if n <= 0:
             continue
-        v = r.get("median_abs")
-        if v is None:
+        m = float(r.get("mean_abs", float("nan")))
+        s = float(r.get("std_abs", float("nan")))
+        if not (np.isfinite(m) and np.isfinite(s)):
             continue
-        try:
-            fv = float(v)
-        except Exception:
-            continue
-        if not np.isfinite(fv):
-            continue
-        meds_per_bin[lab].append(fv)
+        means_per_bin[lab].append(m)
+        stds_per_bin[lab].append(s)
 
-    p50 = np.full((len(dist_labels),), np.nan, dtype=np.float64)
-    p25 = np.full((len(dist_labels),), np.nan, dtype=np.float64)
-    p75 = np.full((len(dist_labels),), np.nan, dtype=np.float64)
-
-    for i, lab in enumerate(dist_labels):
-        vals = meds_per_bin[lab]
-        if not vals:
-            continue
-        arr = np.asarray(vals, dtype=np.float64)
-        p25[i] = float(np.percentile(arr, 25))
-        p50[i] = float(np.percentile(arr, 50))
-        p75[i] = float(np.percentile(arr, 75))
-
-    return p50, p25, p75
+    avg_mean = np.array([np.mean(means_per_bin[lab]) if len(means_per_bin[lab]) else np.nan for lab in dist_labels], dtype=np.float64)
+    avg_std  = np.array([np.mean(stds_per_bin[lab]) if len(stds_per_bin[lab]) else np.nan for lab in dist_labels], dtype=np.float64)
+    return avg_mean, avg_std
 
 
-
-def plot_distance_median_iqr(
+def plot_distance_profiles(
     *,
     dist_labels: List[str],
-    p50_sol: np.ndarray,
-    p25_sol: np.ndarray,
-    p75_sol: np.ndarray,
-    p50_idw: np.ndarray,
-    p25_idw: np.ndarray,
-    p75_idw: np.ndarray,
+    mean_sol: np.ndarray,
+    std_sol: np.ndarray,
+    mean_idw: np.ndarray,
+    std_idw: np.ndarray,
     gt_label: str,
     sol_label: str,
     idw_label: str,
-        mask_type: str,
+    mask_type: str,
     out_png: Path,
-    automatic_vertical_scaling: bool = True,
-    vertical_scale: float | None = None,
 ):
     """
-    Plot, per distance bin, the distribution across patches of the per-patch *median* error.
-
-    For each bin we have:
-      - p50_*: median across patches of (per-patch median_abs)
-      - p25_*, p75_*: 25th/75th percentiles across patches of (per-patch median_abs)
-    We draw a vertical bar from p25 to p75 (IQR) with dotted caps, and a marker at p50.
-
-    We overlay GT vs SOL and GT vs IDW with slight x-offset per bin.
+    Vertical “error bars” per distance bin:
+      - central value = avg over patches of per-patch mean error in that bin
+      - spread = avg over patches of per-patch std error in that bin
+    We draw a vertical bar from (mean-std) to (mean+std), with small dotted caps.
+    GT vs SOL and GT vs IDW are plotted with slight x-offset to compare.
     """
     import matplotlib.pyplot as plt
 
     x = np.arange(len(dist_labels), dtype=np.float64)
-    off = 0.12  # side-by-side offset
-    cap = 0.08  # cap half-width
+    off = 0.18
+    cap = 0.10  # half-width of the dotted cap
 
-    fig, ax = plt.subplots(figsize=(10, 4.5))
+    fig, ax = plt.subplots(figsize=(10, 5))
 
-    def draw_series(x0: np.ndarray, p50: np.ndarray, p25: np.ndarray, p75: np.ndarray, label: str, color: str):
-        # Use a single consistent color for all glyphs in this series.
-        for xi, m, lo, hi in zip(x0, p50, p25, p75):
-            if not (np.isfinite(m) and np.isfinite(lo) and np.isfinite(hi)):
-                continue
-            ax.vlines(xi, lo, hi, linewidth=2, color=color)
-            ax.hlines(lo, xi - cap, xi + cap, linestyles="dotted", linewidth=1.5, color=color)
-            ax.hlines(hi, xi - cap, xi + cap, linestyles="dotted", linewidth=1.5, color=color)
-            ax.plot([xi], [m], marker="o", markersize=5, color=color)
-        # Dummy handle for legend
-        ax.plot([], [], marker="o", linestyle="-", label=label, color=color)
+    # Helper to draw one series
+    def draw_series(xpos: np.ndarray, mean: np.ndarray, std: np.ndarray, label: str):
+        # Plot mean markers (no connecting line) to get a consistent auto color
+        ln, = ax.plot(xpos, mean, marker="o", linestyle="None", label=label)
+        c = ln.get_color()
 
+        y0 = mean - std
+        y1 = mean + std
 
-    # Pick two distinct colors from the active Matplotlib color cycle.
-    _cycle_cols = plt.rcParams.get("axes.prop_cycle", None)
-    if _cycle_cols is not None:
-        _cols = _cycle_cols.by_key().get("color", [])
-    else:
-        _cols = []
-    c_sol = _cols[0] if len(_cols) > 0 else None
-    c_idw = _cols[1] if len(_cols) > 1 else None
-    if c_sol is None: c_sol = "C0"
-    if c_idw is None: c_idw = "C1"
+        # Vertical bars
+        ax.vlines(xpos, y0, y1, colors=c, linewidth=2.0)
 
-    draw_series(x - off, p50_sol, p25_sol, p75_sol, f"{gt_label} vs {sol_label}", c_sol)
-    draw_series(x + off, p50_idw, p25_idw, p75_idw, f"{gt_label} vs {idw_label}", c_idw)
+        # Dotted caps
+        for xi, ya, yb in zip(xpos, y0, y1):
+            if np.isfinite(ya):
+                ax.hlines(ya, xi - cap, xi + cap, colors=c, linestyles=":", linewidth=1.5)
+            if np.isfinite(yb):
+                ax.hlines(yb, xi - cap, xi + cap, colors=c, linestyles=":", linewidth=1.5)
+
+    draw_series(x - off, mean_sol, std_sol, f"{gt_label} vs {sol_label}")
+    draw_series(x + off, mean_idw, std_idw, f"{gt_label} vs {idw_label}")
 
     ax.set_xticks(x)
     ax.set_xticklabels(dist_labels, rotation=0)
+    ax.set_xlabel("Distance bin (m), d3(point-to-segment)")
 
-    # Vertical scaling (y-axis)
-    if not automatic_vertical_scaling:
-        if vertical_scale is None or (not isinstance(vertical_scale, (int, float))):
-            raise ValueError("plots.vertical_scale must be provided as a real number when plots.automatic_vertical_scaling is false")
-        if not np.isfinite(vertical_scale) or vertical_scale < 0:
-            raise ValueError("plots.vertical_scale must be a finite, non-negative number")
-        ax.set_ylim(0.0, float(vertical_scale))
-    ax.set_xlabel("Distance bin to 3rd closest link (m)")
     if mask_type == "rainy":
-        ax.set_ylabel("Relative absolute error median (per-patch), IQR across patches")
-        ax.set_title("Rainy pixels: IQR across patches of per-patch median |(GT - X)/GT|")
+        ax.set_ylabel("Avg. per-patch mean relative abs error (|GT-X|/GT) ± avg. std")
+        ax.set_title("Rainy pixels: error vs distance to 3rd closest link")
     else:
-        ax.set_ylabel("Absolute error median (per-patch), IQR across patches")
-        ax.set_title("Non-rainy pixels: IQR across patches of per-patch median |GT - X|")
+        ax.set_ylabel("Avg. per-patch mean absolute error |GT-X| ± avg. std")
+        ax.set_title("Non-rainy pixels: error vs distance to 3rd closest link")
 
-    ax.grid(True, axis="y", linestyle=":", linewidth=0.8)
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=200)
+    plt.close(fig)
+
+
+def plot_distance_iqr_medians(
+    *,
+    dist_labels: List[str],
+    medians_sol_by_bin: Dict[str, List[float]],
+    medians_idw_by_bin: Dict[str, List[float]],
+    sol_label: str,
+    idw_label: str,
+    mask_type: str,
+    out_png: Path,
+    automatic_vertical_scaling: bool = True,
+    vertical_scale: Optional[float] = None,
+):
+    """Plot IQR (p25..p75) across patches of the per-patch per-bin medians.
+
+    Style: two fixed-color series, median markers (p50) connected by a thin line,
+    and IQR shown as a vertical bar with dotted caps (no shaded band).
+    """
+    import matplotlib.pyplot as plt
+
+    # Deterministic colors from matplotlib's default cycle
+    colors = plt.rcParams.get("axes.prop_cycle", None)
+    if colors is not None:
+        colors = colors.by_key().get("color", ["C0", "C1"])
+    else:
+        colors = ["C0", "C1"]
+    col_sol = colors[0] if len(colors) > 0 else "C0"
+    col_idw = colors[1] if len(colors) > 1 else "C1"
+
+    def _iqr_stats(vals: List[float]) -> Tuple[float, float, float]:
+        arr = np.array([v for v in vals if v is not None and np.isfinite(v)], dtype=np.float64)
+        if arr.size == 0:
+            return (np.nan, np.nan, np.nan)
+        p25, p50, p75 = np.percentile(arr, [25, 50, 75])
+        return float(p25), float(p50), float(p75)
+
+    sol_p25, sol_p50, sol_p75 = [], [], []
+    idw_p25, idw_p50, idw_p75 = [], [], []
+
+    for lab in dist_labels:
+        a, b, c = _iqr_stats(medians_sol_by_bin.get(lab, []))
+        sol_p25.append(a); sol_p50.append(b); sol_p75.append(c)
+        a, b, c = _iqr_stats(medians_idw_by_bin.get(lab, []))
+        idw_p25.append(a); idw_p50.append(b); idw_p75.append(c)
+
+    x = np.arange(len(dist_labels), dtype=np.float64)
+    off = 0.12
+    cap = 0.08
+
+    fig = plt.figure(figsize=(10, 4.8))
+    ax = fig.add_subplot(111)
+
+    def _draw(x0, p25, p50, p75, color, label):
+        p25 = np.asarray(p25, dtype=np.float64)
+        p50 = np.asarray(p50, dtype=np.float64)
+        p75 = np.asarray(p75, dtype=np.float64)
+        valid = np.isfinite(p25) & np.isfinite(p50) & np.isfinite(p75)
+        xv = x0[valid]
+        lo = p25[valid]
+        md = p50[valid]
+        hi = p75[valid]
+
+        # median line + markers
+        ax.plot(xv, md, marker='o', linewidth=2, label=label, color=color)
+
+        # IQR bars + dotted caps
+        for xi, l, h in zip(xv, lo, hi):
+            ax.vlines(xi, l, h, linewidth=2.2, color=color)
+            ax.hlines(l, xi - cap, xi + cap, linestyles='dotted', linewidth=2.0, color=color)
+            ax.hlines(h, xi - cap, xi + cap, linestyles='dotted', linewidth=2.0, color=color)
+
+    _draw(x - off, sol_p25, sol_p50, sol_p75, col_sol, sol_label)
+    _draw(x + off, idw_p25, idw_p50, idw_p75, col_idw, idw_label)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(dist_labels, rotation=0)
+    ax.set_xlabel("Distance bin to 3rd closest link (m)")
+
+    if mask_type == 'rainy':
+        ax.set_ylabel('Relative absolute error median (per-patch), IQR across patches')
+        ax.set_title('Rainy pixels: IQR across patches of per-patch median |(GT - X)/GT|')
+    else:
+        ax.set_ylabel('Absolute error median (per-patch), IQR across patches')
+        ax.set_title('Non-rainy pixels: IQR across patches of per-patch median |GT - X|')
+
+    # Y scaling
+    if automatic_vertical_scaling:
+        ymax = np.nanmax(np.array(sol_p75 + idw_p75, dtype=np.float64))
+        if not np.isfinite(ymax):
+            ymax = 1.0
+        ax.set_ylim(0.0, float(ymax) * 1.05)
+    else:
+        if vertical_scale is None or not np.isfinite(vertical_scale) or vertical_scale < 0:
+            raise ValueError('plots.vertical_scale must be a real non-negative number when plots.automatic_vertical_scaling=false')
+        ax.set_ylim(0.0, float(vertical_scale))
+
+    ax.grid(True, axis='y', linestyle=':', alpha=0.6)
     ax.legend()
     fig.tight_layout()
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png, dpi=150)
     plt.close(fig)
+
+
+
+
 def main():
 
     ap = argparse.ArgumentParser(description="Batch GT vs SOL analysis with rainy/non-rainy split + coverage bins.")
@@ -1186,6 +1250,7 @@ def main():
     xlsx_path = out_dir / xlsx_name
 
     show = bool(deep_get(cfg, "plots.show", False))
+    skip_patch_plots = bool(deep_get(cfg, "plots.skip_patch_plots", False))
     dpi = int(deep_get(cfg, "plots.dpi", 150))
     cmap_gt = deep_get(cfg, "plots.cmap_gt", "viridis")
     cmap_sol = deep_get(cfg, "plots.cmap_sol", "viridis")
@@ -1286,6 +1351,18 @@ def main():
     coverage_rows_idw_sol: List[dict] = []   # IDW baseline vs SOL
     distance_rows_idw_sol: List[dict] = []
 
+    # For distance IQR-of-medians plots:
+    # store, for each distance bin label, the per-patch median error in that bin.
+    # Distance bins (for DistanceStats + IQR-of-medians plots)
+    dist_edges = deep_get(cfg, "distance.bins_m", [125.0, 375.0, 750.0, 1500.0, 3125.0])
+    dist_edges_arr, dist_labels = parse_distance_bins_m([float(x) for x in dist_edges])
+    dist_sample_spacing = float(deep_get(cfg, "distance.sample_spacing_m", 250.0))
+
+    medians_rainy_sol_by_bin: Dict[str, List[float]] = {lab: [] for lab in dist_labels}
+    medians_rainy_idw_by_bin: Dict[str, List[float]] = {lab: [] for lab in dist_labels}
+    medians_nonrainy_sol_by_bin: Dict[str, List[float]] = {lab: [] for lab in dist_labels}
+    medians_nonrainy_idw_by_bin: Dict[str, List[float]] = {lab: [] for lab in dist_labels}
+
     # IDW baseline config (midpoint-based, cutoff radius)
     idw_enabled = bool(deep_get(cfg, "idw.enabled", True))
     idw_rmax_m = float(deep_get(cfg, "idw.r_max_m", 3125.0))
@@ -1297,9 +1374,6 @@ def main():
 
     # Distance-bucketed stats (optional)
     dist_enabled = bool(deep_get(cfg, "distance.enabled", True))
-    dist_edges = deep_get(cfg, "distance.bins_m", [125.0, 375.0, 750.0, 1500.0, 3125.0])
-    dist_edges_arr, dist_labels = parse_distance_bins_m([float(x) for x in dist_edges])
-    dist_sample_spacing = float(deep_get(cfg, "distance.sample_spacing_m", 250.0))
     dist_kq = int(deep_get(cfg, "distance.k_query_samples", 48))
     dist_chunk = int(deep_get(cfg, "distance.chunk_size", 8000))
 
@@ -1324,39 +1398,40 @@ def main():
             rel[rainy] = (gt[rainy] - sol[rainy]) / gt[rainy]
             abs_rel[rainy] = np.abs(gt[rainy] - sol[rainy]) / gt[rainy]
 
-        # ---------- PNGs ----------
-        # Rainy PNG: (GT, SOL, rel, abs_rel) masked to rainy pixels
-        rainy_png = img_dir / f"{k}_rainy.png"
-        save_png_2x2(
-            rainy_png,
-            mask_to_nan(gt, rainy),
-            mask_to_nan(sol, rainy),
-            mask_to_nan(rel, rainy),
-            mask_to_nan(abs_rel, rainy),
-            titles=("GT (rainy)", "SOL (rainy)", "(GT-SOL)/GT", "|GT-SOL|/GT"),
-            suptitle=f"{k} | rainy: GT>= {thr} mm/h",
-            cmaps=(cmap_gt, cmap_sol, cmap_rel, cmap_abs_rel),
-            vlims=((0, Rmax_global), (0, Rmax_global), (-RelMax_global, RelMax_global), (0, RelAbsMax_global)),
-            dpi=dpi,
-            show=show,
-        )
+        if not skip_patch_plots:
+            # ---------- PNGs ----------
+            # Rainy PNG: (GT, SOL, rel, abs_rel) masked to rainy pixels
+            rainy_png = img_dir / f"{k}_rainy.png"
+            save_png_2x2(
+                rainy_png,
+                mask_to_nan(gt, rainy),
+                mask_to_nan(sol, rainy),
+                mask_to_nan(rel, rainy),
+                mask_to_nan(abs_rel, rainy),
+                titles=("GT (rainy)", "SOL (rainy)", "(GT-SOL)/GT", "|GT-SOL|/GT"),
+                suptitle=f"{k} | rainy: GT>= {thr} mm/h",
+                cmaps=(cmap_gt, cmap_sol, cmap_rel, cmap_abs_rel),
+                vlims=((0, Rmax_global), (0, Rmax_global), (-RelMax_global, RelMax_global), (0, RelAbsMax_global)),
+                dpi=dpi,
+                show=show,
+            )
 
-        # Non-rainy PNG: (GT, SOL, diff, abs_diff) masked to nonrainy pixels
-        non_png = img_dir / f"{k}_nonrainy.png"
-        save_png_2x2(
-            non_png,
-            mask_to_nan(gt, nonrainy),
-            mask_to_nan(sol, nonrainy),
-            mask_to_nan(diff, nonrainy),
-            mask_to_nan(abs_diff, nonrainy),
-            titles=("GT (non-rainy)", "SOL (non-rainy)", "SOL-GT", "|SOL-GT|"),
-            suptitle=f"{k} | non-rainy: GT< {thr} mm/h",
-            cmaps=(cmap_gt, cmap_sol, cmap_diff, cmap_abs),
-            # IMPORTANT: ABS_DIFF uses same scale as GT/SOL (your requirement)
-            vlims=((0, Rmax_global), (0, Rmax_global), (-Dmax_global, Dmax_global), (0, Rmax_global)),
-            dpi=dpi,
-            show=show,
-        )
+            # Non-rainy PNG: (GT, SOL, diff, abs_diff) masked to nonrainy pixels
+            non_png = img_dir / f"{k}_nonrainy.png"
+            save_png_2x2(
+                non_png,
+                mask_to_nan(gt, nonrainy),
+                mask_to_nan(sol, nonrainy),
+                mask_to_nan(diff, nonrainy),
+                mask_to_nan(abs_diff, nonrainy),
+                titles=("GT (non-rainy)", "SOL (non-rainy)", "SOL-GT", "|SOL-GT|"),
+                suptitle=f"{k} | non-rainy: GT< {thr} mm/h",
+                cmaps=(cmap_gt, cmap_sol, cmap_diff, cmap_abs),
+                # IMPORTANT: ABS_DIFF uses same scale as GT/SOL (your requirement)
+                vlims=((0, Rmax_global), (0, Rmax_global), (-Dmax_global, Dmax_global), (0, Rmax_global)),
+                dpi=dpi,
+                show=show,
+            )
 
         # ---------- Coverage map ----------
         if need_cov and est_path is not None:
@@ -1671,7 +1746,47 @@ def main():
                 hi = dist_edges_arr[idx]
                 return (d3_map > lo) & (d3_map <= hi)
 
-            # Rainy: relative errors
+            
+            # ---- Distance IQR-of-medians collection (per-patch medians per bin) ----
+            # Rainy: median of relative absolute error |GT-SOL|/GT and |GT-IDW|/GT
+            for bi, lab in enumerate(dist_labels):
+                gmask = rainy & dist_bin_mask(bi)
+                v = abs_rel[gmask]
+                v = v[np.isfinite(v)]
+                med = float(np.nanmedian(v)) if v.size else np.nan
+                medians_rainy_sol_by_bin[lab].append(med)
+
+            if idw_enabled and est_path is not None and idw is not None:
+                # abs_rel_gi is computed below for GTvsIDW; we compute it here too for medians.
+                abs_rel_gi_tmp = np.full_like(gt, np.nan, dtype=np.float32)
+                if np.any(rainy):
+                    abs_rel_gi_tmp[rainy] = np.abs(gt[rainy] - idw[rainy]) / gt[rainy]
+                for bi, lab in enumerate(dist_labels):
+                    gmask = rainy & dist_bin_mask(bi)
+                    v = abs_rel_gi_tmp[gmask]
+                    v = v[np.isfinite(v)]
+                    med = float(np.nanmedian(v)) if v.size else np.nan
+                    medians_rainy_idw_by_bin[lab].append(med)
+
+            # Non-rainy: median of absolute difference |GT-SOL| and |GT-IDW|
+            for bi, lab in enumerate(dist_labels):
+                gmask = nonrainy & dist_bin_mask(bi)
+                v = abs_diff[ gmask ]
+                v = v[np.isfinite(v)]
+                med = float(np.nanmedian(v)) if v.size else np.nan
+                medians_nonrainy_sol_by_bin[lab].append(med)
+
+            if idw_enabled and est_path is not None and idw is not None:
+                abs_diff_gi_tmp = np.full_like(gt, np.nan, dtype=np.float32)
+                abs_diff_gi_tmp[nonrainy] = np.abs(gt[nonrainy] - idw[nonrainy])
+                for bi, lab in enumerate(dist_labels):
+                    gmask = nonrainy & dist_bin_mask(bi)
+                    v = abs_diff_gi_tmp[gmask]
+                    v = v[np.isfinite(v)]
+                    med = float(np.nanmedian(v)) if v.size else np.nan
+                    medians_nonrainy_idw_by_bin[lab].append(med)
+
+# Rainy: relative errors
             for bi, lab in enumerate(dist_labels):
                 gmask = rainy & dist_bin_mask(bi)
                 signed_vals = rel[gmask]
@@ -1884,62 +1999,41 @@ def main():
     )
 
     # Aggregate and plot distance-bin profiles (avg over patches)
-
-    auto_vertical_scaling = bool(deep_get(cfg, "plots.automatic_vertical_scaling", True))
-    vertical_scale = deep_get(cfg, "plots.vertical_scale", None)
-    if not auto_vertical_scaling:
-        # Validate early so we crash clearly if misconfigured
-        try:
-            vertical_scale = float(vertical_scale)
-        except Exception as e:
-            raise ValueError("plots.vertical_scale must be a real number when plots.automatic_vertical_scaling is false") from e
-        if not np.isfinite(vertical_scale) or vertical_scale < 0:
-            raise ValueError("plots.vertical_scale must be a finite, non-negative number")
-
-    # Compute IQR-of-medians profiles across patches, per distance bin.
-    # For each patch+bin we use median_abs (median over pixels).
-    # Then across patches we compute p25/p50/p75 of those medians.
     gt_label_plot, sol_label_plot, idw_label_plot = _get_plot_labels(cfg)
 
-    # Rainy: relative abs error |(GT-X)/GT| (median_abs in rows)
-    p50_sol_rainy, p25_sol_rainy, p75_sol_rainy = aggregate_distance_bin_median_iqr(distance_rows, dist_labels, "rainy")
-    p50_idw_rainy, p25_idw_rainy, p75_idw_rainy = aggregate_distance_bin_median_iqr(distance_rows_gt_idw, dist_labels, "rainy")
+    
+    # Distance IQR-of-medians plots (stop using mean±std profiles)
+    gt_label_plot, sol_label_plot, idw_label_plot = _get_plot_labels(cfg)
+    auto_scale = bool(deep_get(cfg, "plots.automatic_vertical_scaling", True))
+    vscale = deep_get(cfg, "plots.vertical_scale", None)
+    vscale_f: Optional[float] = None
+    if vscale is not None:
+        try:
+            vscale_f = float(vscale)
+        except Exception:
+            vscale_f = None
 
-    # Non-rainy: absolute diff |GT-X| (median_abs in rows)
-    p50_sol_non, p25_sol_non, p75_sol_non = aggregate_distance_bin_median_iqr(distance_rows, dist_labels, "nonrainy")
-    p50_idw_non, p25_idw_non, p75_idw_non = aggregate_distance_bin_median_iqr(distance_rows_gt_idw, dist_labels, "nonrainy")
-
-    plot_distance_median_iqr(
+    plot_distance_iqr_medians(
         dist_labels=dist_labels,
-        p50_sol=p50_sol_rainy,
-        p25_sol=p25_sol_rainy,
-        p75_sol=p75_sol_rainy,
-        p50_idw=p50_idw_rainy,
-        p25_idw=p25_idw_rainy,
-        p75_idw=p75_idw_rainy,
-        gt_label=gt_label_plot,
+        medians_sol_by_bin=medians_rainy_sol_by_bin,
+        medians_idw_by_bin=medians_rainy_idw_by_bin,
         sol_label=sol_label_plot,
         idw_label=idw_label_plot,
         mask_type="rainy",
         out_png=img_dir / "distance_iqr_medians_rainy_GTvsSOL_vs_GTvsIDW.png",
-        automatic_vertical_scaling=auto_vertical_scaling,
-        vertical_scale=vertical_scale,
+        automatic_vertical_scaling=auto_scale,
+        vertical_scale=vscale_f,
     )
-    plot_distance_median_iqr(
+    plot_distance_iqr_medians(
         dist_labels=dist_labels,
-        p50_sol=p50_sol_non,
-        p25_sol=p25_sol_non,
-        p75_sol=p75_sol_non,
-        p50_idw=p50_idw_non,
-        p25_idw=p25_idw_non,
-        p75_idw=p75_idw_non,
-        gt_label=gt_label_plot,
+        medians_sol_by_bin=medians_nonrainy_sol_by_bin,
+        medians_idw_by_bin=medians_nonrainy_idw_by_bin,
         sol_label=sol_label_plot,
         idw_label=idw_label_plot,
         mask_type="nonrainy",
         out_png=img_dir / "distance_iqr_medians_nonrainy_GTvsSOL_vs_GTvsIDW.png",
-        automatic_vertical_scaling=auto_vertical_scaling,
-        vertical_scale=vertical_scale,
+        automatic_vertical_scaling=auto_scale,
+        vertical_scale=vscale_f,
     )
 
     print(f"Wrote Excel: {xlsx_path}")
