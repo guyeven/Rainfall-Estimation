@@ -1,0 +1,19 @@
+input:
+  est_dir: HundredPatches/est_dir
+  file_pattern: est_input_*.json
+  recursive: false
+output:
+  out_dir: HundredPatches/sol_dir_const_init
+  warn: true
+optimization:
+  lambda: 0.01
+  mu: 1.0e-06
+  epsilon: 0.01
+  R0: 0.1
+  maxiter: 300
+  R0_from_IDW: false
+tolerances:
+  ftol: 1.0e-05
+  gtol: 0.0001
+  maxls: 20
+

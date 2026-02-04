@@ -1,0 +1,358 @@
+from io import BytesIO
+from typing import Dict, Optional, Tuple
+
+import h5py
+import matplotlib
+
+matplotlib.use("Agg")  # non-interactive backend
+import matplotlib.pyplot as plt
+import numpy as np
+from fastapi import Body, FastAPI, HTTPException, Query, Response
+from fastapi.middleware.cors import CORSMiddleware
+from scipy.ndimage import gaussian_filter, spline_filter
+
+MISSING_SENTINEL = -9e6
+UPSAMPLE_FACTOR = 16  # 2 km -> 125 m
+
+app = FastAPI(title="Rain Patch Smoothing Benchmark")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# patch_id -> {"source_file", "x_min", "x_max", "y_min", "y_max"}
+_BENCHMARK_PATCHES: Dict[str, dict] = {}
+_LAST_DETECTION_PARAMS: Optional[dict] = None
+
+
+# ----------------------------------------------------------------------
+# Data loading and patch extraction
+# ----------------------------------------------------------------------
+def _load_rain(path: str) -> np.ndarray:
+    """Load rainfall from ODIM HDF5 and replace missing with 0."""
+    try:
+        f = h5py.File(path, "r")
+    except OSError:
+        raise HTTPException(status_code=404, detail=f"HDF5 file not found: {path}")
+    with f:
+        data = np.array(f["/dataset1/data1/data"], dtype=np.float32)
+    data[data <= MISSING_SENTINEL] = 0.0
+    return data
+
+
+def _get_patch_subarray(patch_id: str) -> np.ndarray:
+    if patch_id not in _BENCHMARK_PATCHES:
+        raise HTTPException(
+            status_code=404, detail="Patch not found. Load patches first."
+        )
+    p = _BENCHMARK_PATCHES[patch_id]
+    rain = _load_rain(p["source_file"])
+    return rain[p["y_min"] : p["y_max"] + 1, p["x_min"] : p["x_max"] + 1]
+
+
+# ----------------------------------------------------------------------
+# Gaussian: true subpixel-resolved smoothing (fine grid)
+# ----------------------------------------------------------------------
+def _gaussian_subpixel(
+    coarse: np.ndarray, sigma_raw: float
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Gaussian smoothing at 125 m resolution.
+
+    coarse : 2D array on coarse grid (2 km pixels)
+    sigma_raw : sigma in coarse pixels (2 km units)
+
+    Returns
+    -------
+    raw_fine   : fine grid (125 m), piecewise-constant from coarse
+    smooth_fine: fine grid, Gaussian-smoothed
+    diff_fine  : raw_fine - smooth_fine
+    """
+    coarse = np.asarray(coarse, dtype=np.float32)
+    H, W = coarse.shape
+    R = UPSAMPLE_FACTOR
+
+    # Clamp sigma in raw pixels: [1/16, 1]
+    sigma_raw = float(sigma_raw)
+    sigma_raw = max(1.0 / R, min(1.0, sigma_raw))
+
+    # Upsample coarse -> fine: each coarse pixel becomes R x R fine pixels
+    raw_fine = np.repeat(np.repeat(coarse, R, axis=0), R, axis=1)
+
+    # Sigma in fine pixels
+    sigma_fine = sigma_raw * R
+
+    # Gaussian on fine grid
+    smooth_fine = gaussian_filter(raw_fine, sigma=sigma_fine, mode="nearest")
+
+    # Mass conservation: physical rain (sum / R^2) should match coarse sum
+    sum_coarse = float(coarse.sum())
+    sum_fine = float(smooth_fine.sum())
+    if sum_coarse > 0.0 and sum_fine > 0.0:
+        target_sum_fine = sum_coarse * (R * R)
+        scale = target_sum_fine / sum_fine
+        smooth_fine *= scale
+    # If sum_coarse == 0 or sum_fine == 0, leave as-is.
+
+    diff_fine = raw_fine - smooth_fine
+    return raw_fine.astype(np.float32), smooth_fine.astype(np.float32), diff_fine.astype(
+        np.float32
+    )
+
+
+# ----------------------------------------------------------------------
+# B-spline: coarse grid smoothing
+# ----------------------------------------------------------------------
+def _bspline_smoothing(
+    coarse: np.ndarray, iterations_param: float
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    B-spline smoothing on the coarse grid.
+
+    iterations_param : real; interpreted as integer iteration count in [1, 20].
+    """
+    coarse = np.asarray(coarse, dtype=np.float32)
+    iters = int(round(iterations_param))
+    iters = max(1, min(20, iters))
+
+    sm = coarse
+    for _ in range(iters):
+        sm = spline_filter(sm, order=3, mode="nearest")
+    diff = coarse - sm
+    return coarse.astype(np.float32), sm.astype(np.float32), diff.astype(np.float32)
+
+
+# ----------------------------------------------------------------------
+# Helpers for plots and stats
+# ----------------------------------------------------------------------
+def _fields_for_plots(
+    patch_id: str, method: str, param: float
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float, float]:
+    """
+    Arrays and shared vmin/vmax for plotting.
+
+    Gaussian:
+      - raw_plot : coarse grid (original patch)
+      - smooth   : fine grid (125 m)
+      - diff     : fine grid
+
+    B-spline:
+      - raw_plot, smooth, diff all on the coarse grid.
+    """
+    coarse = _get_patch_subarray(patch_id)
+
+    if method == "gaussian":
+        raw_fine, smooth_fine, diff_fine = _gaussian_subpixel(coarse, param)
+        raw_plot = coarse
+
+        vmin = float(
+            min(raw_plot.min(), smooth_fine.min(), diff_fine.min())
+        )
+        vmax = float(
+            max(raw_plot.max(), smooth_fine.max(), diff_fine.max())
+        )
+        if vmin == vmax:
+            vmin -= 0.5
+            vmax += 0.5
+        return raw_plot, smooth_fine, diff_fine, vmin, vmax
+
+    # B-spline: everything on coarse grid
+    raw_c, smooth_c, diff_c = _bspline_smoothing(coarse, param)
+    vmin = float(min(raw_c.min(), smooth_c.min(), diff_c.min()))
+    vmax = float(max(raw_c.max(), smooth_c.max(), diff_c.max()))
+    if vmin == vmax:
+        vmin -= 0.5
+        vmax += 0.5
+    return raw_c, smooth_c, diff_c, vmin, vmax
+
+
+def _fields_for_stats(
+    patch_id: str, method: str, param: float
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """
+    Arrays for stats and the effective upsample factor.
+
+    Gaussian:
+      - raw, smooth, diff : fine grid (125 m)
+      - up_factor = 16
+
+    B-spline:
+      - raw, smooth, diff : coarse grid
+      - up_factor = 1
+    """
+    coarse = _get_patch_subarray(patch_id)
+
+    if method == "gaussian":
+        raw_fine, smooth_fine, diff_fine = _gaussian_subpixel(coarse, param)
+        return raw_fine, smooth_fine, diff_fine, UPSAMPLE_FACTOR
+
+    raw_c, smooth_c, diff_c = _bspline_smoothing(coarse, param)
+    return raw_c, smooth_c, diff_c, 1
+
+
+def _make_image(arr: np.ndarray, title: str, vmin: float, vmax: float) -> bytes:
+    """
+    Render numpy array to PNG with a shared color scale.
+
+    PNG is always 400x400 pixels (4x4 inches at 100 DPI).
+    - For coarse arrays (~25x25), each data cell becomes a large block.
+    - For fine arrays (~400x400), each data cell is ~1 PNG pixel,
+      so you see the 125 m grid detail.
+    """
+    fig, ax = plt.subplots(figsize=(4, 4), dpi=100)
+    im = ax.imshow(
+        arr,
+        origin="upper",
+        vmin=vmin,
+        vmax=vmax,
+        interpolation="nearest",  # avoid extra smoothing in the PNG
+    )
+    fig.colorbar(im, ax=ax, label="mm")
+    ax.set_title(title)
+    ax.set_xlabel("x (pixels)")
+    ax.set_ylabel("y (pixels)")
+    fig.tight_layout()
+    buf = BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def _stats(arr: np.ndarray, up_factor: int) -> dict:
+    """
+    L¹, L∞, L¹/area in *coarse-pixel physical units*.
+
+    If arr is fine-grid (up_factor=16), divide by up_factor² so that
+    L¹ corresponds to the integral over coarse pixels.
+    """
+    a = np.abs(arr)
+    l1_phys = float(a.sum()) / float(up_factor * up_factor)
+    linf = float(a.max())
+    area_coarse = float(arr.size) / float(up_factor * up_factor)
+    l1_per_area = float(l1_phys / area_coarse) if area_coarse > 0 else 0.0
+    return {"l1": l1_phys, "linf": linf, "l1_per_area": l1_per_area}
+
+
+# ----------------------------------------------------------------------
+# API endpoints
+# ----------------------------------------------------------------------
+@app.post("/benchmark/load_patches")
+def load_patches(body: dict = Body(...)):
+    """
+    Accept selected_patches.json.
+
+    Either:
+      - a bare list of patch objects, or
+      - {"patches": [...], "detection_params": {...}}.
+
+    Each patch object must have:
+      id, source_file, x_min, x_max, y_min, y_max
+    """
+    global _LAST_DETECTION_PARAMS
+    _BENCHMARK_PATCHES.clear()
+
+    if isinstance(body, list):
+        patches = body
+        detection_params = None
+    else:
+        patches = body.get("patches", [])
+        detection_params = body.get("detection_params")
+
+    if not isinstance(patches, list):
+        raise HTTPException(status_code=400, detail="'patches' must be a list.")
+
+    for p in patches:
+        try:
+            pid = str(p["id"])
+            info = {
+                "source_file": p["source_file"],
+                "x_min": int(p["x_min"]),
+                "x_max": int(p["x_max"]),
+                "y_min": int(p["y_min"]),
+                "y_max": int(p["y_max"]),
+            }
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=400, detail=f"Missing key in patch: {exc!s}"
+            )
+        _BENCHMARK_PATCHES[pid] = info
+
+    _LAST_DETECTION_PARAMS = detection_params
+    return {"count": len(_BENCHMARK_PATCHES), "patch_ids": sorted(_BENCHMARK_PATCHES.keys())}
+
+
+@app.get("/benchmark/patch_list")
+def patch_list() -> dict:
+    """Return list of available patch_ids and their bounds."""
+    out = []
+    for pid, p in _BENCHMARK_PATCHES.items():
+        out.append(
+            {
+                "patch_id": pid,
+                "source_file": p["source_file"],
+                "x_min": p["x_min"],
+                "x_max": p["x_max"],
+                "y_min": p["y_min"],
+                "y_max": p["y_max"],
+            }
+        )
+    return {"patches": out, "detection_params": _LAST_DETECTION_PARAMS}
+
+
+@app.get("/benchmark/stats/{patch_id}")
+def stats_endpoint(
+    patch_id: str,
+    method: str = Query("gaussian"),
+    # Gaussian: sigma_raw in coarse pixels, clamped to [1/16, 1] internally.
+    # B-spline: iteration count, rounded and clamped [1, 20].
+    max_components: float = Query(1.0 / 16.0, ge=1.0 / 16.0, le=20.0),
+):
+    raw, smooth, diff, up = _fields_for_stats(patch_id, method, max_components)
+    return {
+        "raw": _stats(raw, up),
+        "smooth": _stats(smooth, up),
+        "diff": _stats(diff, up),
+    }
+
+
+@app.get("/benchmark/patch_image/{patch_id}")
+def patch_image(
+    patch_id: str,
+    method: str = Query("gaussian"),
+    max_components: float = Query(1.0 / 16.0, ge=1.0 / 16.0, le=20.0),
+):
+    # Raw is always shown on the coarse grid
+    coarse = _get_patch_subarray(patch_id)
+    # Get vmin/vmax that are consistent with the smoothed/diff fields
+    _, smooth, diff, vmin, vmax = _fields_for_plots(patch_id, method, max_components)
+    png = _make_image(coarse, "Raw", vmin, vmax)
+    return Response(png, media_type="image/png")
+
+
+@app.get("/benchmark/smooth_image/{patch_id}")
+def smooth_image(
+    patch_id: str,
+    method: str = Query("gaussian"),
+    max_components: float = Query(1.0 / 16.0, ge=1.0 / 16.0, le=20.0),
+):
+    raw_plot, smooth, diff, vmin, vmax = _fields_for_plots(
+        patch_id, method, max_components
+    )
+    png = _make_image(smooth, f"Smoothed ({method})", vmin, vmax)
+    return Response(png, media_type="image/png")
+
+
+@app.get("/benchmark/diff_image/{patch_id}")
+def diff_image(
+    patch_id: str,
+    method: str = Query("gaussian"),
+    max_components: float = Query(1.0 / 16.0, ge=1.0 / 16.0, le=20.0),
+):
+    raw_plot, smooth, diff, vmin, vmax = _fields_for_plots(
+        patch_id, method, max_components
+    )
+    png = _make_image(diff, "Difference (raw - smooth)", vmin, vmax)
+    return Response(png, media_type="image/png")

@@ -1,0 +1,205 @@
+Below is a **clear, correct, step-by-step HOW-TO** explaining how to run your entire Patch Explorer + Smoothen system, based on the exact directory structure you attached.
+All paths, commands, ports, and processes match *your* project layout.
+
+
+
+---
+
+# 🌧️ **RAIN PATCH EXPLORER — HOW TO RUN EVERYTHING**
+
+This guide explains **exactly how to start all programs**, in the correct order, using the directory layout shown above.
+It covers:
+
+1. The **detection backend** (`backend/app.py`)
+2. The **smoothen backend** (`backend/benchmark_app.py`)
+3. The **frontend UI** (`frontend/`)
+4. How to **verify everything works**
+
+No guessing, no ambiguity — follow this once and everything will run.
+
+---
+
+# 📁 **1. Directory Structure (relevant parts)**
+
+From your system:
+
+```
+Patch-Generator/
+│
+├── backend/
+│   ├── app.py                ← Detection backend (main)
+│   ├── benchmark_app.py      ← Smoothen backend
+│   ├── data/
+│   │    ├── raw/             ← ODIM HDF5 radar files
+│   │    ├── cities_europe...
+│   │    ├── benchmarks/ …
+│   ├── env/                  ← Python virtual environment
+│   └── requirements.txt
+│
+└── frontend/
+    ├── index.html
+    ├── package.json
+    ├── src/
+    └── node_modules/
+```
+
+This matches your attached structure.
+Both backends live inside **backend/** and use the same environment.
+
+---
+
+# 🛑 **2. BEFORE STARTING — STOP EVERYTHING**
+
+Open **any terminal** and run:
+
+```bash
+pkill -f uvicorn
+pkill -f python
+```
+
+Close all terminals that were running servers.
+
+This guarantees a clean start.
+
+---
+
+# ▶️ **3. START BACKEND #1 — Detection Server**
+
+Used by the **Detection tab** of the UI.
+
+### Terminal 1:
+
+```bash
+cd ~/Projects/RainfallMap/Patch-Generator/backend
+source env/bin/activate       # optional if you want the venv active
+uvicorn app:app --reload --host 127.0.0.1 --port 8200
+```
+
+You should see:
+
+```
+Uvicorn running on http://127.0.0.1:8200
+Application startup complete.
+```
+
+### Test in browser:
+
+`http://127.0.0.1:8200/docs`
+
+If it loads the FastAPI documentation → OK.
+
+---
+
+# ▶️ **4. START BACKEND #2 — Smoothen Server**
+
+Used by the **Smoothen tab** of the UI.
+
+### Terminal 2:
+
+```bash
+cd ~/Projects/RainfallMap/Patch-Generator/backend
+source env/bin/activate       # optional
+uvicorn benchmark_app:app --reload --host 127.0.0.1 --port 8201
+```
+
+You should see:
+
+```
+Uvicorn running on http://127.0.0.1:8201
+Application startup complete.
+```
+
+### Test:
+
+`http://127.0.0.1:8201/docs`
+
+Important:
+If this does **not** load → Smoothen panel will freeze on “Loading…”.
+
+---
+
+# ▶️ **5. START FRONTEND UI (Vite)**
+
+Your project uses **Vite**, not Create-React-App.
+
+### Terminal 3:
+
+```bash
+cd ~/Projects/RainfallMap/Patch-Generator/frontend
+npm install        # first time only
+npm run dev
+```
+
+This starts the UI on:
+
+```
+http://localhost:5173
+```
+
+(or another port if 5173 is taken — Vite will say which).
+
+---
+
+# 🧪 **6. TEST THE WHOLE PIPELINE**
+
+## ✓ Detection Tab
+
+1. Open `http://localhost:5173`
+2. Choose radar files or let backend auto-select
+3. Set thresholds etc.
+4. Click **Detect patches**
+5. You should see patch list and details.
+
+## ✓ Export Selection
+
+1. Select some patches with the “Keep” button
+2. Click **Export selected (JSON)**
+
+This produces `selected_patches.json`.
+
+## ✓ Smoothen Tab
+
+1. Switch to **Smoothen** tab
+   *(tab name formerly “Benchmark”)*
+2. Load the exported JSON
+3. Click **Load patches**
+4. Preview three panels:
+
+   * Raw
+   * Smoothed (gaussian/b-spline)
+   * Difference
+5. Under each you will see:
+
+   * **L¹**
+   * **L^∞**
+   * **L¹/area**
+
+If any of these do not appear:
+
+* Check that backend #2 prints log messages for:
+
+  ```
+  POST /benchmark/load_patches
+  GET /benchmark/patch_image
+  GET /benchmark/stats
+  ```
+
+---
+
+# 🔍 **7. Quick Troubleshooting**
+
+| Problem                          | Fix                                                           |
+| -------------------------------- | ------------------------------------------------------------- |
+| Smoothen tab stuck on “Loading…” | Smoothen backend (8201) not running                           |
+| No stats under images            | `/benchmark/stats/...` failing → check backend logs           |
+| Images load but blank            | HDF5 path wrong; ensure JSON contains correct `"source_file"` |
+| Frontend not starting            | Use `npm run dev`, not `npm start`                            |
+
+---
+
+# 🎉 **DONE**
+
+You now have a complete, correct, clean HOW-TO for running your whole system end-to-end.
+
+If you want, I can generate a **one-page README.md** to drop into your repository.
+

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Rain Patch Map</title>
+
+    <!-- Leaflet CSS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+      #map {
+        width: 100%;
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <!-- Leaflet JS -->
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+
+    <script>
+      const BACKEND_BASE_URL = "http://127.0.0.1:8200";
+      const PATCH_ID =
+       "RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310100_patch000"; // use one from /patches
+
+      async function init() {
+        // 1. Get geo info from your backend
+        const res = await fetch(
+          `${BACKEND_BASE_URL}/patch_geo/${encodeURIComponent(PATCH_ID)}`
+        );
+        if (!res.ok) {
+          console.error("Failed to fetch patch_geo:", res.status, res.statusText);
+          return;
+        }
+        const geo = await res.json();
+
+        // 2. Create map
+        const map = L.map("map");
+
+        // Use tile_url_template from backend. It has {s}, {z}, {x}, {y}
+        const tileUrlTemplate = geo.tile_url_template || "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+        L.tileLayer(tileUrlTemplate, {
+          maxZoom: 18,
+          subdomains: ["a", "b", "c"],
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // 3. Fit map to the larger bounding box
+        const mapBounds = L.latLngBounds(
+          [geo.map_lat_min, geo.map_lon_min],
+          [geo.map_lat_max, geo.map_lon_max]
+        );
+        map.fitBounds(mapBounds);
+
+        // 4. Draw the patch rectangle
+        const patchBounds = L.latLngBounds(
+          [geo.patch_lat_min, geo.patch_lon_min],
+          [geo.patch_lat_max, geo.patch_lon_max]
+        );
+
+        L.rectangle(patchBounds, {
+          weight: 2
+        }).addTo(map);
+
+        // 5. Mark patch center
+// Extract date/time and patch number from PATCH_ID
+function formatPatchLabel(id) {
+  // Example ID:
+  // RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310100_patch000
+  const parts = id.split("_");
+  const datetimeStr = parts[parts.length - 2]; // e.g. "202301310100"
+  const patchStr = parts[parts.length - 1].replace("patch", "#"); // patch000 -> #000
+
+  // Convert datetime string to readable form
+  const yyyy = datetimeStr.slice(0, 4);
+  const mm = datetimeStr.slice(4, 6);
+  const dd = datetimeStr.slice(6, 8);
+  const hh = datetimeStr.slice(8, 10);
+  const min = datetimeStr.slice(10, 12);
+
+  return `${yyyy}-${mm}-${dd} ${hh}:${min} • ${patchStr}`;
+}
+
+const label = formatPatchLabel(PATCH_ID);
+
+L.marker([geo.center_lat, geo.center_lon])
+  .addTo(map)
+  .bindPopup(label)
+  .openPopup();
+
+      }
+
+      init().catch((err) => {
+        console.error("Error initializing map:", err);
+      });
+    </script>
+  </body>
+</html>

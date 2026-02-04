@@ -1,0 +1,300 @@
+from io import BytesIO
+from typing import Dict, Optional, Tuple
+
+import h5py
+import matplotlib
+
+matplotlib.use("Agg")  # headless backend for server use
+import matplotlib.pyplot as plt
+import numpy as np
+from fastapi import Body, FastAPI, HTTPException, Query, Response
+from fastapi.middleware.cors import CORSMiddleware
+from scipy.ndimage import gaussian_filter, spline_filter
+
+MISSING_SENTINEL = -9e6
+
+# 2 km -> 125 m grid = factor 16 per dimension
+UPSAMPLE_FACTOR = 16
+
+app = FastAPI(title="Rain Patch Smoothing Benchmark")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# patch_id -> {"source_file", "x_min", "x_max", "y_min", "y_max"}
+_BENCHMARK_PATCHES: Dict[str, dict] = {}
+_LAST_DETECTION_PARAMS: Optional[dict] = None
+
+
+def _load_rain(path: str) -> np.ndarray:
+    """Load rainfall from ODIM HDF5 and replace missing with 0."""
+    try:
+        f = h5py.File(path, "r")
+    except OSError:
+        raise HTTPException(status_code=404, detail=f"HDF5 file not found: {path}")
+    with f:
+        data = np.array(f["/dataset1/data1/data"], dtype=np.float32)
+    # Treat sentinel as missing -> 0 mm
+    data[data <= MISSING_SENTINEL] = 0.0
+    return data
+
+
+def _smooth_patch(arr: np.ndarray, method: str, param: float) -> np.ndarray:
+    """
+    Smooth array using Gaussian filter or repeated B-spline on the *coarse* grid.
+
+    method:
+      - "gaussian":
+          param = sigma in *raw pixel units* (each pixel = 2 km).
+          We:
+            * clamp sigma_raw to [1/16, 1] pixels,
+            * upsample by 16x in each direction (2 km -> 125 m),
+            * apply Gaussian on the fine grid (sigma_fine = sigma_raw * 16),
+            * renormalise to conserve total mass on the coarse grid,
+            * average each 16x16 fine block back to one coarse pixel.
+      - "bspline":
+          param = number of iterations (rounded to int, clamped to [1, 20]),
+          applied directly on the coarse grid.
+    """
+    arr = np.asarray(arr, dtype=np.float32)
+
+    if method == "gaussian":
+        # --- 1) interpret and clamp sigma on the coarse (2 km) grid ---
+        sigma_raw = float(param)
+        # enforce user contract: sigma in [1/16, 1] coarse pixels
+        sigma_raw = max(1.0 / UPSAMPLE_FACTOR, min(1.0, sigma_raw))
+
+        # --- 2) build fine grid by repeating each coarse pixel 16x16 times ---
+        # arr shape: (H, W) on 2 km grid
+        H, W = arr.shape
+        R = UPSAMPLE_FACTOR
+
+        # piecewise-constant upsampling: each coarse pixel becomes a 16x16 block
+        fine = np.repeat(np.repeat(arr, R, axis=0), R, axis=1)
+
+        # --- 3) convert sigma from coarse pixels to fine pixels ---
+        # one coarse pixel = 16 fine pixels in each axis
+        sigma_fine = sigma_raw * R
+
+        # --- 4) apply Gaussian on the fine grid ---
+        smooth_fine = gaussian_filter(fine, sigma=sigma_fine, mode="nearest")
+
+        # --- 5) mass-conserving rescaling (on the coarse *integral*) ---
+        # We want: sum over coarse smoothed field == sum over coarse original.
+        # Coarse total "mass" ~ sum(arr) * A_coarse
+        # Fine total "mass"  ~ sum(smooth_fine) * A_fine, A_fine = A_coarse / R^2
+        # After block-averaging back, coarse_smooth_sum = sum(smooth_fine) / R^2
+        # So to enforce coarse_smooth_sum == sum(arr), we need:
+        #   sum(smooth_fine) = sum(arr) * R^2
+        sum_coarse = float(arr.sum())
+        sum_fine = float(smooth_fine.sum())
+
+        if sum_coarse > 0.0 and sum_fine > 0.0:
+            target_sum_fine = sum_coarse * (R * R)
+            scale = target_sum_fine / sum_fine
+            smooth_fine *= scale
+        # If sum_coarse == 0, everything is dry; Gaussian already preserves zeros.
+        # If sum_fine == 0 (degenerate), also just leave as-is.
+
+        # --- 6) average back each 16x16 block to recover coarse grid values ---
+        # fine shape = (H*R, W*R) -> (H, R, W, R); mean over fine axes (R, R).
+        smooth_coarse = smooth_fine.reshape(H, R, W, R).mean(axis=(1, 3))
+
+        return smooth_coarse.astype(np.float32)
+
+    if method == "bspline":
+        # Interpret param as iteration count on the coarse grid
+        iterations = max(1, min(20, int(round(param))))
+        sm = arr
+        for _ in range(iterations):
+            sm = spline_filter(sm, order=3, mode="nearest")
+        return sm.astype(np.float32)
+
+    raise HTTPException(status_code=400, detail=f"Unknown method: {method}")
+
+
+def _get_patch_subarray(patch_id: str) -> np.ndarray:
+    if patch_id not in _BENCHMARK_PATCHES:
+        raise HTTPException(
+            status_code=404, detail="Patch not found. Load patches first."
+        )
+    p = _BENCHMARK_PATCHES[patch_id]
+    rain = _load_rain(p["source_file"])
+    return rain[p["y_min"] : p["y_max"] + 1, p["x_min"] : p["x_max"] + 1]
+
+
+def _raw_smooth_diff_with_scale(
+    patch_id: str, method: str, param: float
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float, float]:
+    """
+    Compute raw, smooth, diff and shared vmin/vmax for plotting.
+
+    Note: raw and smooth are always on the same coarse grid,
+    so diff = raw - smooth is well-defined.
+    """
+    sub = _get_patch_subarray(patch_id)
+    smooth = _smooth_patch(sub, method, param)
+    diff = sub - smooth
+    vmin = float(min(sub.min(), smooth.min(), diff.min()))
+    vmax = float(max(sub.max(), smooth.max(), diff.max()))
+    if vmin == vmax:
+        vmin -= 0.5
+        vmax += 0.5
+    return sub, smooth, diff, vmin, vmax
+
+
+def _make_image(arr: np.ndarray, title: str, vmin: float, vmax: float) -> bytes:
+    fig, ax = plt.subplots(figsize=(4, 4), dpi=100)
+    im = ax.imshow(arr, origin="upper", vmin=vmin, vmax=vmax)
+    fig.colorbar(im, ax=ax, label="mm")
+    ax.set_title(title)
+    ax.set_xlabel("x (pixels)")
+    ax.set_ylabel("y (pixels)")
+    fig.tight_layout()
+    buf = BytesIO()
+    fig.savefig(buf, format="png")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def _stats(arr: np.ndarray) -> dict:
+    """L¹, L∞, L¹/area over |arr|."""
+    a = np.abs(arr)
+    l1 = float(a.sum())
+    linf = float(a.max())
+    area = int(arr.size)
+    return {
+        "l1": l1,
+        "linf": linf,
+        "l1_per_area": float(l1 / area) if area > 0 else 0.0,
+    }
+
+
+@app.post("/benchmark/load_patches")
+def load_patches(body: dict = Body(...)):
+    """
+    Accept selected_patches.json.
+
+    Either:
+      - a bare list of patch objects, or
+      - {"patches": [...], "detection_params": {...}}.
+    """
+    global _LAST_DETECTION_PARAMS
+    _BENCHMARK_PATCHES.clear()
+
+    # Allow both formats: plain list or {"patches": [...], ...}
+    if isinstance(body, list):
+        patches = body
+        detection_params = None
+    else:
+        patches = body.get("patches", [])
+        detection_params = body.get("detection_params")
+
+    if not isinstance(patches, list):
+        raise HTTPException(status_code=400, detail="'patches' must be a list.")
+
+    for p in patches:
+        try:
+            # IMPORTANT: use the original key name from your JSON
+            pid = str(p["id"])
+            info = {
+                "source_file": p["source_file"],
+                "x_min": int(p["x_min"]),
+                "x_max": int(p["x_max"]),
+                "y_min": int(p["y_min"]),
+                "y_max": int(p["y_max"]),
+            }
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Missing key in patch: {exc!s}",
+            )
+        _BENCHMARK_PATCHES[pid] = info
+
+    _LAST_DETECTION_PARAMS = detection_params
+    return {
+        "count": len(_BENCHMARK_PATCHES),
+        "patch_ids": sorted(_BENCHMARK_PATCHES.keys()),
+    }
+
+
+@app.get("/benchmark/patch_list")
+def patch_list() -> dict:
+    """Return list of available patch_ids and their bounds."""
+    out = []
+    for pid, p in _BENCHMARK_PATCHES.items():
+        out.append(
+            {
+                "patch_id": pid,
+                "source_file": p["source_file"],
+                "x_min": p["x_min"],
+                "x_max": p["x_max"],
+                "y_min": p["y_min"],
+                "y_max": p["y_max"],
+            }
+        )
+    return {"patches": out, "detection_params": _LAST_DETECTION_PARAMS}
+
+
+@app.get("/benchmark/stats/{patch_id}")
+def stats_endpoint(
+    patch_id: str,
+    method: str = Query("gaussian"),
+    max_components: float = Query(1.0, ge=0.0625, le=20.0),
+):
+    """
+    max_components is interpreted as:
+      - Gaussian: sigma_raw in coarse pixels (2 km), clamped to [1/16, 1].
+      - B-spline: iteration count, rounded and clamped to [1, 20].
+    """
+    sub, smooth, diff, _, _ = _raw_smooth_diff_with_scale(
+        patch_id, method, max_components
+    )
+    return {
+        "raw": _stats(sub),
+        "smooth": _stats(smooth),
+        "diff": _stats(diff),
+    }
+
+
+@app.get("/benchmark/patch_image/{patch_id}")
+def patch_image(
+    patch_id: str,
+    method: str = Query("gaussian"),
+    max_components: float = Query(1.0, ge=0.0625, le=20.0),
+):
+    sub, smooth, diff, vmin, vmax = _raw_smooth_diff_with_scale(
+        patch_id, method, max_components
+    )
+    png = _make_image(sub, "Raw", vmin, vmax)
+    return Response(png, media_type="image/png")
+
+
+@app.get("/benchmark/smooth_image/{patch_id}")
+def smooth_image(
+    patch_id: str,
+    method: str = Query("gaussian"),
+    max_components: float = Query(1.0, ge=0.0625, le=20.0),
+):
+    sub, smooth, diff, vmin, vmax = _raw_smooth_diff_with_scale(
+        patch_id, method, max_components
+    )
+    png = _make_image(smooth, f"Smoothed ({method})", vmin, vmax)
+    return Response(png, media_type="image/png")
+
+
+@app.get("/benchmark/diff_image/{patch_id}")
+def diff_image(
+    patch_id: str,
+    method: str = Query("gaussian"),
+    max_components: float = Query(1.0, ge=0.0625, le=20.0),
+):
+    sub, smooth, diff, vmin, vmax = _raw_smooth_diff_with_scale(
+        patch_id, method, max_components
+    )
+    png = _make_image(diff, "Difference", vmin, vmax)
+    return Response(png, media_type="image/png")
