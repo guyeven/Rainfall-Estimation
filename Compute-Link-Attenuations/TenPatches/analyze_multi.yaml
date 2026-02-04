@@ -1,0 +1,64 @@
+# ============================================================
+# analyze_multi.yaml (DICT-style solvers; paths relative to this YAML)
+# ============================================================
+
+input:
+  # Ground truth directory
+  gt_dir: "gt_dir"
+  gt_prefix: "gt"
+
+  # Directory containing est_input_*.json (needed for link geometry & distances)
+  est_input_dir: "est_dir"
+
+  # Multiple solver output folders (each should contain est_input_*_solution.npz)
+  solvers:
+    opt_idw:
+      name: "opt_idw"
+      label: "OPT_IDW"
+      sol_dir: "out_dir_idw_init_001"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_0p1:
+      name: "opt_0p1"
+      label: "OPT_0p1"
+      sol_dir: "out_dir_no_idw_init_002"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    idw:
+      name: "idw"
+      label: "IDW"
+      sol_dir: "sol_dir_idw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+data:
+  gt_key_preference: ["R_gt", "rain", "gt"]
+  allow_shape_mismatch: false
+
+rain:
+  threshold_mmph: 0.6
+
+coverage:
+  enabled: true
+  bins: [0, 1, 2, 3, 4, "5+"]
+
+distance:
+  # Distance-to-3rd-closest-link bins (meters)
+  bin_edges_m: [125, 375, 750, 1500, 3125]
+  max_candidates: 64
+
+plots:
+  # Only final aggregate plots (IQR-of-medians), no per-patch plots
+  skip_patch_plots: true
+
+  # Vertical scaling behavior
+  automatic_vertical_scaling: true
+  # If you set automatic_vertical_scaling: false, you must set:
+  # vertical_scale: 0.35
+
+output:
+  out_dir: "batch_analyze_output_multi"
+  images_subdir: "images"
+  excel_filename: "coverage_stats_long_multi.xlsx"
