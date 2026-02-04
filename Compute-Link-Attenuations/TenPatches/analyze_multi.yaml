@@ -15,14 +15,14 @@ input:
     opt_idw:
       name: "opt_idw"
       label: "OPT_IDW"
-      sol_dir: "out_dir_idw_init_001"
+      sol_dir: "out_dir_idw_init"
       sol_prefix: "est"
       sol_key_preference: ["R_hat"]
 
     opt_0p1:
       name: "opt_0p1"
       label: "OPT_0p1"
-      sol_dir: "out_dir_no_idw_init_002"
+      sol_dir: "out_dir_no_idw_init"
       sol_prefix: "est"
       sol_key_preference: ["R_hat"]
 
@@ -46,12 +46,19 @@ coverage:
 
 distance:
   # Distance-to-3rd-closest-link bins (meters)
-  bin_edges_m: [125, 375, 750, 1500, 3125]
-  max_candidates: 64
+  bin_edges_m: [125, 375, 750, 1500, 3125, 6000, 9000, 12000]
+  # max_candidates: 64
+  method: sampled_points
+  sample_spacing_m: 250.0
+  k_query_samples: 48
+  chunk_size: 8000
+  max_samples_per_link: 200
 
 plots:
   # Only final aggregate plots (IQR-of-medians), no per-patch plots
   skip_patch_plots: true
+  
+  bin_spacing: 1.35
 
   # Vertical scaling behavior
   automatic_vertical_scaling: true
