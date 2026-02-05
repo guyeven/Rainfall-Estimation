@@ -15,14 +15,21 @@ input:
     opt_idw:
       name: "opt_idw"
       label: "OPT_IDW"
-      sol_dir: "out_dir_idw_init"
+      sol_dir: "sol_dir_opt_idw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_ildw:
+      name: "opt_ildw"
+      label: "OPT_ILDW"
+      sol_dir: "sol_dir_opt_ildw"
       sol_prefix: "est"
       sol_key_preference: ["R_hat"]
 
     opt_0p1:
       name: "opt_0p1"
       label: "OPT_0p1"
-      sol_dir: "out_dir_no_idw_init"
+      sol_dir: "sol_dir_opt_0p1"
       sol_prefix: "est"
       sol_key_preference: ["R_hat"]
 
@@ -30,6 +37,13 @@ input:
       name: "idw"
       label: "IDW"
       sol_dir: "sol_dir_idw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    ildw:
+      name: "ildw"
+      label: "ILDW"
+      sol_dir: "sol_dir_ildw"
       sol_prefix: "est"
       sol_key_preference: ["R_hat"]
 
@@ -68,4 +82,4 @@ plots:
 output:
   out_dir: "batch_analyze_output_multi"
   images_subdir: "images"
-  excel_filename: "coverage_stats_long_multi.xlsx"
+  excel_filename: "stats_multi.xlsx"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# solve_rain_lbfgsb.py
+# solve_rain_lbfgsb_ildw_init.py
 #
 # Rainfall inversion from link attenuations using SciPy L-BFGS-B.
 # Supports:
@@ -35,12 +35,17 @@ import numpy as np
 from scipy.optimize import minimize
 
 
-# Optional: IDW baseline initialisation (shared with batch_analyze)
-# Only required when solve_lbfgsb_and_save is called with R0_from_IDW=True.
+# Optional: IDW/ILDW baseline initialisation (shared with batch_analyze / baselines)
+# Only required when solve_lbfgsb_and_save is called with R0_from_IDW=True or R0_from_ILDW=True.
 try:
     from idw_baseline import idw_field_from_est_input  # type: ignore
 except Exception:
     idw_field_from_est_input = None  # type: ignore
+
+try:
+    from ildw_baseline import ildw_field_from_est_input  # type: ignore
+except Exception:
+    ildw_field_from_est_input = None  # type: ignore
 
 
 # Uses your repo's ITU implementation
@@ -345,8 +350,9 @@ def solve_lbfgsb_and_save(
     maxls: int = 20,
     npz_out: str | Path = "solution.npz",
     warn: bool = True,
-    # --- NEW: optional IDW-based initialisation ---
+    # --- optional IDW/ILDW-based initialisation ---
     R0_from_IDW: bool = False,
+    R0_from_ILDW: bool = False,
     idw_r_max_m: float = 3125.0,
     idw_power: float = 2.0,
     idw_eps_m: float = 1.0,
@@ -359,12 +365,33 @@ def solve_lbfgsb_and_save(
     # Initialisation
     # ----------------------------
     init_method = "constant"
-    if R0_from_IDW:
+
+    if R0_from_ILDW and R0_from_IDW:
+        raise ValueError("Choose exactly one of R0_from_ILDW or R0_from_IDW (not both).")
+
+    # Priority: ILDW if requested, else IDW, else constant.
+    if R0_from_ILDW:
+        init_method = "ildw"
+        if ildw_field_from_est_input is None:
+            raise RuntimeError(
+                "R0_from_ILDW=True but ildw_baseline.py could not be imported. "
+                "Place ildw_baseline.py next to this solver and ensure scipy is installed."
+            )
+        R0_grid, _ = ildw_field_from_est_input(
+            Path(est_input_json),
+            r_max_m=float(idw_r_max_m),
+            power=float(idw_power),
+            eps_m=float(idw_eps_m),
+            default_value=float(idw_default_value),
+        )
+        x0 = np.asarray(R0_grid, dtype=np.float64).reshape(prob.P)
+
+    elif R0_from_IDW:
         init_method = "idw"
         if idw_field_from_est_input is None:
             raise RuntimeError(
                 "R0_from_IDW=True but idw_baseline.py could not be imported. "
-                "Place idw_baseline.py next to solve_rain_lbfgsb.py and ensure scipy is installed."
+                "Place idw_baseline.py next to this solver and ensure scipy is installed."
             )
         R0_grid, _ = idw_field_from_est_input(
             Path(est_input_json),
@@ -374,6 +401,7 @@ def solve_lbfgsb_and_save(
             default_value=float(idw_default_value),
         )
         x0 = np.asarray(R0_grid, dtype=np.float64).reshape(prob.P)
+
     else:
         x0 = np.full(prob.P, float(R0), dtype=np.float64)
 
@@ -435,6 +463,7 @@ def solve_lbfgsb_and_save(
         meta_num_invalid_links=int(np.sum(~prob.valid_links)),
         meta_init_method=str(init_method),
         meta_R0_from_IDW=bool(R0_from_IDW),
+        meta_R0_from_ILDW=bool(R0_from_ILDW),
         meta_idw_r_max_m=float(idw_r_max_m),
         meta_idw_power=float(idw_power),
         meta_idw_eps_m=float(idw_eps_m),
