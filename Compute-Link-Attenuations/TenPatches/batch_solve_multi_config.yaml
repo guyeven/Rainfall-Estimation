@@ -4,32 +4,6 @@ input:
   recursive: false
 
 solvers:
-  opt_idw:
-    name: "opt_idw"
-    label: "OPT_IDW"
-    type: "lbfgsb"
-    module: "solve_rain_lbfgsb"
-    out_dir: "sol_dir_opt_idw"
-
-    optimization:
-      lambda: 0.01
-      mu: 1.0e-06
-      epsilon: 0.01
-      R0: 0.1
-      maxiter: 300
-      R0_from_IDW: true
-
-    tolerances:
-      ftol: 1.0e-05
-      gtol: 1.0e-04
-      maxls: 20
-
-    idw:
-      r_max_m: 15000.0
-      power: 2.0
-      eps_m: 1.0
-      default_value: 0.0
-
   opt_ildw:
     name: "opt_ildw"
     label: "OPT_ILDW"
@@ -50,52 +24,6 @@ solvers:
       ftol: 1.0e-05
       gtol: 1.0e-04
       maxls: 20
-
-    idw:
-      r_max_m: 15000.0
-      power: 2.0
-      eps_m: 1.0
-      default_value: 0.0
-
-  opt_0p1:
-    name: "opt_0p1"
-    label: "OPT_0p1"
-    type: "lbfgsb"
-    module: "solve_rain_lbfgsb"
-    out_dir: "sol_dir_opt_0p1"
-
-    optimization:
-      lambda: 0.01
-      mu: 1.0e-06
-      epsilon: 0.01
-      R0: 0.1
-      maxiter: 300
-      R0_from_IDW: false
-
-    tolerances:
-      ftol: 1.0e-05
-      gtol: 1.0e-04
-      maxls: 20
-
-  idw:
-    name: "idw"
-    label: "IDW"
-    type: "idw"
-    module: "idw_baseline"
-    out_dir: "sol_dir_idw"
-
-    idw:
-      r_max_m: 15000.0
-      power: 2.0
-      eps_m: 1.0
-      default_value: 0.0
-
-  ildw:
-    name: "ildw"
-    label: "ILDW"
-    type: "ildw"
-    module: "ildw_baseline"
-    out_dir: "sol_dir_ildw"
 
     idw:
       r_max_m: 15000.0
