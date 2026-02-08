@@ -281,7 +281,9 @@ def main() -> int:
                 else:
                     if not hasattr(mod, "solve_and_save"):
                         raise AttributeError("custom solver requires solve_and_save(est_input_json, out_npz, cfg)")
-                    mod.solve_and_save(est_path, out_npz, s)  # type: ignore
+                    s_with_base = dict(s)
+                    s_with_base["_base_dir"] = str(base_dir)
+                    mod.solve_and_save(est_path, out_npz, s_with_base)  # type: ignore
                 print(f"  [{i}/{len(est_files)}] OK {est_path.name}")
             except Exception as e:
                 failures += 1

@@ -1,6 +1,7 @@
 # main.py
 from __future__ import annotations
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -111,8 +112,25 @@ def prompt_yes_default_yes(msg: str) -> bool:
         print("Invalid input. Allowed: (Y/n)")
 
 
+def prompt_yes_default_no(msg: str) -> bool:
+    while True:
+        raw = input(msg).strip().lower()
+        if raw == "":
+            return False
+        if raw in ("y", "yes"):
+            return True
+        if raw in ("n", "no"):
+            return False
+        print("Invalid input. Allowed: (y/N)")
+
+
 def main() -> None:
     print("=== Patch-based link attenuation + estimator export ===")
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--gaussian-gt", action="store_true", help="Use Gaussian GT instead of H5 rainfall.")
+    ap.add_argument("--no-gaussian-gt", action="store_true", help="Force real H5 rainfall (no Gaussian).")
+    args, _ = ap.parse_known_args()
+
     patch_list_path = prompt_path("Patch list JSONL path: ")
     patch_attr_path = prompt_path("Patch attributes JSONL path: ")
     links_path = prompt_path("4TU links JSONL path: ")
@@ -122,6 +140,14 @@ def main() -> None:
     k = prompt_int("Number of patches to process (k): ")
     default_pol = prompt_choice("Default polarization if missing", ["H", "V"])
     export_gt = prompt_yes_default_yes("Export ground truth as gt_<patch_id>.npz? (Y/n): ")
+    if args.gaussian_gt and args.no_gaussian_gt:
+        raise SystemExit("Choose only one of --gaussian-gt or --no-gaussian-gt.")
+    if args.gaussian_gt:
+        use_gaussian_gt = True
+    elif args.no_gaussian_gt:
+        use_gaussian_gt = False
+    else:
+        use_gaussian_gt = prompt_yes_default_no("Use Gaussian GT instead of H5 rainfall? (y/N): ")
     debug_mode = prompt_choice("Debug mode?", ["Y", "N"]) == "Y"
 
     debug_patch_id = ""
@@ -156,7 +182,20 @@ def main() -> None:
         print(f"[PATCH {pid}] processing")
 
         rain = prepare_rainfall_for_patch(patch)
-        gt = rain.refined_smoothed_mmph.astype(np.float32)
+        gt_real = rain.refined_smoothed_mmph.astype(np.float32)
+        if use_gaussian_gt:
+            H, W = gt_real.shape
+            M = float(np.percentile(gt_real, 95))
+            ys = np.arange(H, dtype=np.float64)
+            xs = np.arange(W, dtype=np.float64)
+            cy = H / 2.0
+            cx = W / 2.0
+            yy = (ys[:, None] - cy) / float(H)
+            xx = (xs[None, :] - cx) / float(W)
+            gt = (M * np.exp(-18.0 * (yy * yy + xx * xx))).astype(np.float32)
+            print(f"[PATCH {pid}] Gaussian GT with M(p95)={M:.3f} mm/h")
+        else:
+            gt = gt_real
 
         rect_rd, links_in_patch = translate_and_filter_links_for_patch(
             links=links,

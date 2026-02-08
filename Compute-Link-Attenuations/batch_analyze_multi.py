@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -114,6 +115,28 @@ def normalize_solvers(obj: Any, *, path_for_err: str) -> List[dict]:
             raise SystemExit(f"{path_for_err} mapping values must be dicts.")
         return vals
     raise SystemExit(f"{path_for_err} must be a list or mapping.")
+
+
+def progress_iter(items: Iterable[Any], *, total: Optional[int] = None, desc: str = "") -> Iterable[Any]:
+    try:
+        from tqdm import tqdm  # type: ignore
+        return tqdm(items, total=total, desc=desc)
+    except Exception:
+        def gen():
+            count = 0
+            for count, item in enumerate(items, 1):
+                if total is not None:
+                    msg = f"{desc} {count}/{total}"
+                else:
+                    msg = f"{desc} {count}"
+                if count == 1 or count % 5 == 0 or (total is not None and count == total):
+                    sys.stdout.write("\r" + msg)
+                    sys.stdout.flush()
+                yield item
+            if count > 0:
+                sys.stdout.write("\r" + msg + "\n")
+                sys.stdout.flush()
+        return gen()
 
 
 # ----------------------------
@@ -218,22 +241,27 @@ def point_to_segment_dist(px: np.ndarray, py: np.ndarray,
 
 
 
-def compute_d3_map_sampled_points(
+def compute_dk_maps_sampled_points(
     est: dict,
+    k_values: Sequence[int],
     *,
     sample_spacing_m: float = 250.0,
     k_query_samples: int = 48,
     chunk_size: int = 8000,
     max_samples_per_link: int = 200,
-) -> Tuple[np.ndarray, float]:
+    warn_shortfall: bool = True,
+    warn_threshold_frac: float = 0.01,
+    debug_label: Optional[str] = None,
+) -> Tuple[Dict[int, np.ndarray], float]:
     """
-    Compute d3(p) = distance in meters from pixel center to the 3rd closest link (point-to-segment).
+    Compute dk(p) = distance in meters from pixel center to the k-th closest link (point-to-segment),
+    for each k in k_values.
 
     This method matches the *older* analyzer: it samples points along each segment at a fixed spacing,
     builds a KD-tree over those sampled points, then uses nearest sampled points to propose candidate
-    links. Exact point-to-segment distances are computed for candidate links, and the 3rd smallest is taken.
+    links. Exact point-to-segment distances are computed for candidate links, and the k-th smallest is taken.
 
-    Returns (d3_map_m, pixel_size_m)
+    Returns (dict k -> dk_map_m, pixel_size_m)
     """
     header = est["header"]
     links = est["links"]
@@ -241,15 +269,18 @@ def compute_d3_map_sampled_points(
     W = int(header["W"])
     pix = float(header["pixel_size_m"])
 
-    if not links:
-        return np.full((H, W), np.inf, dtype=np.float64), pix
-    if len(links) < 3:
-        return np.full((H, W), np.inf, dtype=np.float64), pix
+    k_values = sorted({int(k) for k in k_values if int(k) >= 1})
+    if not k_values:
+        return {}, pix
+    k_max = max(k_values)
+
+    if not links or len(links) < k_max:
+        return {k: np.full((H, W), np.inf, dtype=np.float64) for k in k_values}, pix
 
     try:
         from scipy.spatial import cKDTree  # type: ignore
     except Exception as e:
-        raise RuntimeError("scipy is required for d3 computation (scipy.spatial.cKDTree).") from e
+        raise RuntimeError("scipy is required for dk computation (scipy.spatial.cKDTree).") from e
 
     x0 = np.array([float(L["x0_m"]) for L in links], dtype=np.float64)
     y0 = np.array([float(L["y0_m"]) for L in links], dtype=np.float64)
@@ -285,12 +316,15 @@ def compute_d3_map_sampled_points(
     X, Y = np.meshgrid(xs, ys)
     pts = np.stack([X.ravel(), Y.ravel()], axis=1).astype(np.float64)
 
-    d3 = np.full((H * W,), np.inf, dtype=np.float64)
+    out = {k: np.full((H * W,), np.inf, dtype=np.float64) for k in k_values}
 
     kq = int(k_query_samples)
     kq = max(kq, 12)
     # cap kq to number of samples
     kq = min(kq, int(sample_xy.shape[0]))
+
+    total_queries = 0
+    shortfall_queries = 0
 
     for start in range(0, pts.shape[0], int(chunk_size)):
         end = min(pts.shape[0], start + int(chunk_size))
@@ -304,8 +338,9 @@ def compute_d3_map_sampled_points(
         for bi in range(q.shape[0]):
             cand_links = np.unique(sample_to_link[nn_idx[bi]])
 
-            # ensure at least 3 candidates (rare when kq is small or samples are very few)
-            if cand_links.size < 3:
+            # ensure enough candidates
+            if cand_links.size < k_max:
+                shortfall_queries += 1
                 kq2 = min(int(sample_xy.shape[0]), kq * 4)
                 _, nn_idx2 = tree.query(q[bi], k=kq2, workers=-1)
                 cand_links = np.unique(sample_to_link[np.atleast_1d(nn_idx2)])
@@ -318,21 +353,36 @@ def compute_d3_map_sampled_points(
             py = q[bi, 1]
             ds = point_to_segment_dist(px, py, x0[cand_links], y0[cand_links], x1[cand_links], y1[cand_links])
 
-            if ds.size < 3:
-                d3[start + bi] = float(np.max(ds))
-            else:
-                d3[start + bi] = float(np.partition(ds, 2)[2])
+            if ds.size == 0:
+                continue
 
-    return d3.reshape(H, W), pix
+            for k in k_values:
+                if ds.size < k:
+                    out[k][start + bi] = np.inf
+                else:
+                    out[k][start + bi] = float(np.partition(ds, k - 1)[k - 1])
+
+            total_queries += 1
+
+    if warn_shortfall and total_queries > 0:
+        frac = float(shortfall_queries) / float(total_queries)
+        if frac >= float(warn_threshold_frac):
+            lab = f" ({debug_label})" if debug_label else ""
+            print(
+                f"[dist] Candidate shortfall{lab}: {shortfall_queries}/{total_queries} "
+                f"pixels had <{k_max} candidate links "
+                f"(k_query_samples={k_query_samples}, frac={frac:.3f})"
+            )
+
+    return {k: v.reshape(H, W) for k, v in out.items()}, pix
 
 
-
-def compute_d3_map(est: dict, *, bin_edges_m: Sequence[float], max_candidates: int) -> Tuple[np.ndarray, float]:
+def compute_dk_maps(est: dict, k_values: Sequence[int], *, max_candidates: int) -> Tuple[Dict[int, np.ndarray], float]:
     """
-    d3(p) = distance in meters from pixel-center to the 3rd closest link (point-to-segment),
+    dk(p) = distance in meters from pixel-center to the k-th closest link (point-to-segment),
             approximated by using KDTree over endpoints+midpoints to propose candidates.
 
-    Returns (d3_map_m, pixel_size_m)
+    Returns (dict k -> dk_map_m, pixel_size_m)
     """
     header = est["header"]
     links = est["links"]
@@ -340,8 +390,13 @@ def compute_d3_map(est: dict, *, bin_edges_m: Sequence[float], max_candidates: i
     W = int(header["W"])
     pix = float(header["pixel_size_m"])
 
-    if not links:
-        return np.full((H, W), np.inf, dtype=np.float64), pix
+    k_values = sorted({int(k) for k in k_values if int(k) >= 1})
+    if not k_values:
+        return {}, pix
+    k_max = max(k_values)
+
+    if not links or len(links) < k_max:
+        return {k: np.full((H, W), np.inf, dtype=np.float64) for k in k_values}, pix
 
     x0 = np.array([float(L["x0_m"]) for L in links], dtype=np.float64)
     y0 = np.array([float(L["y0_m"]) for L in links], dtype=np.float64)
@@ -354,7 +409,7 @@ def compute_d3_map(est: dict, *, bin_edges_m: Sequence[float], max_candidates: i
     try:
         from scipy.spatial import cKDTree  # type: ignore
     except Exception as e:
-        raise RuntimeError("scipy is required for d3 computation (scipy.spatial.cKDTree).") from e
+        raise RuntimeError("scipy is required for dk computation (scipy.spatial.cKDTree).") from e
 
     pts = np.vstack([
         np.stack([x0, y0], axis=1),
@@ -371,27 +426,24 @@ def compute_d3_map(est: dict, *, bin_edges_m: Sequence[float], max_candidates: i
 
     # query K nearest proxy points
     K = int(max_candidates)
-    K = max(3, min(K, pts.shape[0]))
-    d_proxy, idx_proxy = tree.query(np.stack([X.ravel(), Y.ravel()], axis=1), k=K, workers=-1)
+    K = max(k_max, min(K, pts.shape[0]))
+    _, idx_proxy = tree.query(np.stack([X.ravel(), Y.ravel()], axis=1), k=K, workers=-1)
     # ensure 2d
     if K == 1:
         idx_proxy = idx_proxy[:, None]
 
-    d3 = np.empty(H * W, dtype=np.float64)
+    out = {k: np.empty(H * W, dtype=np.float64) for k in k_values}
     # compute per pixel
     for t in range(H * W):
         cand_links = np.unique(pt_to_link[idx_proxy[t]])
         # true segment distances for these links
         dist = point_to_segment_dist(X.ravel()[t], Y.ravel()[t], x0[cand_links], y0[cand_links], x1[cand_links], y1[cand_links])
-        if dist.size < 3:
-            # not enough links; define as inf
-            d3[t] = np.inf
-        else:
-            # 3rd smallest
-            # partial sort for speed
-            kth = np.partition(dist, 2)[2]
-            d3[t] = float(kth)
-    return d3.reshape(H, W), pix
+        for k in k_values:
+            if dist.size < k:
+                out[k][t] = np.inf
+            else:
+                out[k][t] = float(np.partition(dist, k - 1)[k - 1])
+    return {k: v.reshape(H, W) for k, v in out.items()}, pix
 
 
 def parse_bins(edges: Sequence[float]) -> List[Tuple[Optional[float], Optional[float], str]]:
@@ -504,6 +556,21 @@ def compute_pixel_errors(gt: np.ndarray, pred: np.ndarray, mask_rainy: np.ndarra
     abs_n = np.abs(signed_n)
 
     return signed_r, abs_r, signed_n, abs_n
+
+
+def evaluate_objective_values(
+    prob,
+    make_objective_fn,
+    R_field: np.ndarray,
+    *,
+    lam: float,
+    mu: float,
+    eps: float,
+) -> float:
+    if R_field.shape != (prob.H, prob.W):
+        raise ValueError(f"R_field shape {R_field.shape} != (H,W)=({prob.H},{prob.W})")
+    fun, _ = make_objective_fn(prob, lam=lam, mu=mu, eps=eps)
+    return float(fun(R_field.reshape(prob.P)))
 
 
 # ----------------------------
@@ -653,11 +720,36 @@ def compute_iqr_profile(per_patch_medians: Dict[str, Dict[str, List[float]]],
     return out
 
 
+def compute_relative_iqr_profile(
+    summary: Dict[str, Dict[str, Tuple[float, float, float]]],
+    *,
+    idw_label: str,
+    dist_labels: List[str],
+) -> Dict[str, Dict[str, Tuple[float, float, float]]]:
+    """
+    Divide each method's (p25,p50,p75) by IDW's p50 (median-of-medians) per bin.
+    """
+    if idw_label not in summary:
+        return {}
+    out: Dict[str, Dict[str, Tuple[float, float, float]]] = {}
+    for method, by_bin in summary.items():
+        out[method] = {}
+        for lab in dist_labels:
+            p25, p50, p75 = by_bin.get(lab, (0.0, 0.0, 0.0))
+            idw_med = summary[idw_label].get(lab, (0.0, 0.0, 0.0))[1]
+            if idw_med == 0.0:
+                out[method][lab] = (0.0, 0.0, 0.0)
+            else:
+                out[method][lab] = (p25 / idw_med, p50 / idw_med, p75 / idw_med)
+    return out
+
+
 def plot_iqr_bars(out_png: Path, title: str,
                   summary: Dict[str, Dict[str, Tuple[float,float,float]]],
                   dist_labels: List[str],
                   method_order: List[str],
-                  *, y_max: Optional[float] = None, dpi: int = 150, bin_spacing: float = 1.0):
+                  *, y_max: Optional[float] = None, dpi: int = 150, bin_spacing: float = 1.0,
+                  tick_labels: Optional[List[str]] = None):
     import matplotlib.pyplot as plt  # type: ignore
 
     n_bins = len(dist_labels)
@@ -687,7 +779,15 @@ def plot_iqr_bars(out_png: Path, title: str,
         ax.plot(x + off, p50, marker="o", linestyle="None", label=m)
 
     ax.set_xticks(x)
-    ax.set_xticklabels(dist_labels, rotation=0)
+    if tick_labels is None:
+        tick_labels = dist_labels
+    has_multiline = any("\n" in str(lab) for lab in tick_labels)
+    if has_multiline:
+        ax.set_xticklabels(tick_labels, rotation=20, ha="right", fontsize=8)
+        fig.subplots_adjust(bottom=0.28)
+        ax.set_xlabel("Distance bin (m)\nSecond line: avg pixels [avg-std, avg+std]")
+    else:
+        ax.set_xticklabels(tick_labels, rotation=0)
     ax.set_ylabel("IQR of per-patch median error")
     ax.set_title(title)
     ax.legend(loc="best")
@@ -700,6 +800,89 @@ def plot_iqr_bars(out_png: Path, title: str,
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
+def build_bin_tick_labels(dist_labels: List[str], counts_by_bin: Dict[str, List[int]]) -> List[str]:
+    out: List[str] = []
+    for lab in dist_labels:
+        vals = np.array(counts_by_bin.get(lab, []), dtype=np.float64)
+        if vals.size == 0:
+            out.append(f"{lab}\npx avg=0 [0,0]")
+            continue
+        avg = float(np.mean(vals))
+        std = float(np.std(vals, ddof=0))
+        lo = max(0.0, avg - std)
+        hi = max(0.0, avg + std)
+        out.append(f"{lab}\npx avg={avg:.0f} [{lo:.0f},{hi:.0f}]")
+    return out
+
+
+def filter_bins_by_zero_fraction(
+    dist_labels: List[str],
+    counts_by_bin: Dict[str, List[int]],
+    *,
+    zero_frac_threshold: float,
+) -> List[str]:
+    out: List[str] = []
+    for lab in dist_labels:
+        vals = counts_by_bin.get(lab, [])
+        if not vals:
+            continue
+        zeros = sum(1 for v in vals if v == 0)
+        frac = float(zeros) / float(len(vals))
+        if frac < zero_frac_threshold:
+            out.append(lab)
+    return out
+
+
+def plot_rae_histograms(
+    out_png: Path,
+    *,
+    title: str,
+    dist_labels: List[str],
+    data_by_bin: Dict[str, List[float]],
+    bins: int = 50,
+    dpi: int = 150,
+):
+    import matplotlib.pyplot as plt  # type: ignore
+
+    n_bins = len(dist_labels)
+    ncols = min(4, max(1, n_bins))
+    nrows = int(math.ceil(n_bins / ncols))
+
+    fig_w = max(8, ncols * 3.2)
+    fig_h = max(3.0, nrows * 2.6)
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(fig_w, fig_h), dpi=dpi)
+    if nrows == 1 and ncols == 1:
+        axes = np.array([[axes]])
+    elif nrows == 1:
+        axes = np.array([axes])
+    elif ncols == 1:
+        axes = axes[:, None]
+
+    for i, lab in enumerate(dist_labels):
+        r = i // ncols
+        c = i % ncols
+        ax = axes[r][c]
+        vals = np.array(data_by_bin.get(lab, []), dtype=np.float64)
+        if vals.size > 0:
+            ax.hist(vals, bins=bins, color="#4C78A8", alpha=0.85)
+        ax.set_title(lab)
+        ax.set_xlabel("RAE = |GT-PRED|/GT")
+        ax.set_ylabel("count")
+        ax.grid(True, axis="y", linestyle=":", linewidth=0.6)
+
+    # hide unused subplots
+    for i in range(n_bins, nrows * ncols):
+        r = i // ncols
+        c = i % ncols
+        axes[r][c].axis("off")
+
+    fig.suptitle(title)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png)
     plt.close(fig)
 
@@ -752,6 +935,11 @@ def main() -> int:
     cov_bins_cfg = list(deep_get(cfg, "coverage.bins", [0,1,2,3,4,"5+"]))
     cov_exact, cov_ge = parse_coverage_bins(cov_bins_cfg)
 
+    k_values = list(deep_get(cfg, "distance.k_values", [3]))
+    k_values = sorted({int(k) for k in k_values if int(k) >= 1})
+    if not k_values:
+        k_values = [3]
+
     bin_edges = list(deep_get(cfg, "distance.bin_edges_m", [125,375,750,1500,3125]))
     dist_bins = parse_bins(bin_edges)
     dist_labels = [b[2] for b in dist_bins]
@@ -761,6 +949,28 @@ def main() -> int:
     k_query_samples = int(deep_get(cfg, "distance.k_query_samples", 48))
     chunk_size = int(deep_get(cfg, "distance.chunk_size", 8000))
     max_samples_per_link = int(deep_get(cfg, "distance.max_samples_per_link", 200))
+
+    obj_cfg = deep_get(cfg, "objective", {}) or {}
+    obj_eps = float(obj_cfg.get("eps", 0.01))
+    obj_pairs_raw = obj_cfg.get("pairs", []) or []
+    obj_pairs: List[Tuple[float, float]] = []
+    for item in obj_pairs_raw:
+        if isinstance(item, dict):
+            lam = item.get("lambda", item.get("lam", None))
+            mu = item.get("mu", None)
+            if lam is None or mu is None:
+                continue
+            obj_pairs.append((float(lam), float(mu)))
+        elif isinstance(item, (list, tuple)) and len(item) == 2:
+            obj_pairs.append((float(item[0]), float(item[1])))
+    if not obj_pairs:
+        obj_pairs = []
+
+    rae_cfg = deep_get(cfg, "rae_hist", {}) or {}
+    rae_enabled = bool(rae_cfg.get("enabled", False))
+    rae_bins = int(rae_cfg.get("bins", 50))
+    rae_max_patches = rae_cfg.get("max_patches", None)
+    rae_out_subdir = str(rae_cfg.get("out_dir", "images/RAE_histograms"))
 
     # plot scaling
     auto_y = bool(deep_get(cfg, "plots.automatic_vertical_scaling", True))
@@ -776,6 +986,8 @@ def main() -> int:
         y_max = None
     dpi = int(deep_get(cfg, "plots.dpi", 150))
     bin_spacing = float(deep_get(cfg, "plots.bin_spacing", 1.35))
+    prune_bins_enabled = bool(deep_get(cfg, "plots.prune_bins_enabled", False))
+    prune_bins_zero_frac = float(deep_get(cfg, "plots.prune_bins_zero_frac", 0.5))
 
     # load files
     gt_files = list_npz(gt_dir, gt_prefix)
@@ -792,21 +1004,42 @@ def main() -> int:
     # sheets data
     sheets: Dict[str, List[Dict[str, Any]]] = {}
 
-    # For plots: per method -> per bin -> list of per-patch medians
-    medians_rainy: Dict[str, Dict[str, List[float]]] = {}
-    medians_nonrainy: Dict[str, Dict[str, List[float]]] = {}
+    # For plots: per k -> per method -> per bin -> list of per-patch medians
+    medians_rainy: Dict[int, Dict[str, Dict[str, List[float]]]] = {k: {} for k in k_values}
+    medians_nonrainy: Dict[int, Dict[str, Dict[str, List[float]]]] = {k: {} for k in k_values}
+    bin_counts: Dict[int, Dict[str, Dict[str, List[int]]]] = {
+        k: {"rainy": {lab: [] for lab in dist_labels}, "nonrainy": {lab: [] for lab in dist_labels}}
+        for k in k_values
+    }
+    bin_counts_seen: set = set()
+
+    objective_rows: List[Dict[str, Any]] = []
+    objective_gt_done: set = set()
+
+    obj_enabled = len(obj_pairs) > 0
+    if obj_enabled:
+        from solve_rain_lbfgsb import load_est_input_json as load_est_for_obj  # type: ignore
+        from solve_rain_lbfgsb import make_objective as make_objective_fn  # type: ignore
+        prob_cache: Dict[str, Any] = {}
 
     # iterate per solver
-    for name, label, sol_dir, sol_prefix, sol_key_pref in solvers:
+    for name, label, sol_dir, sol_prefix, sol_key_pref in progress_iter(
+        solvers, total=len(solvers), desc="Solvers"
+    ):
         sol_files = list_npz(sol_dir, sol_prefix)
         sol_by_key = {patch_key_from_filename(p.name): p for p in sol_files}
 
         cov_rows: List[Dict[str, Any]] = []
-        dist_rows: List[Dict[str, Any]] = []
+        dist_rows_by_k: Dict[int, List[Dict[str, Any]]] = {k: [] for k in k_values}
         link_rows: List[Dict[str, Any]] = []
 
-        medians_rainy[label] = {lab: [] for lab in dist_labels}
-        medians_nonrainy[label] = {lab: [] for lab in dist_labels}
+        for k in k_values:
+            medians_rainy[k][label] = {lab: [] for lab in dist_labels}
+            medians_nonrainy[k][label] = {lab: [] for lab in dist_labels}
+
+        rae_hist_data: Optional[Dict[int, Dict[str, List[float]]]] = None
+        if rae_enabled:
+            rae_hist_data = {k: {lab: [] for lab in dist_labels} for k in k_values}
 
         # match patches by keys present in both GT and solver
         keys = sorted(set(gt_by_key.keys()) & set(sol_by_key.keys()))
@@ -814,7 +1047,16 @@ def main() -> int:
             print(f"[{label}] No matching patches between GT and {sol_dir}")
             continue
 
-        for key in keys:
+        hist_keys = keys
+        if rae_enabled and rae_max_patches is not None:
+            try:
+                kmax = int(rae_max_patches)
+                if kmax > 0:
+                    hist_keys = keys[:kmax]
+            except Exception:
+                pass
+
+        for key in progress_iter(keys, total=len(keys), desc=f"{label} patches"):
             gt_path = gt_by_key[key]
             sol_path = sol_by_key[key]
             est_path = est_by_key.get(key, None)
@@ -839,19 +1081,24 @@ def main() -> int:
                 # allow if transposed? for now strict
                 raise SystemExit(f"Coverage map shape {cov_map.shape} != GT shape {gt.shape} for {key}")
 
-            # distance map d3
+            # distance maps d_k
             if dist_method in ("sampled_points", "sampled", "samples"):
-                d3_map, pix_m = compute_d3_map_sampled_points(
+                dk_maps, pix_m = compute_dk_maps_sampled_points(
                     est,
+                    k_values,
                     sample_spacing_m=sample_spacing_m,
                     k_query_samples=k_query_samples,
                     chunk_size=chunk_size,
                     max_samples_per_link=max_samples_per_link,
                 )
             else:
-                d3_map, pix_m = compute_d3_map(est, bin_edges_m=bin_edges, max_candidates=max_candidates)
-            if d3_map.shape != gt.shape:
-                raise SystemExit(f"d3 map shape {d3_map.shape} != GT shape {gt.shape} for {key}")
+                dk_maps, pix_m = compute_dk_maps(est, k_values, max_candidates=max_candidates)
+            for k in k_values:
+                d_map = dk_maps.get(k)
+                if d_map is None:
+                    raise SystemExit(f"Missing d{k} map for {key}")
+                if d_map.shape != gt.shape:
+                    raise SystemExit(f"d{k} map shape {d_map.shape} != GT shape {gt.shape} for {key}")
 
             # compute signed/abs arrays for whole field
             # rainy relative:
@@ -867,6 +1114,43 @@ def main() -> int:
             # nonrainy
             signed_full[~rainy] = pred[~rainy] - gt[~rainy]
             abs_full[~rainy] = np.abs(signed_full[~rainy])
+
+            # --- Objective values (GT + solver) ---
+            if obj_enabled:
+                est_key = str(est_path)
+                prob = prob_cache.get(est_key)
+                if prob is None:
+                    prob = load_est_for_obj(est_path, warn=False)
+                    prob_cache[est_key] = prob
+                for lam, mu in obj_pairs:
+                    gt_tag = (key, lam, mu)
+                    if gt_tag not in objective_gt_done:
+                        j_gt = evaluate_objective_values(
+                            prob, make_objective_fn, gt,
+                            lam=lam, mu=mu, eps=obj_eps,
+                        )
+                        objective_rows.append(dict(
+                            patch_key=key,
+                            target="GT",
+                            lambda_val=float(lam),
+                            mu_val=float(mu),
+                            eps=float(obj_eps),
+                            J=float(j_gt),
+                        ))
+                        objective_gt_done.add(gt_tag)
+
+                    j_sol = evaluate_objective_values(
+                        prob, make_objective_fn, pred,
+                        lam=lam, mu=mu, eps=obj_eps,
+                    )
+                    objective_rows.append(dict(
+                        patch_key=key,
+                        target=label,
+                        lambda_val=float(lam),
+                        mu_val=float(mu),
+                        eps=float(obj_eps),
+                        J=float(j_sol),
+                    ))
 
             # --- CoverageStats per mask + coverage bin ---
             for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
@@ -907,26 +1191,36 @@ def main() -> int:
                         patch_key=key, mask_type=mask_name, coverage_bin=bin_lab, **s
                     ))
 
-            # --- DistanceStats per mask + distance bin ---
-            d3_vals = d3_map.ravel()
-            d3_labels = assign_bin_labels(d3_vals, dist_bins).reshape(gt.shape)
+            # --- DistanceStats per mask + distance bin (per k) ---
+            for k in k_values:
+                d_map = dk_maps[k]
+                d_vals = d_map.ravel()
+                d_labels = assign_bin_labels(d_vals, dist_bins).reshape(gt.shape)
 
-            for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
-                for _, _, bin_lab in dist_bins:
-                    gmask = mask & (d3_labels == bin_lab)
-                    e_signed = signed_full[gmask].ravel()
-                    e_abs = abs_full[gmask].ravel()
-                    l1 = float(np.sum(e_abs))
-                    s = stats_row(e_signed, e_abs, l1_abs_sum=l1)
-                    dist_rows.append(dict(
-                        patch_key=key, mask_type=mask_name, distance_bin_m=bin_lab, **s
-                    ))
+                for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
+                    for _, _, bin_lab in dist_bins:
+                        gmask = mask & (d_labels == bin_lab)
+                        count_key = (k, mask_name, bin_lab, key)
+                        if count_key not in bin_counts_seen:
+                            bin_counts[k][mask_name][bin_lab].append(int(np.sum(gmask)))
+                            bin_counts_seen.add(count_key)
+                        e_signed = signed_full[gmask].ravel()
+                        e_abs = abs_full[gmask].ravel()
+                        l1 = float(np.sum(e_abs))
+                        s = stats_row(e_signed, e_abs, l1_abs_sum=l1)
+                        dist_rows_by_k[k].append(dict(
+                            patch_key=key, mask_type=mask_name, distance_bin_m=bin_lab, **s
+                        ))
 
-                    # For final IQR plot: per-patch median_abs per bin (rainy uses abs_rel, nonrainy uses abs_diff)
-                    if mask_name == "rainy" and e_abs.size > 0:
-                        medians_rainy[label][bin_lab].append(float(np.median(e_abs)))
-                    if mask_name == "nonrainy" and e_abs.size > 0:
-                        medians_nonrainy[label][bin_lab].append(float(np.median(e_abs)))
+                        # For final IQR plot: per-patch median_abs per bin (rainy uses abs_rel, nonrainy uses abs_diff)
+                        if mask_name == "rainy" and e_abs.size > 0:
+                            medians_rainy[k][label][bin_lab].append(float(np.median(e_abs)))
+                        if mask_name == "nonrainy" and e_abs.size > 0:
+                            medians_nonrainy[k][label][bin_lab].append(float(np.median(e_abs)))
+
+                        # RAE histogram data (rainy only, optional)
+                        if rae_hist_data is not None and key in hist_keys and mask_name == "rainy" and e_abs.size > 0:
+                            rae_hist_data[k][bin_lab].extend(e_abs.tolist())
 
             # --- LinkStats per patch ---
             try:
@@ -948,31 +1242,100 @@ def main() -> int:
 
         # store sheets
         sheets[f"CoverageStats_GTvs{label}"] = cov_rows
-        sheets[f"DistanceStats_GTvs{label}"] = dist_rows
+        for k in k_values:
+            if k == 3:
+                sheets[f"DistanceStats_GTvs{label}"] = dist_rows_by_k[k]
+            else:
+                sheets[f"DistanceStatsK{k}_GTvs{label}"] = dist_rows_by_k[k]
         sheets[f"LinkStats_GTvs{label}"] = link_rows
+
+        # RAE histograms (rainy only)
+        if rae_hist_data is not None:
+            rae_dir = out_dir / rae_out_subdir
+            for k in k_values:
+                out_png = rae_dir / f"rae_hist_k{k}_{label}.png"
+                plot_rae_histograms(
+                    out_png,
+                    title=f"RAE histograms (rainy) | k={k} | {label}",
+                    dist_labels=dist_labels,
+                    data_by_bin=rae_hist_data[k],
+                    bins=rae_bins,
+                    dpi=dpi,
+                )
+
+    # optional objective sheet
+    if objective_rows:
+        sheets["Objective_J"] = objective_rows
 
     # write excel
     write_workbook(excel_path, sheets)
     print(f"Wrote Excel: {excel_path}")
 
     # plots across solvers (IQR of per-patch medians)
-    method_order = [label for _, label, _, _, _ in solvers if label in medians_rainy]
+    method_order = [label for _, label, _, _, _ in solvers if label in medians_rainy[k_values[0]]]
     if method_order:
-        summary_r = compute_iqr_profile(medians_rainy, dist_labels)
-        summary_n = compute_iqr_profile(medians_nonrainy, dist_labels)
+        for k in k_values:
+            summary_r = compute_iqr_profile(medians_rainy[k], dist_labels)
+            summary_n = compute_iqr_profile(medians_nonrainy[k], dist_labels)
+            labels_r = dist_labels
+            labels_n = dist_labels
+            if prune_bins_enabled:
+                labels_r = filter_bins_by_zero_fraction(
+                    dist_labels, bin_counts[k]["rainy"],
+                    zero_frac_threshold=prune_bins_zero_frac,
+                )
+                labels_n = filter_bins_by_zero_fraction(
+                    dist_labels, bin_counts[k]["nonrainy"],
+                    zero_frac_threshold=prune_bins_zero_frac,
+                )
+            tick_labels_r = build_bin_tick_labels(labels_r, bin_counts[k]["rainy"])
+            tick_labels_n = build_bin_tick_labels(labels_n, bin_counts[k]["nonrainy"])
 
-        plot_iqr_bars(
-            img_dir / "distance_iqr_medians_rainy_multi.png",
-            "Rainy pixels: IQR of per-patch median |(GT-PRED)/GT| by distance bin",
-            summary_r, dist_labels, method_order,
-            y_max=y_max, dpi=dpi, bin_spacing=bin_spacing,
-        )
-        plot_iqr_bars(
-            img_dir / "distance_iqr_medians_nonrainy_multi.png",
-            "Non-rainy pixels: IQR of per-patch median |GT-PRED| by distance bin",
-            summary_n, dist_labels, method_order,
-            y_max=y_max, dpi=dpi, bin_spacing=bin_spacing,
-        )
+            if len(k_values) == 1 and k == 3:
+                rainy_name = "distance_iqr_medians_rainy_multi.png"
+                nonrainy_name = "distance_iqr_medians_nonrainy_multi.png"
+                rainy_title = "Rainy pixels: IQR of per-patch median |(GT-PRED)/GT| by distance bin"
+                nonrainy_title = "Non-rainy pixels: IQR of per-patch median |GT-PRED| by distance bin"
+            else:
+                rainy_name = f"distance_iqr_medians_rainy_multi_k{k}.png"
+                nonrainy_name = f"distance_iqr_medians_nonrainy_multi_k{k}.png"
+                rainy_title = f"Rainy pixels: IQR of per-patch median |(GT-PRED)/GT| by distance bin (k={k})"
+                nonrainy_title = f"Non-rainy pixels: IQR of per-patch median |GT-PRED| by distance bin (k={k})"
+
+            plot_iqr_bars(
+                img_dir / rainy_name,
+                rainy_title,
+                summary_r, labels_r, method_order,
+                y_max=y_max, dpi=dpi, bin_spacing=bin_spacing,
+                tick_labels=tick_labels_r,
+            )
+            plot_iqr_bars(
+                img_dir / nonrainy_name,
+                nonrainy_title,
+                summary_n, labels_n, method_order,
+                y_max=y_max, dpi=dpi, bin_spacing=bin_spacing,
+                tick_labels=tick_labels_n,
+            )
+
+            # relative plots vs IDW (median-of-medians)
+            if "IDW" in summary_r:
+                summary_r_rel = compute_relative_iqr_profile(summary_r, idw_label="IDW", dist_labels=dist_labels)
+                summary_n_rel = compute_relative_iqr_profile(summary_n, idw_label="IDW", dist_labels=dist_labels)
+
+                plot_iqr_bars(
+                    img_dir / rainy_name.replace(".png", "_rel.png"),
+                    f"{rainy_title} (relative to IDW medians)",
+                    summary_r_rel, labels_r, method_order,
+                    y_max=None, dpi=dpi, bin_spacing=bin_spacing,
+                    tick_labels=tick_labels_r,
+                )
+                plot_iqr_bars(
+                    img_dir / nonrainy_name.replace(".png", "_rel.png"),
+                    f"{nonrainy_title} (relative to IDW medians)",
+                    summary_n_rel, labels_n, method_order,
+                    y_max=None, dpi=dpi, bin_spacing=bin_spacing,
+                    tick_labels=tick_labels_n,
+                )
         print(f"Wrote plots under: {img_dir}")
 
     return 0
