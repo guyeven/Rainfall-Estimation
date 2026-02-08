@@ -1015,6 +1015,7 @@ def main() -> int:
 
     objective_rows: List[Dict[str, Any]] = []
     objective_gt_done: set = set()
+    objective_vals: Dict[Tuple[float, float], Dict[str, Dict[str, float]]] = {}
 
     obj_enabled = len(obj_pairs) > 0
     if obj_enabled:
@@ -1129,28 +1130,14 @@ def main() -> int:
                             prob, make_objective_fn, gt,
                             lam=lam, mu=mu, eps=obj_eps,
                         )
-                        objective_rows.append(dict(
-                            patch_key=key,
-                            target="GT",
-                            lambda_val=float(lam),
-                            mu_val=float(mu),
-                            eps=float(obj_eps),
-                            J=float(j_gt),
-                        ))
+                        objective_vals.setdefault((float(lam), float(mu)), {}).setdefault(key, {})["GT"] = float(j_gt)
                         objective_gt_done.add(gt_tag)
 
                     j_sol = evaluate_objective_values(
                         prob, make_objective_fn, pred,
                         lam=lam, mu=mu, eps=obj_eps,
                     )
-                    objective_rows.append(dict(
-                        patch_key=key,
-                        target=label,
-                        lambda_val=float(lam),
-                        mu_val=float(mu),
-                        eps=float(obj_eps),
-                        J=float(j_sol),
-                    ))
+                    objective_vals.setdefault((float(lam), float(mu)), {}).setdefault(key, {})[label] = float(j_sol)
 
             # --- CoverageStats per mask + coverage bin ---
             for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
@@ -1264,8 +1251,38 @@ def main() -> int:
                 )
 
     # optional objective sheet
-    if objective_rows:
-        sheets["Objective_J"] = objective_rows
+    if obj_enabled and objective_vals:
+        solver_labels = [label for _, label, _, _, _ in solvers]
+        # ensure GT first
+        cols = ["GT"] + [lab for lab in solver_labels if lab != "GT"]
+        wide_rows: List[Dict[str, Any]] = []
+        for (lam, mu), by_patch in objective_vals.items():
+            for key in sorted(by_patch.keys()):
+                row: Dict[str, Any] = dict(
+                    patch_key=key,
+                    lambda_val=float(lam),
+                    mu_val=float(mu),
+                    eps=float(obj_eps),
+                )
+                vals = by_patch[key]
+                for col in cols:
+                    row[col] = float(vals.get(col, 0.0))
+                wide_rows.append(row)
+
+            # averages
+            avg_row: Dict[str, Any] = dict(
+                patch_key="AVERAGE",
+                lambda_val=float(lam),
+                mu_val=float(mu),
+                eps=float(obj_eps),
+            )
+            for col in cols:
+                col_vals = [by_patch[k].get(col, None) for k in by_patch.keys()]
+                col_vals = [v for v in col_vals if v is not None]
+                avg_row[col] = float(np.mean(col_vals)) if col_vals else 0.0
+            wide_rows.append(avg_row)
+
+        sheets["Objective_J"] = wide_rows
 
     # write excel
     write_workbook(excel_path, sheets)
