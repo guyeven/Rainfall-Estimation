@@ -560,17 +560,46 @@ def compute_pixel_errors(gt: np.ndarray, pred: np.ndarray, mask_rainy: np.ndarra
 
 def evaluate_objective_values(
     prob,
-    make_objective_fn,
     R_field: np.ndarray,
     *,
     lam: float,
     mu: float,
     eps: float,
-) -> float:
+) -> Dict[str, float]:
     if R_field.shape != (prob.H, prob.W):
         raise ValueError(f"R_field shape {R_field.shape} != (H,W)=({prob.H},{prob.W})")
-    fun, _ = make_objective_fn(prob, lam=lam, mu=mu, eps=eps)
-    return float(fun(R_field.reshape(prob.P)))
+    R = np.asarray(R_field, dtype=np.float64).ravel()
+
+    # --- J1 data term ---
+    pix = prob.pix_idx
+    li = prob.link_idx
+    ds = prob.ds_km
+    A_obs = prob.A_obs
+    L_km = prob.L_km
+    valid = prob.valid_links
+    k = prob.k
+    a = prob.alpha
+
+    Rp = R[pix]
+    pow_a = np.power(Rp, a[li], where=(Rp > 0), out=np.zeros_like(Rp))
+    contrib = ds * k[li] * pow_a
+    A_hat = np.bincount(li, weights=contrib, minlength=prob.L).astype(np.float64)
+
+    r = np.zeros(prob.L, dtype=np.float64)
+    r[valid] = (A_hat[valid] - A_obs[valid]) / L_km[valid]
+    J1 = float(np.dot(r[valid], r[valid]))
+
+    # --- J2 smoothness term ---
+    R_eps = R + eps
+    u = np.log(R_eps)
+    du = u[prob.n_u] - u[prob.n_v]
+    J2 = float(np.dot(du, du))
+
+    # --- J3 shrinkage term ---
+    J3 = float(np.dot(R, R))
+
+    J = J1 + lam * J2 + mu * J3
+    return dict(J=float(J), J1=float(J1), J2=float(J2), J3=float(J3))
 
 
 # ----------------------------
@@ -1020,7 +1049,6 @@ def main() -> int:
     obj_enabled = len(obj_pairs) > 0
     if obj_enabled:
         from solve_rain_lbfgsb import load_est_input_json as load_est_for_obj  # type: ignore
-        from solve_rain_lbfgsb import make_objective as make_objective_fn  # type: ignore
         prob_cache: Dict[str, Any] = {}
 
     # iterate per solver
@@ -1127,17 +1155,17 @@ def main() -> int:
                     gt_tag = (key, lam, mu)
                     if gt_tag not in objective_gt_done:
                         j_gt = evaluate_objective_values(
-                            prob, make_objective_fn, gt,
+                            prob, gt,
                             lam=lam, mu=mu, eps=obj_eps,
                         )
-                        objective_vals.setdefault((float(lam), float(mu)), {}).setdefault(key, {})["GT"] = float(j_gt)
+                        objective_vals.setdefault((float(lam), float(mu)), {}).setdefault(key, {})["GT"] = j_gt
                         objective_gt_done.add(gt_tag)
 
                     j_sol = evaluate_objective_values(
-                        prob, make_objective_fn, pred,
+                        prob, pred,
                         lam=lam, mu=mu, eps=obj_eps,
                     )
-                    objective_vals.setdefault((float(lam), float(mu)), {}).setdefault(key, {})[label] = float(j_sol)
+                    objective_vals.setdefault((float(lam), float(mu)), {}).setdefault(key, {})[label] = j_sol
 
             # --- CoverageStats per mask + coverage bin ---
             for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
@@ -1255,6 +1283,7 @@ def main() -> int:
         solver_labels = [label for _, label, _, _, _ in solvers]
         # ensure GT first
         cols = ["GT"] + [lab for lab in solver_labels if lab != "GT"]
+        metric_suffixes = ["J", "J1", "J2", "J3"]
         wide_rows: List[Dict[str, Any]] = []
         for (lam, mu), by_patch in objective_vals.items():
             for key in sorted(by_patch.keys()):
@@ -1266,7 +1295,9 @@ def main() -> int:
                 )
                 vals = by_patch[key]
                 for col in cols:
-                    row[col] = float(vals.get(col, 0.0))
+                    v = vals.get(col, {})
+                    for suf in metric_suffixes:
+                        row[f"{col}_{suf}"] = float(v.get(suf, 0.0))
                 wide_rows.append(row)
 
             # averages
@@ -1277,9 +1308,10 @@ def main() -> int:
                 eps=float(obj_eps),
             )
             for col in cols:
-                col_vals = [by_patch[k].get(col, None) for k in by_patch.keys()]
-                col_vals = [v for v in col_vals if v is not None]
-                avg_row[col] = float(np.mean(col_vals)) if col_vals else 0.0
+                for suf in metric_suffixes:
+                    col_vals = [by_patch[k].get(col, {}).get(suf, None) for k in by_patch.keys()]
+                    col_vals = [v for v in col_vals if v is not None]
+                    avg_row[f"{col}_{suf}"] = float(np.mean(col_vals)) if col_vals else 0.0
             wide_rows.append(avg_row)
 
         sheets["Objective_J"] = wide_rows
