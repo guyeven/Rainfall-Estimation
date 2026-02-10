@@ -892,7 +892,13 @@ def plot_ratio_iqr(
     handles = [plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=colors[s], label=s) for s in solver_labels]
     ax.legend(handles=handles, loc="best")
 
-    fig.text(0.5, 0.01, "E = sum(A_obs - A_hat) / sum(|L_km|) over all links", ha="center", fontsize=8)
+    fig.text(
+        0.5,
+        0.01,
+        "E = sum(A_obs - A_hat) / sum(|L_km|); E2 = sum((A_obs - A_hat)^2) / sum(|L_km|) over all links",
+        ha="center",
+        fontsize=8,
+    )
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout(rect=(0, 0.04, 1, 1))
@@ -924,8 +930,8 @@ def plot_fp_fn_summary(
     fig_w = max(8, len(solvers) * 0.8)
     fig, ax = plt.subplots(figsize=(fig_w, 4.5), dpi=dpi)
 
-    ax.bar(x - width/2, fp_mean, width, yerr=fp_std, capsize=4, label="Wet FP rate")
-    ax.bar(x + width/2, fn_mean, width, yerr=fn_std, capsize=4, label="Wet FN rate")
+    ax.errorbar(x - width/2, fp_mean, yerr=fp_std, fmt="o", capsize=4, label="Wet FP rate")
+    ax.errorbar(x + width/2, fn_mean, yerr=fn_std, fmt="o", capsize=4, label="Wet FN rate")
 
     ax.set_xticks(x)
     ax.set_xticklabels(solvers, rotation=30, ha="right", fontsize=8)
@@ -937,7 +943,7 @@ def plot_fp_fn_summary(
     fig.text(
         0.5,
         0.01,
-        "Positive = wet (pred >= threshold). FP: pred wet & GT dry. FN: pred dry & GT wet.",
+        "Positive = wet (gt >= threshold). FP: pred wet & GT dry. FN: pred dry & GT wet.",
         ha="center",
         fontsize=8,
     )
@@ -1388,8 +1394,14 @@ def main() -> int:
                 attn_l1_ge10km=attn_10,
                 J1_ge10km=J1_10,
                 E_all=E_all,
+                E2_all=(float(np.sum((A_obs[valid] - A_hat[valid]) ** 2) / denom_L) if denom_L > 0 else 0.0),
             ))
-            link_metrics[label][key] = dict(L1=attn_all, J1=J1_all, E=E_all)
+            link_metrics[label][key] = dict(
+                L1=attn_all,
+                J1=J1_all,
+                E=E_all,
+                E2=(float(np.sum((A_obs[valid] - A_hat[valid]) ** 2) / denom_L) if denom_L > 0 else 0.0),
+            )
 
         # store sheets (order: LinkStats, DistanceStats, CoverageStats)
         sheet_name = f"LinkStats_GTvs{label}"
@@ -1472,7 +1484,7 @@ def main() -> int:
             dry_rows.append(dict(
                 solver=label,
                 dry_threshold_mmph=float(thr),
-                positive_definition="wet (pred >= threshold)",
+                positive_definition="wet (gt >= threshold)",
                 fp_definition="pred wet & GT dry",
                 fn_definition="pred dry & GT wet",
                 fp_rate_mean=fp_mean,
@@ -1534,14 +1546,14 @@ def main() -> int:
                 # E ratio
                 if v_idw["E"] != 0:
                     ratio_vals["E"].append(v["E"] / v_idw["E"])
-                # E^2 ratio
-                if v_idw["E"] != 0:
-                    ratio_vals["E2"].append((v["E"] / v_idw["E"]) ** 2)
+                # E2 ratio
+                if v_idw["E2"] != 0:
+                    ratio_vals["E2"].append(v["E2"] / v_idw["E2"])
 
             entries.append((solver_label, f"L1({solver_label})/L1(IDW)", ratio_vals["L1"]))
             entries.append((solver_label, f"J1({solver_label})/J1(IDW)", ratio_vals["J1"]))
             entries.append((solver_label, f"E({solver_label})/E(IDW)", ratio_vals["E"]))
-            entries.append((solver_label, f"(E({solver_label})/E(IDW))^2", ratio_vals["E2"]))
+            entries.append((solver_label, f"E2({solver_label})/E2(IDW)", ratio_vals["E2"]))
 
         if entries:
             plot_ratio_iqr(
