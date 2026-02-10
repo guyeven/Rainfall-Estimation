@@ -833,6 +833,71 @@ def plot_iqr_bars(out_png: Path, title: str,
     plt.close(fig)
 
 
+def plot_ratio_iqr(
+    out_png: Path,
+    *,
+    title: str,
+    entries: List[Tuple[str, str, List[float]]],
+    dpi: int = 150,
+) -> None:
+    """
+    entries: list of (solver_label, x_label, values_per_patch)
+    """
+    import matplotlib.pyplot as plt  # type: ignore
+
+    if not entries:
+        return
+
+    x = np.arange(len(entries))
+    fig_w = max(8, len(entries) * 0.8)
+    fig, ax = plt.subplots(figsize=(fig_w, 4.5), dpi=dpi)
+
+    # color by solver
+    solver_labels = []
+    for solver, _, _ in entries:
+        if solver not in solver_labels:
+            solver_labels.append(solver)
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    colors = {s: color_cycle[i % max(1, len(color_cycle))] for i, s in enumerate(solver_labels)}
+
+    p25s = []
+    p50s = []
+    p75s = []
+    for _, _, vals in entries:
+        if vals:
+            arr = np.array(vals, dtype=np.float64)
+            p25s.append(float(np.percentile(arr, 25)))
+            p50s.append(float(np.percentile(arr, 50)))
+            p75s.append(float(np.percentile(arr, 75)))
+        else:
+            p25s.append(0.0)
+            p50s.append(0.0)
+            p75s.append(0.0)
+
+    # plot
+    for i, (solver, _, _) in enumerate(entries):
+        c = colors.get(solver, None)
+        ax.vlines(x[i], p25s[i], p75s[i], linewidth=2, color=c)
+        ax.hlines(p25s[i], x[i] - 0.15, x[i] + 0.15, linestyles="dotted", linewidth=1, color=c)
+        ax.hlines(p75s[i], x[i] - 0.15, x[i] + 0.15, linestyles="dotted", linewidth=1, color=c)
+        ax.plot(x[i], p50s[i], marker="o", linestyle="None", color=c)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([lab for _, lab, _ in entries], rotation=30, ha="right", fontsize=8)
+    ax.set_ylabel("Median of per-patch ratios (IQR)")
+    ax.set_title(title)
+    ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
+
+    # legend
+    handles = [plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=colors[s], label=s) for s in solver_labels]
+    ax.legend(handles=handles, loc="best")
+
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
 def build_bin_tick_labels(dist_labels: List[str], counts_by_bin: Dict[str, List[int]]) -> List[str]:
     out: List[str] = []
     for lab in dist_labels:
@@ -1045,6 +1110,7 @@ def main() -> int:
     objective_rows: List[Dict[str, Any]] = []
     objective_gt_done: set = set()
     objective_vals: Dict[Tuple[float, float], Dict[str, Dict[str, float]]] = {}
+    link_metrics: Dict[str, Dict[str, Dict[str, float]]] = {}
 
     obj_enabled = len(obj_pairs) > 0
     if obj_enabled:
@@ -1061,6 +1127,7 @@ def main() -> int:
         cov_rows: List[Dict[str, Any]] = []
         dist_rows_by_k: Dict[int, List[Dict[str, Any]]] = {k: [] for k in k_values}
         link_rows: List[Dict[str, Any]] = []
+        link_metrics[label] = {}
 
         for k in k_values:
             medians_rainy[k][label] = {lab: [] for lab in dist_labels}
@@ -1242,6 +1309,11 @@ def main() -> int:
                 A_obs, A_hat, L_km, valid, ge10 = compute_link_terms(est, pred)
                 attn_all, J1_all, n_valid = attn_l1_and_J1(A_obs, A_hat, L_km, valid)
                 attn_10, J1_10, n_10 = attn_l1_and_J1(A_obs, A_hat, L_km, ge10)
+                denom_L = float(np.sum(np.abs(L_km[valid])))
+                if denom_L > 0:
+                    E_all = float(np.sum(A_obs[valid] - A_hat[valid]) / denom_L)
+                else:
+                    E_all = 0.0
             except Exception as e:
                 raise SystemExit(f"Failed to compute link stats for {key} ({label}): {e}") from e
 
@@ -1253,7 +1325,9 @@ def main() -> int:
                 n_links_ge10km=n_10,
                 attn_l1_ge10km=attn_10,
                 J1_ge10km=J1_10,
+                E_all=E_all,
             ))
+            link_metrics[label][key] = dict(L1=attn_all, J1=J1_all, E=E_all)
 
         # store sheets
         sheets[f"CoverageStats_GTvs{label}"] = cov_rows
@@ -1319,6 +1393,46 @@ def main() -> int:
     # write excel
     write_workbook(excel_path, sheets)
     print(f"Wrote Excel: {excel_path}")
+
+    # ratio plot vs IDW for link metrics
+    if "IDW" in link_metrics:
+        entries: List[Tuple[str, str, List[float]]] = []
+        metrics = ["L1", "J1", "E", "E2"]
+        for solver_label in [label for _, label, _, _, _ in solvers if label in link_metrics]:
+            per_patch = link_metrics.get(solver_label, {})
+            per_patch_idw = link_metrics.get("IDW", {})
+            keys = sorted(set(per_patch.keys()) & set(per_patch_idw.keys()))
+            if not keys:
+                continue
+            ratio_vals: Dict[str, List[float]] = {m: [] for m in metrics}
+            for k in keys:
+                v = per_patch[k]
+                v_idw = per_patch_idw[k]
+                # L1 ratio
+                if v_idw["L1"] != 0:
+                    ratio_vals["L1"].append(v["L1"] / v_idw["L1"])
+                # J1 ratio
+                if v_idw["J1"] != 0:
+                    ratio_vals["J1"].append(v["J1"] / v_idw["J1"])
+                # E ratio
+                if v_idw["E"] != 0:
+                    ratio_vals["E"].append(v["E"] / v_idw["E"])
+                # E^2 ratio
+                if v_idw["E"] != 0:
+                    ratio_vals["E2"].append((v["E"] / v_idw["E"]) ** 2)
+
+            entries.append((solver_label, f"L1({solver_label})/L1(IDW)", ratio_vals["L1"]))
+            entries.append((solver_label, f"J1({solver_label})/J1(IDW)", ratio_vals["J1"]))
+            entries.append((solver_label, f"E({solver_label})/E(IDW)", ratio_vals["E"]))
+            entries.append((solver_label, f"(E({solver_label})/E(IDW))^2", ratio_vals["E2"]))
+
+        if entries:
+            plot_ratio_iqr(
+                img_dir / "link_ratio_summary.png",
+                title="Link-metric ratios vs IDW (median and IQR across patches)",
+                entries=entries,
+                dpi=dpi,
+            )
 
     # plots across solvers (IQR of per-patch medians)
     method_order = [label for _, label, _, _, _ in solvers if label in medians_rainy[k_values[0]]]
