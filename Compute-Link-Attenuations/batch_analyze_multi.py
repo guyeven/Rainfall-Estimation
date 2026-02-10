@@ -892,8 +892,58 @@ def plot_ratio_iqr(
     handles = [plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=colors[s], label=s) for s in solver_labels]
     ax.legend(handles=handles, loc="best")
 
+    fig.text(0.5, 0.01, "E = sum(A_obs - A_hat) / sum(|L_km|) over all links", ha="center", fontsize=8)
+
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
+def plot_fp_fn_summary(
+    out_png: Path,
+    *,
+    title: str,
+    rows: List[Dict[str, Any]],
+    dpi: int = 150,
+) -> None:
+    import matplotlib.pyplot as plt  # type: ignore
+
+    if not rows:
+        return
+
+    solvers = [r["solver"] for r in rows]
+    fp_mean = [float(r["fp_rate_mean"]) for r in rows]
+    fp_std = [float(r["fp_rate_std"]) for r in rows]
+    fn_mean = [float(r["fn_rate_mean"]) for r in rows]
+    fn_std = [float(r["fn_rate_std"]) for r in rows]
+
+    x = np.arange(len(solvers))
+    width = 0.35
+
+    fig_w = max(8, len(solvers) * 0.8)
+    fig, ax = plt.subplots(figsize=(fig_w, 4.5), dpi=dpi)
+
+    ax.bar(x - width/2, fp_mean, width, yerr=fp_std, capsize=4, label="Wet FP rate")
+    ax.bar(x + width/2, fn_mean, width, yerr=fn_std, capsize=4, label="Wet FN rate")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(solvers, rotation=30, ha="right", fontsize=8)
+    ax.set_ylabel("Mean rate across patches (±1 std)")
+    ax.set_title(title)
+    ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
+    ax.legend(loc="best")
+
+    fig.text(
+        0.5,
+        0.01,
+        "Positive = wet (pred >= threshold). FP: pred wet & GT dry. FN: pred dry & GT wet.",
+        ha="center",
+        fontsize=8,
+    )
+
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
     fig.savefig(out_png)
     plt.close(fig)
 
@@ -1097,6 +1147,7 @@ def main() -> int:
 
     # sheets data
     sheets: Dict[str, List[Dict[str, Any]]] = {}
+    sheet_order: List[str] = []
 
     # For plots: per k -> per method -> per bin -> list of per-patch medians
     medians_rainy: Dict[int, Dict[str, Dict[str, List[float]]]] = {k: {} for k in k_values}
@@ -1106,6 +1157,7 @@ def main() -> int:
         for k in k_values
     }
     bin_counts_seen: set = set()
+    dry_metrics: Dict[str, Dict[str, List[float]]] = {}
 
     objective_rows: List[Dict[str, Any]] = []
     objective_gt_done: set = set()
@@ -1128,6 +1180,7 @@ def main() -> int:
         dist_rows_by_k: Dict[int, List[Dict[str, Any]]] = {k: [] for k in k_values}
         link_rows: List[Dict[str, Any]] = []
         link_metrics[label] = {}
+        dry_metrics[label] = {"fp_rates": [], "fn_rates": []}
 
         for k in k_values:
             medians_rainy[k][label] = {lab: [] for lab in dist_labels}
@@ -1169,6 +1222,15 @@ def main() -> int:
             pred = pred.astype(np.float64)
 
             rainy = gt >= thr
+            # dry classification metrics (dry = pred < thr)
+            gt_wet = gt >= thr
+            pred_wet = pred >= thr
+            fp = np.logical_and(pred_wet, ~gt_wet)  # predicted wet but GT dry
+            fn = np.logical_and(~pred_wet, gt_wet)  # predicted dry but GT wet
+            total_pixels = gt.size
+            if total_pixels > 0:
+                dry_metrics[label]["fp_rates"].append(float(np.sum(fp)) / float(total_pixels))
+                dry_metrics[label]["fn_rates"].append(float(np.sum(fn)) / float(total_pixels))
 
             # coverage map + bins
             est = load_est_payload(est_path)
@@ -1329,14 +1391,20 @@ def main() -> int:
             ))
             link_metrics[label][key] = dict(L1=attn_all, J1=J1_all, E=E_all)
 
-        # store sheets
-        sheets[f"CoverageStats_GTvs{label}"] = cov_rows
+        # store sheets (order: LinkStats, DistanceStats, CoverageStats)
+        sheet_name = f"LinkStats_GTvs{label}"
+        sheets[sheet_name] = link_rows
+        sheet_order.append(sheet_name)
         for k in k_values:
             if k == 3:
-                sheets[f"DistanceStats_GTvs{label}"] = dist_rows_by_k[k]
+                sheet_name = f"DistanceStats_GTvs{label}"
             else:
-                sheets[f"DistanceStatsK{k}_GTvs{label}"] = dist_rows_by_k[k]
-        sheets[f"LinkStats_GTvs{label}"] = link_rows
+                sheet_name = f"DistanceStatsK{k}_GTvs{label}"
+            sheets[sheet_name] = dist_rows_by_k[k]
+            sheet_order.append(sheet_name)
+        sheet_name = f"CoverageStats_GTvs{label}"
+        sheets[sheet_name] = cov_rows
+        sheet_order.append(sheet_name)
 
         # RAE histograms (rainy only)
         if rae_hist_data is not None:
@@ -1389,9 +1457,58 @@ def main() -> int:
             wide_rows.append(avg_row)
 
         sheets["Objective_J"] = wide_rows
+        sheet_order.append("Objective_J")
 
-    # write excel
-    write_workbook(excel_path, sheets)
+    # dry classification summary
+    if dry_metrics:
+        dry_rows: List[Dict[str, Any]] = []
+        for label, vals in dry_metrics.items():
+            fp = np.array(vals.get("fp_rates", []), dtype=np.float64)
+            fn = np.array(vals.get("fn_rates", []), dtype=np.float64)
+            fp_mean = float(np.mean(fp)) if fp.size else 0.0
+            fp_std = float(np.std(fp, ddof=0)) if fp.size else 0.0
+            fn_mean = float(np.mean(fn)) if fn.size else 0.0
+            fn_std = float(np.std(fn, ddof=0)) if fn.size else 0.0
+            dry_rows.append(dict(
+                solver=label,
+                dry_threshold_mmph=float(thr),
+                positive_definition="wet (pred >= threshold)",
+                fp_definition="pred wet & GT dry",
+                fn_definition="pred dry & GT wet",
+                fp_rate_mean=fp_mean,
+                fp_rate_std=fp_std,
+                fp_rate_range=f"[{fp_mean - fp_std:.6f},{fp_mean + fp_std:.6f}]",
+                fn_rate_mean=fn_mean,
+                fn_rate_std=fn_std,
+                fn_rate_range=f"[{fn_mean - fn_std:.6f},{fn_mean + fn_std:.6f}]",
+            ))
+        sheets["DryConfusionSummary"] = dry_rows
+        sheet_order.append("DryConfusionSummary")
+
+        plot_fp_fn_summary(
+            img_dir / "dry_fp_fn_summary.png",
+            title="Dry-classification FP/FN rates (mean ± std across patches)",
+            rows=dry_rows,
+            dpi=dpi,
+        )
+
+    # write excel (ordered)
+    ordered_sheets: Dict[str, List[Dict[str, Any]]] = {}
+    # enforce global ordering: all LinkStats, then DistanceStats, then CoverageStats
+    for prefix in ("LinkStats_", "DistanceStats", "CoverageStats"):
+        for name in sheet_order:
+            if name.startswith(prefix) and name not in ordered_sheets:
+                ordered_sheets[name] = sheets[name]
+    # add remaining sheets in original order
+    for name in sheet_order:
+        if name not in ordered_sheets:
+            ordered_sheets[name] = sheets[name]
+    # add any leftover (shouldn't happen)
+    for name in sheets:
+        if name not in ordered_sheets:
+            ordered_sheets[name] = sheets[name]
+
+    write_workbook(excel_path, ordered_sheets)
     print(f"Wrote Excel: {excel_path}")
 
     # ratio plot vs IDW for link metrics
