@@ -11,12 +11,14 @@ Multi-solver analyzer that:
      patch_key, mask_type, coverage_bin/distance_bin_m, n_pixels,
      mean_signed, median_signed, mean_abs, std_abs, median_abs,
      p90_abs, p99_abs, linf_abs,
-     l1_abs_sum
+     l1_rae_sum, l1_abs_mmph_sum, l1_abs_mmph_sum_norm_hw
 
    Conventions:
    - Rainy pixels: signed_rel = (GT - PRED)/GT, abs_rel = |GT-PRED|/GT
    - Non-rainy pixels: signed_diff = (PRED - GT), abs_diff = |PRED-GT|
-   l1_abs_sum uses the corresponding "abs" quantity in each case.
+   l1_rae_sum = sum(|GT-PRED|/GT), using denom=1 when GT=0.
+   l1_abs_mmph_sum = sum(|GT-PRED|).
+   l1_abs_mmph_sum_norm_hw = l1_abs_mmph_sum / (H*W) for the patch.
 
 2) Adds per-solver link-based sheets:
    - LinkStats_GTvs<LABEL>
@@ -176,6 +178,59 @@ def patch_key_from_filename(name: str) -> str:
     if stem.startswith("est_input_"):
         stem = stem[len("est_input_") :]
     return stem
+
+
+def load_npz_meta_scalars(path: Path) -> Dict[str, float]:
+    """
+    Read scalar meta_* fields from solver npz, if present.
+    """
+    out: Dict[str, float] = {}
+    z = np.load(path, allow_pickle=True)
+    for k in z.files:
+        if not str(k).startswith("meta_"):
+            continue
+        try:
+            v = z[k]
+            if np.isscalar(v):
+                out[str(k)] = float(v)
+            elif isinstance(v, np.ndarray) and v.size == 1:
+                out[str(k)] = float(v.reshape(-1)[0])
+        except Exception:
+            continue
+    return out
+
+
+def build_neighbor_triplets(H: int, W: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    a_idx: List[int] = []
+    b_idx: List[int] = []
+    c_idx: List[int] = []
+    for i in range(H):
+        for j in range(W):
+            b = i * W + j
+            neigh: List[int] = []
+            if i > 0:
+                neigh.append((i - 1) * W + j)
+            if i + 1 < H:
+                neigh.append((i + 1) * W + j)
+            if j > 0:
+                neigh.append(i * W + (j - 1))
+            if j + 1 < W:
+                neigh.append(i * W + (j + 1))
+            for a in neigh:
+                for c in neigh:
+                    if a == c:
+                        continue
+                    a_idx.append(a)
+                    b_idx.append(b)
+                    c_idx.append(c)
+    if not a_idx:
+        z = np.zeros(0, dtype=np.int64)
+        return z, z, z
+    return (
+        np.asarray(a_idx, dtype=np.int64),
+        np.asarray(b_idx, dtype=np.int64),
+        np.asarray(c_idx, dtype=np.int64),
+    )
 
 
 # ----------------------------
@@ -502,14 +557,21 @@ def coverage_bin_label(v: int, exact: List[int], ge: Optional[int]) -> Optional[
 # Stats helpers
 # ----------------------------
 
-def stats_row(err_signed: np.ndarray, err_abs: np.ndarray, *, l1_abs_sum: float) -> Dict[str, Any]:
+def stats_row(
+    err_signed: np.ndarray,
+    err_abs: np.ndarray,
+    *,
+    l1_rae_sum: float,
+    l1_abs_mmph_sum: float,
+) -> Dict[str, Any]:
     if err_abs.size == 0:
         return dict(
             n_pixels=0,
             mean_signed=0.0, median_signed=0.0,
             mean_abs=0.0, std_abs=0.0,
             median_abs=0.0, p90_abs=0.0, p99_abs=0.0, linf_abs=0.0,
-            l1_abs_sum=0.0,
+            l1_rae_sum=0.0,
+            l1_abs_mmph_sum=0.0,
         )
     mean_signed = float(np.mean(err_signed))
     median_signed = float(np.median(err_signed))
@@ -529,8 +591,59 @@ def stats_row(err_signed: np.ndarray, err_abs: np.ndarray, *, l1_abs_sum: float)
         p90_abs=p90,
         p99_abs=p99,
         linf_abs=linf,
-        l1_abs_sum=float(l1_abs_sum),
+        l1_rae_sum=float(l1_rae_sum),
+        l1_abs_mmph_sum=float(l1_abs_mmph_sum),
     )
+
+
+def append_average_rows(
+    rows: List[Dict[str, Any]],
+    *,
+    group_keys: List[str],
+    patch_key_field: str = "patch_key",
+    average_label: str = "AVERAGE",
+) -> List[Dict[str, Any]]:
+    """
+    Append average rows over patches, grouped by group_keys.
+    """
+    if not rows:
+        return rows
+
+    def _is_number(v: Any) -> bool:
+        return isinstance(v, (int, float, np.integer, np.floating)) and not isinstance(v, bool)
+
+    grouped: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
+    for r in rows:
+        if r.get(patch_key_field) == average_label:
+            continue
+        g = tuple(r.get(k, None) for k in group_keys)
+        grouped.setdefault(g, []).append(r)
+
+    avg_rows: List[Dict[str, Any]] = []
+    for g, grp_rows in grouped.items():
+        if not grp_rows:
+            continue
+        out: Dict[str, Any] = {patch_key_field: average_label}
+        for i, k in enumerate(group_keys):
+            out[k] = g[i]
+
+        keys = set()
+        for rr in grp_rows:
+            keys.update(rr.keys())
+        keys.discard(patch_key_field)
+        for k in group_keys:
+            keys.discard(k)
+
+        for k in sorted(keys):
+            vals = [rr.get(k, None) for rr in grp_rows]
+            nums = [float(v) for v in vals if _is_number(v)]
+            if nums:
+                out[k] = float(np.mean(nums))
+            else:
+                out[k] = ""
+        avg_rows.append(out)
+
+    return rows + avg_rows
 
 
 def compute_pixel_errors(gt: np.ndarray, pred: np.ndarray, mask_rainy: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -565,6 +678,7 @@ def evaluate_objective_values(
     lam: float,
     mu: float,
     eps: float,
+    eta: float = 0.0,
 ) -> Dict[str, float]:
     if R_field.shape != (prob.H, prob.W):
         raise ValueError(f"R_field shape {R_field.shape} != (H,W)=({prob.H},{prob.W})")
@@ -598,8 +712,30 @@ def evaluate_objective_values(
     # --- J3 shrinkage term ---
     J3 = float(np.dot(R, R))
 
-    J = J1 + lam * J2 + mu * J3
-    return dict(J=float(J), J1=float(J1), J2=float(J2), J3=float(J3))
+    # --- J4 triplet term: sum((f(b)-f(a))-(f(c)-f(b))) ---
+    t_a, t_b, t_c = build_neighbor_triplets(prob.H, prob.W)
+    if t_a.size > 0:
+        J4 = float(np.sum((R[t_b] - R[t_a]) - (R[t_c] - R[t_b])))
+    else:
+        J4 = 0.0
+
+    lamJ2 = float(lam * J2)
+    muJ3 = float(mu * J3)
+    etaJ4 = float(eta * J4)
+    J = J1 + lamJ2 + muJ3 + etaJ4
+    return dict(
+        J=float(J),
+        J1=float(J1),
+        J2=float(J2),
+        J3=float(J3),
+        J4=float(J4),
+        wJ1=float(J1),
+        wJ2=lamJ2,
+        wJ3=muJ3,
+        wJ4=etaJ4,
+        etaJ4=etaJ4,
+        eta=float(eta),
+    )
 
 
 # ----------------------------
@@ -749,6 +885,28 @@ def compute_iqr_profile(per_patch_medians: Dict[str, Dict[str, List[float]]],
     return out
 
 
+def compute_p90_profile(per_patch_p90s: Dict[str, Dict[str, List[float]]],
+                        dist_labels: List[str]) -> Dict[str, Dict[str, Tuple[float,float,float]]]:
+    """
+    per_patch_p90s[method][bin_label] = list of p90s (one per patch that had pixels in that bin)
+    returns summary[method][bin_label] = (p25, p50, p90)
+    """
+    out: Dict[str, Dict[str, Tuple[float,float,float]]] = {}
+    for method, by_bin in per_patch_p90s.items():
+        out[method] = {}
+        for lab in dist_labels:
+            vals = np.array(by_bin.get(lab, []), dtype=np.float64)
+            if vals.size == 0:
+                out[method][lab] = (0.0, 0.0, 0.0)
+            else:
+                out[method][lab] = (
+                    float(np.percentile(vals, 25)),
+                    float(np.percentile(vals, 50)),
+                    float(np.percentile(vals, 90)),
+                )
+    return out
+
+
 def compute_relative_iqr_profile(
     summary: Dict[str, Dict[str, Tuple[float, float, float]]],
     *,
@@ -778,7 +936,8 @@ def plot_iqr_bars(out_png: Path, title: str,
                   dist_labels: List[str],
                   method_order: List[str],
                   *, y_max: Optional[float] = None, dpi: int = 150, bin_spacing: float = 1.0,
-                  tick_labels: Optional[List[str]] = None):
+                  tick_labels: Optional[List[str]] = None,
+                  y_label: Optional[str] = None):
     import matplotlib.pyplot as plt  # type: ignore
 
     n_bins = len(dist_labels)
@@ -817,7 +976,7 @@ def plot_iqr_bars(out_png: Path, title: str,
         ax.set_xlabel("Distance bin (m)\nSecond line: avg pixels [avg-std, avg+std]")
     else:
         ax.set_xticklabels(tick_labels, rotation=0)
-    ax.set_ylabel("IQR of per-patch median error")
+    ax.set_ylabel(y_label or "IQR of per-patch median error")
     ax.set_title(title)
     ax.legend(loc="best")
     ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
@@ -1037,6 +1196,74 @@ def plot_rae_histograms(
     plt.close(fig)
 
 
+def build_rain_gt_bin_edges(*, max_upper: float = 128.0) -> List[float]:
+    edges: List[float] = [0.0, 1.0]
+    cur = 1.0
+    while cur < float(max_upper):
+        cur *= 2.0
+        edges.append(float(cur))
+    return edges
+
+
+def format_interval_label(lo: float, hi: float) -> str:
+    lo_s = str(int(lo)) if float(lo).is_integer() else f"{lo:g}"
+    hi_s = str(int(hi)) if float(hi).is_integer() else f"{hi:g}"
+    return f"[{lo_s},{hi_s})"
+
+
+def plot_gt_binned_patchavg_error(
+    out_png: Path,
+    *,
+    title: str,
+    bin_labels: List[str],
+    solver_order: List[str],
+    mean_by_solver: Dict[str, List[float]],
+    std_by_solver: Dict[str, List[float]],
+    y_label: str,
+    dpi: int = 150,
+):
+    import matplotlib.pyplot as plt  # type: ignore
+
+    if not bin_labels or not solver_order:
+        return
+    x = np.arange(len(bin_labels), dtype=np.float64)
+    nsol = max(1, len(solver_order))
+    width = 0.8 / nsol
+    fig_w = max(10.0, len(bin_labels) * 1.3)
+    fig, ax = plt.subplots(figsize=(fig_w, 5.8), dpi=dpi)
+    color_cycle = ["#1F77B4", "#FF7F0E", "#2CA02C", "#D62728", "#9467BD", "#8C564B", "#E377C2", "#7F7F7F"]
+
+    for s_idx, solver in enumerate(solver_order):
+        m = np.array(mean_by_solver.get(solver, []), dtype=np.float64)
+        sd = np.array(std_by_solver.get(solver, []), dtype=np.float64)
+        if m.size == 0:
+            continue
+        offset = (s_idx - (nsol - 1) / 2.0) * width
+        xpos = x + offset
+        ax.bar(
+            xpos,
+            m,
+            width=width,
+            color=color_cycle[s_idx % len(color_cycle)],
+            alpha=0.85,
+            label=solver,
+            yerr=sd,
+            error_kw={"elinewidth": 1.0, "capsize": 2.0},
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(bin_labels, rotation=35, ha="right")
+    ax.set_ylabel(y_label)
+    ax.set_xlabel("GT rain interval (mm/h)")
+    ax.set_title(title)
+    ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
 # ----------------------------
 # Main
 # ----------------------------
@@ -1103,16 +1330,19 @@ def main() -> int:
     obj_cfg = deep_get(cfg, "objective", {}) or {}
     obj_eps = float(obj_cfg.get("eps", 0.01))
     obj_pairs_raw = obj_cfg.get("pairs", []) or []
-    obj_pairs: List[Tuple[float, float]] = []
+    obj_pairs: List[Tuple[float, float, float]] = []
     for item in obj_pairs_raw:
         if isinstance(item, dict):
-            lam = item.get("lambda", item.get("lam", None))
-            mu = item.get("mu", None)
+            lam = item.get("w_smooth", item.get("lambda", item.get("lam", None)))
+            mu = item.get("w_shrink", item.get("mu", None))
+            eta = item.get("w_second_der", item.get("eta", 0.0))
             if lam is None or mu is None:
                 continue
-            obj_pairs.append((float(lam), float(mu)))
+            obj_pairs.append((float(lam), float(mu), float(eta)))
         elif isinstance(item, (list, tuple)) and len(item) == 2:
-            obj_pairs.append((float(item[0]), float(item[1])))
+            obj_pairs.append((float(item[0]), float(item[1]), 0.0))
+        elif isinstance(item, (list, tuple)) and len(item) == 3:
+            obj_pairs.append((float(item[0]), float(item[1]), float(item[2])))
     if not obj_pairs:
         obj_pairs = []
 
@@ -1121,6 +1351,17 @@ def main() -> int:
     rae_bins = int(rae_cfg.get("bins", 50))
     rae_max_patches = rae_cfg.get("max_patches", None)
     rae_out_subdir = str(rae_cfg.get("out_dir", "images/RAE_histograms"))
+
+    rainy_bin_cfg = deep_get(cfg, "rainy_error_bins", {}) or {}
+    rainy_bins_enabled = bool(rainy_bin_cfg.get("enabled", True))
+    rainy_bins_max_upper = float(rainy_bin_cfg.get("max_upper", 128.0))
+    rainy_bins_zero_frac = float(rainy_bin_cfg.get("prune_zero_frac", 0.5))
+    rainy_edges = build_rain_gt_bin_edges(max_upper=rainy_bins_max_upper)
+    rainy_intervals: List[Tuple[float, float, str]] = []
+    for i in range(len(rainy_edges) - 1):
+        lo = float(rainy_edges[i])
+        hi = float(rainy_edges[i + 1])
+        rainy_intervals.append((lo, hi, format_interval_label(lo, hi)))
 
     # plot scaling
     auto_y = bool(deep_get(cfg, "plots.automatic_vertical_scaling", True))
@@ -1155,9 +1396,11 @@ def main() -> int:
     sheets: Dict[str, List[Dict[str, Any]]] = {}
     sheet_order: List[str] = []
 
-    # For plots: per k -> per method -> per bin -> list of per-patch medians
+    # For plots: per k -> per method -> per bin -> list of per-patch medians / p90s
     medians_rainy: Dict[int, Dict[str, Dict[str, List[float]]]] = {k: {} for k in k_values}
     medians_nonrainy: Dict[int, Dict[str, Dict[str, List[float]]]] = {k: {} for k in k_values}
+    p90s_rainy: Dict[int, Dict[str, Dict[str, List[float]]]] = {k: {} for k in k_values}
+    p90s_nonrainy: Dict[int, Dict[str, Dict[str, List[float]]]] = {k: {} for k in k_values}
     bin_counts: Dict[int, Dict[str, Dict[str, List[int]]]] = {
         k: {"rainy": {lab: [] for lab in dist_labels}, "nonrainy": {lab: [] for lab in dist_labels}}
         for k in k_values
@@ -1167,8 +1410,12 @@ def main() -> int:
 
     objective_rows: List[Dict[str, Any]] = []
     objective_gt_done: set = set()
-    objective_vals: Dict[Tuple[float, float], Dict[str, Dict[str, float]]] = {}
+    objective_vals: Dict[Tuple[float, float, float], Dict[str, Dict[str, float]]] = {}
     link_metrics: Dict[str, Dict[str, Dict[str, float]]] = {}
+    stop_rows: List[Dict[str, Any]] = []
+    gtbin_counts_global: Dict[str, Dict[str, int]] = {lab: {} for _, _, lab in rainy_intervals}
+    gtbin_rel_patch_means: Dict[str, Dict[str, List[float]]] = {}
+    gtbin_abs_patch_means: Dict[str, Dict[str, List[float]]] = {}
 
     obj_enabled = len(obj_pairs) > 0
     if obj_enabled:
@@ -1187,10 +1434,14 @@ def main() -> int:
         link_rows: List[Dict[str, Any]] = []
         link_metrics[label] = {}
         dry_metrics[label] = {"fp_rates": [], "fn_rates": []}
+        gtbin_rel_patch_means[label] = {lab: [] for _, _, lab in rainy_intervals}
+        gtbin_abs_patch_means[label] = {lab: [] for _, _, lab in rainy_intervals}
 
         for k in k_values:
             medians_rainy[k][label] = {lab: [] for lab in dist_labels}
             medians_nonrainy[k][label] = {lab: [] for lab in dist_labels}
+            p90s_rainy[k][label] = {lab: [] for lab in dist_labels}
+            p90s_nonrainy[k][label] = {lab: [] for lab in dist_labels}
 
         rae_hist_data: Optional[Dict[int, Dict[str, List[float]]]] = None
         if rae_enabled:
@@ -1271,13 +1522,36 @@ def main() -> int:
             # Precompute full-field error arrays aligned to pixels for bin masking
             signed_full = np.empty_like(gt, dtype=np.float64)
             abs_full = np.empty_like(gt, dtype=np.float64)
+            abs_rae_full = np.empty_like(gt, dtype=np.float64)
+            abs_mmph_full = np.abs(gt - pred)
             # rainy
             denom = np.where(gt == 0.0, 1.0, gt)
             signed_full[rainy] = (gt[rainy] - pred[rainy]) / denom[rainy]
             abs_full[rainy] = np.abs(signed_full[rainy])
+            abs_rae_full[rainy] = abs_full[rainy]
             # nonrainy
             signed_full[~rainy] = pred[~rainy] - gt[~rainy]
             abs_full[~rainy] = np.abs(signed_full[~rainy])
+            abs_rae_full[~rainy] = abs_mmph_full[~rainy] / denom[~rainy]
+
+            # --- GT-binned all-pixels error (powers of 2 buckets) ---
+            if rainy_bins_enabled:
+                for lo, hi, bin_lab in rainy_intervals:
+                    gmask_bin = (gt >= lo) & (gt < hi)
+                    n_bin = int(np.sum(gmask_bin))
+                    if key not in gtbin_counts_global[bin_lab]:
+                        gtbin_counts_global[bin_lab][key] = n_bin
+                    if n_bin == 0:
+                        continue
+                    abs_vals = abs_mmph_full[gmask_bin]
+                    # Per request, the [0,1) bucket uses absolute error also in the "relative" plot.
+                    if lo < 1.0:
+                        rel_vals = abs_vals
+                    else:
+                        den_bin = np.where(gt[gmask_bin] == 0.0, 1.0, gt[gmask_bin])
+                        rel_vals = abs_vals / den_bin
+                    gtbin_rel_patch_means[label][bin_lab].append(float(np.mean(rel_vals)))
+                    gtbin_abs_patch_means[label][bin_lab].append(float(np.mean(abs_vals)))
 
             # --- Objective values (GT + solver) ---
             if obj_enabled:
@@ -1286,21 +1560,21 @@ def main() -> int:
                 if prob is None:
                     prob = load_est_for_obj(est_path, warn=False)
                     prob_cache[est_key] = prob
-                for lam, mu in obj_pairs:
-                    gt_tag = (key, lam, mu)
+                for lam, mu, eta in obj_pairs:
+                    gt_tag = (key, lam, mu, eta)
                     if gt_tag not in objective_gt_done:
                         j_gt = evaluate_objective_values(
                             prob, gt,
-                            lam=lam, mu=mu, eps=obj_eps,
+                            lam=lam, mu=mu, eps=obj_eps, eta=eta,
                         )
-                        objective_vals.setdefault((float(lam), float(mu)), {}).setdefault(key, {})["GT"] = j_gt
+                        objective_vals.setdefault((float(lam), float(mu), float(eta)), {}).setdefault(key, {})["GT"] = j_gt
                         objective_gt_done.add(gt_tag)
 
                     j_sol = evaluate_objective_values(
                         prob, pred,
-                        lam=lam, mu=mu, eps=obj_eps,
+                        lam=lam, mu=mu, eps=obj_eps, eta=eta,
                     )
-                    objective_vals.setdefault((float(lam), float(mu)), {}).setdefault(key, {})[label] = j_sol
+                    objective_vals.setdefault((float(lam), float(mu), float(eta)), {}).setdefault(key, {})[label] = j_sol
 
             # --- CoverageStats per mask + coverage bin ---
             for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
@@ -1322,7 +1596,9 @@ def main() -> int:
                             mean_signed=0.0, median_signed=0.0,
                             mean_abs=0.0, std_abs=0.0,
                             median_abs=0.0, p90_abs=0.0, p99_abs=0.0, linf_abs=0.0,
-                            l1_abs_sum=0.0,
+                            l1_rae_sum=0.0,
+                            l1_abs_mmph_sum=0.0,
+                            l1_abs_mmph_sum_norm_hw=0.0,
                         )
                         cov_rows.append(row)
                         continue
@@ -1334,11 +1610,15 @@ def main() -> int:
                         gmask = mask & (cov_map == int(bin_lab))
                     e_signed = signed_full[gmask].ravel()
                     e_abs = abs_full[gmask].ravel()
-                    # l1: sum of abs quantity in this bin
-                    l1 = float(np.sum(e_abs))
-                    s = stats_row(e_signed, e_abs, l1_abs_sum=l1)
+                    l1_rae = float(np.sum(abs_rae_full[gmask]))
+                    l1_abs_mmph = float(np.sum(abs_mmph_full[gmask]))
+                    s = stats_row(e_signed, e_abs, l1_rae_sum=l1_rae, l1_abs_mmph_sum=l1_abs_mmph)
                     cov_rows.append(dict(
-                        patch_key=key, mask_type=mask_name, coverage_bin=bin_lab, **s
+                        patch_key=key,
+                        mask_type=mask_name,
+                        coverage_bin=bin_lab,
+                        l1_abs_mmph_sum_norm_hw=(l1_abs_mmph / float(gt.size)),
+                        **s,
                     ))
 
             # --- DistanceStats per mask + distance bin (per k) ---
@@ -1356,17 +1636,24 @@ def main() -> int:
                             bin_counts_seen.add(count_key)
                         e_signed = signed_full[gmask].ravel()
                         e_abs = abs_full[gmask].ravel()
-                        l1 = float(np.sum(e_abs))
-                        s = stats_row(e_signed, e_abs, l1_abs_sum=l1)
+                        l1_rae = float(np.sum(abs_rae_full[gmask]))
+                        l1_abs_mmph = float(np.sum(abs_mmph_full[gmask]))
+                        s = stats_row(e_signed, e_abs, l1_rae_sum=l1_rae, l1_abs_mmph_sum=l1_abs_mmph)
                         dist_rows_by_k[k].append(dict(
-                            patch_key=key, mask_type=mask_name, distance_bin_m=bin_lab, **s
+                            patch_key=key,
+                            mask_type=mask_name,
+                            distance_bin_m=bin_lab,
+                            l1_abs_mmph_sum_norm_hw=(l1_abs_mmph / float(gt.size)),
+                            **s,
                         ))
 
                         # For final IQR plot: per-patch median_abs per bin (rainy uses abs_rel, nonrainy uses abs_diff)
                         if mask_name == "rainy" and e_abs.size > 0:
                             medians_rainy[k][label][bin_lab].append(float(np.median(e_abs)))
+                            p90s_rainy[k][label][bin_lab].append(float(np.percentile(e_abs, 90)))
                         if mask_name == "nonrainy" and e_abs.size > 0:
                             medians_nonrainy[k][label][bin_lab].append(float(np.median(e_abs)))
+                            p90s_nonrainy[k][label][bin_lab].append(float(np.percentile(e_abs, 90)))
 
                         # RAE histogram data (rainy only, optional)
                         if rae_hist_data is not None and key in hist_keys and mask_name == "rainy" and e_abs.size > 0:
@@ -1404,10 +1691,19 @@ def main() -> int:
             )
 
         # store sheets (order: LinkStats, DistanceStats, CoverageStats)
+        link_rows = append_average_rows(link_rows, group_keys=[])
+        cov_rows = append_average_rows(cov_rows, group_keys=["mask_type", "coverage_bin"])
+        for k in k_values:
+            dist_rows_by_k[k] = append_average_rows(
+                dist_rows_by_k[k],
+                group_keys=["mask_type", "distance_bin_m"],
+            )
+
         sheet_name = f"LinkStats_GTvs{label}"
         sheets[sheet_name] = link_rows
         sheet_order.append(sheet_name)
-        for k in k_values:
+        k_values_for_sheets = sorted(k_values, key=lambda kv: (0 if kv == 3 else (1 if kv == 2 else 2), kv))
+        for k in k_values_for_sheets:
             if k == 3:
                 sheet_name = f"DistanceStats_GTvs{label}"
             else:
@@ -1437,14 +1733,15 @@ def main() -> int:
         solver_labels = [label for _, label, _, _, _ in solvers]
         # ensure GT first
         cols = ["GT"] + [lab for lab in solver_labels if lab != "GT"]
-        metric_suffixes = ["J", "J1", "J2", "J3"]
+        metric_suffixes = ["J", "J1", "J2", "J3", "J4", "wJ1", "wJ2", "wJ3", "wJ4"]
         wide_rows: List[Dict[str, Any]] = []
-        for (lam, mu), by_patch in objective_vals.items():
+        for (lam, mu, eta), by_patch in objective_vals.items():
             for key in sorted(by_patch.keys()):
                 row: Dict[str, Any] = dict(
                     patch_key=key,
                     lambda_val=float(lam),
                     mu_val=float(mu),
+                    eta_val=float(eta),
                     eps=float(obj_eps),
                 )
                 vals = by_patch[key]
@@ -1459,6 +1756,7 @@ def main() -> int:
                 patch_key="AVERAGE",
                 lambda_val=float(lam),
                 mu_val=float(mu),
+                eta_val=float(eta),
                 eps=float(obj_eps),
             )
             for col in cols:
@@ -1563,12 +1861,71 @@ def main() -> int:
                 dpi=dpi,
             )
 
+    # GT-binned all-pixels plots (powers-of-2 bins)
+    if rainy_bins_enabled and gtbin_rel_patch_means and gtbin_abs_patch_means:
+        ordered_labels = [lab for _, _, lab in rainy_intervals]
+        labels_to_plot = list(ordered_labels)
+        # Tail-only pruning by zero fraction across patches.
+        while labels_to_plot:
+            tail = labels_to_plot[-1]
+            counts = list(gtbin_counts_global.get(tail, {}).values())
+            if not counts:
+                labels_to_plot.pop()
+                continue
+            zfrac = float(sum(1 for c in counts if c == 0)) / float(len(counts))
+            if zfrac >= rainy_bins_zero_frac:
+                labels_to_plot.pop()
+            else:
+                break
+
+        solver_order = [label for _, label, _, _, _ in solvers if label in gtbin_rel_patch_means]
+        if labels_to_plot and solver_order:
+            rel_mean: Dict[str, List[float]] = {}
+            rel_std: Dict[str, List[float]] = {}
+            abs_mean: Dict[str, List[float]] = {}
+            abs_std: Dict[str, List[float]] = {}
+            for solver_label in solver_order:
+                rel_mean[solver_label] = []
+                rel_std[solver_label] = []
+                abs_mean[solver_label] = []
+                abs_std[solver_label] = []
+                for bin_lab in labels_to_plot:
+                    rv = np.array(gtbin_rel_patch_means.get(solver_label, {}).get(bin_lab, []), dtype=np.float64)
+                    av = np.array(gtbin_abs_patch_means.get(solver_label, {}).get(bin_lab, []), dtype=np.float64)
+                    rel_mean[solver_label].append(float(np.mean(rv)) if rv.size else 0.0)
+                    rel_std[solver_label].append(float(np.std(rv, ddof=0)) if rv.size else 0.0)
+                    abs_mean[solver_label].append(float(np.mean(av)) if av.size else 0.0)
+                    abs_std[solver_label].append(float(np.std(av, ddof=0)) if av.size else 0.0)
+
+            plot_gt_binned_patchavg_error(
+                img_dir / "gt_binned_patchavg_relative_abs_error_all_pixels.png",
+                title="GT-binned all-pixels error (avg of patch-averaged error ± std)",
+                bin_labels=labels_to_plot,
+                solver_order=solver_order,
+                mean_by_solver=rel_mean,
+                std_by_solver=rel_std,
+                y_label="Avg patch error (|GT-PRED|/GT; [0,1) uses |GT-PRED|)",
+                dpi=dpi,
+            )
+            plot_gt_binned_patchavg_error(
+                img_dir / "gt_binned_patchavg_absolute_error_all_pixels.png",
+                title="GT-binned all-pixels absolute error (avg of patch means ± std)",
+                bin_labels=labels_to_plot,
+                solver_order=solver_order,
+                mean_by_solver=abs_mean,
+                std_by_solver=abs_std,
+                y_label="Avg patch absolute error |GT-PRED| (mm/h)",
+                dpi=dpi,
+            )
+
     # plots across solvers (IQR of per-patch medians)
     method_order = [label for _, label, _, _, _ in solvers if label in medians_rainy[k_values[0]]]
     if method_order:
         for k in k_values:
             summary_r = compute_iqr_profile(medians_rainy[k], dist_labels)
             summary_n = compute_iqr_profile(medians_nonrainy[k], dist_labels)
+            summary_p90_r = compute_p90_profile(p90s_rainy[k], dist_labels)
+            summary_p90_n = compute_p90_profile(p90s_nonrainy[k], dist_labels)
             labels_r = dist_labels
             labels_n = dist_labels
             if prune_bins_enabled:
@@ -1588,11 +1945,19 @@ def main() -> int:
                 nonrainy_name = "distance_iqr_medians_nonrainy_multi.png"
                 rainy_title = "Rainy pixels: IQR of per-patch median |(GT-PRED)/GT| by distance bin"
                 nonrainy_title = "Non-rainy pixels: IQR of per-patch median |GT-PRED| by distance bin"
+                rainy_p90_name = "distance_iqr_p90s_rainy_multi.png"
+                nonrainy_p90_name = "distance_iqr_p90s_nonrainy_multi.png"
+                rainy_p90_title = "Rainy pixels: per-patch p90 |(GT-PRED)/GT| by distance bin (median, p25-p90)"
+                nonrainy_p90_title = "Non-rainy pixels: per-patch p90 |GT-PRED| by distance bin (median, p25-p90)"
             else:
                 rainy_name = f"distance_iqr_medians_rainy_multi_k{k}.png"
                 nonrainy_name = f"distance_iqr_medians_nonrainy_multi_k{k}.png"
                 rainy_title = f"Rainy pixels: IQR of per-patch median |(GT-PRED)/GT| by distance bin (k={k})"
                 nonrainy_title = f"Non-rainy pixels: IQR of per-patch median |GT-PRED| by distance bin (k={k})"
+                rainy_p90_name = f"distance_iqr_p90s_rainy_multi_k{k}.png"
+                nonrainy_p90_name = f"distance_iqr_p90s_nonrainy_multi_k{k}.png"
+                rainy_p90_title = f"Rainy pixels: per-patch p90 |(GT-PRED)/GT| by distance bin (median, p25-p90; k={k})"
+                nonrainy_p90_title = f"Non-rainy pixels: per-patch p90 |GT-PRED| by distance bin (median, p25-p90; k={k})"
 
             plot_iqr_bars(
                 img_dir / rainy_name,
@@ -1607,6 +1972,24 @@ def main() -> int:
                 summary_n, labels_n, method_order,
                 y_max=y_max, dpi=dpi, bin_spacing=bin_spacing,
                 tick_labels=tick_labels_n,
+            )
+
+            # median-of-p90s plots (p25/p90 across per-patch p90s)
+            plot_iqr_bars(
+                img_dir / rainy_p90_name,
+                rainy_p90_title,
+                summary_p90_r, labels_r, method_order,
+                y_max=y_max, dpi=dpi, bin_spacing=bin_spacing,
+                tick_labels=tick_labels_r,
+                y_label="Per-patch p90 error (median, p25-p90)",
+            )
+            plot_iqr_bars(
+                img_dir / nonrainy_p90_name,
+                nonrainy_p90_title,
+                summary_p90_n, labels_n, method_order,
+                y_max=y_max, dpi=dpi, bin_spacing=bin_spacing,
+                tick_labels=tick_labels_n,
+                y_label="Per-patch p90 error (median, p25-p90)",
             )
 
             # relative plots vs IDW (median-of-medians)

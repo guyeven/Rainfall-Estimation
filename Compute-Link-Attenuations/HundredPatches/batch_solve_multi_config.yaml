@@ -12,8 +12,8 @@ solvers:
     out_dir: "sol_dir_opt_idw"
 
     optimization:
-      lambda: 0.01
-      mu: 1.0e-06
+      w_smooth: 0.01
+      w_shrink: 1.0e-06
       epsilon: 0.01
       R0: 0.6
       maxiter: 300
@@ -38,8 +38,8 @@ solvers:
     out_dir: "sol_dir_opt_ildw"
 
     optimization:
-      lambda: 0.01
-      mu: 1.0e-06
+      w_smooth: 0.01
+      w_shrink: 1.0e-06
       epsilon: 0.01
       R0: 0.6
       maxiter: 300
@@ -57,17 +57,71 @@ solvers:
       eps_m: 1.0
       default_value: 0.0
 
-  opt_0p6:
-    name: "opt_0p6"
-    label: "OPT_0p6"
+  opt_idw_doubled:
+    name: "opt_idw_doubled"
+    label: "OPT_IDW_DOUBLED"
     type: "lbfgsb"
     module: "solve_rain_lbfgsb"
-    out_dir: "sol_dir_opt_0p6"
+    out_dir: "sol_dir_opt_idw_doubled"
 
     optimization:
-      lambda: 0.01
-      mu: 1.0e-06
+      w_smooth: 0.01
+      w_shrink: 1.0e-06
       epsilon: 0.01
+      R0: 0.6
+      maxiter: 600
+      R0_from_IDW: true
+
+    tolerances:
+      ftol: 1.0e-07
+      gtol: 1.0e-06
+      maxls: 100
+
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+
+  opt_ildw_doubled:
+    name: "opt_ildw_doubled"
+    label: "OPT_ILDW_DOUBLED"
+    type: "lbfgsb"
+    module: "solve_rain_lbfgsb"
+    out_dir: "sol_dir_opt_ildw_doubled"
+
+    optimization:
+      w_smooth: 0.01
+      w_shrink: 1.0e-06
+      epsilon: 0.01
+      R0: 0.6
+      maxiter: 600
+      R0_from_ILDW: true
+      R0_from_IDW: false
+
+    tolerances:
+      ftol: 1.0e-07
+      gtol: 1.0e-06
+      maxls: 100
+
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+
+  opt_eta_0p01:
+    name: "opt_eta_0p01"
+    label: "OPT_ETA_0p01"
+    type: "lbfgsb"
+    module: "solve_rain_lbfgsb"
+    out_dir: "sol_dir_opt_eta_0p01"
+
+    optimization:
+      w_smooth: 0.01
+      w_shrink: 1.0e-06
+      epsilon: 0.01
+      w_second_der: 0.01
       R0: 0.6
       maxiter: 300
       R0_from_IDW: false
@@ -77,20 +131,62 @@ solvers:
       gtol: 1.0e-04
       maxls: 20
 
-  opt_j2_0p6:
-    name: "opt_j2_0p6"
-    label: "OPT_J2"
+  opt_eta_0p001:
+    name: "opt_eta_0p001"
+    label: "OPT_ETA_0p001"
+    type: "lbfgsb"
+    module: "solve_rain_lbfgsb"
+    out_dir: "sol_dir_opt_eta_0p001"
+
+    optimization:
+      w_smooth: 0.01
+      w_shrink: 1.0e-06
+      epsilon: 0.01
+      w_second_der: 0.001
+      R0: 0.6
+      maxiter: 300
+      R0_from_IDW: false
+
+    tolerances:
+      ftol: 1.0e-05
+      gtol: 1.0e-04
+      maxls: 20
+
+  opt_eta_0p0001:
+    name: "opt_eta_0p0001"
+    label: "OPT_ETA_0p0001"
+    type: "lbfgsb"
+    module: "solve_rain_lbfgsb"
+    out_dir: "sol_dir_opt_eta_0p0001"
+
+    optimization:
+      w_smooth: 0.01
+      w_shrink: 1.0e-06
+      epsilon: 0.01
+      w_second_der: 0.0001
+      R0: 0.6
+      maxiter: 300
+      R0_from_IDW: false
+
+    tolerances:
+      ftol: 1.0e-05
+      gtol: 1.0e-04
+      maxls: 20
+
+  opt_j2_idw:
+    name: "opt_j2_idw"
+    label: "OPT_J2_IDW"
     type: "lbfgsb"
     module: "solve_rain_lbfgsb_j2"
-    out_dir: "sol_dir_opt_j2_0p6"
+    out_dir: "sol_dir_opt_j2_idw"
 
     optimization:
-      lambda: 0.01
-      mu: 1.0e-06
+      w_smooth: 1.0e-06
+      w_shrink: 1.0e-06
       epsilon: 0.01
       R0: 0.6
       maxiter: 300
-      R0_from_IDW: false
+      R0_from_IDW: true
 
     tolerances:
       ftol: 1.0e-05
@@ -103,20 +199,21 @@ solvers:
       eps_m: 1.0
       default_value: 0.0
 
-  opt_j3_0p6:
-    name: "opt_j3_0p6"
-    label: "OPT_J3"
+  opt_newobj_log:
+    name: "opt_newobj_log"
+    label: "OPT_NEWOBJ_LOG"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_j3"
-    out_dir: "sol_dir_opt_j3_0p6"
+    module: "solve_rain_lbfgsb_j1norm_j2j3j4"
+    out_dir: "sol_dir_opt_newobj_log"
 
     optimization:
-      lambda: 0.01
-      mu: 1.0e-06
       epsilon: 0.01
-      R0: 0.6
+      w_shrink: 0.01
+      w_log_neighbors: 1.0e-06
+      w_second_der: 1.0e-06
       maxiter: 300
-      R0_from_IDW: false
+      R0: 0.6
+      R0_from_IDW: true
 
     tolerances:
       ftol: 1.0e-05
@@ -129,20 +226,21 @@ solvers:
       eps_m: 1.0
       default_value: 0.0
 
-  opt_j2_j3_0p6:
-    name: "opt_j2_j3_0p6"
-    label: "OPT_J2_J3"
+  opt_newobj_quad:
+    name: "opt_newobj_quad"
+    label: "OPT_NEWOBJ_QUAD"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_j2_j3"
-    out_dir: "sol_dir_opt_j2_j3_0p6"
+    module: "solve_rain_lbfgsb_j1norm_j2j3lin_j4"
+    out_dir: "sol_dir_opt_newobj_quad"
 
     optimization:
-      lambda: 0.01
-      mu: 1.0e-06
       epsilon: 0.01
-      R0: 0.6
+      w_shrink: 0.01
+      w_quad_neighbors: 1.0e-06
+      w_second_der: 1.0e-06
       maxiter: 300
-      R0_from_IDW: false
+      R0: 0.6
+      R0_from_IDW: true
 
     tolerances:
       ftol: 1.0e-05
@@ -154,43 +252,6 @@ solvers:
       power: 2.0
       eps_m: 1.0
       default_value: 0.0
-
-  hybrid_a:
-    name: "hybrid_a"
-    label: "HYBRID_A"
-    type: "custom"
-    module: "solve_rain_hybrid"
-    out_dir: "sol_dir_hybrid_a"
-
-    hybrid:
-      base_solver: "OPT_0p6"
-      threshold_mmph: 0.6
-
-      distance:
-        k: 3
-        bin_edges_m: [125, 375, 750, 1500, 3125, 6000, 9000]
-        method: sampled_points
-        sample_spacing_m: 250.0
-        k_query_samples: 100
-        chunk_size: 8000
-        max_samples_per_link: 200
-
-      bin_solver_map:
-        "≤125": "OPT_IDW"
-        "(125,375]": "OPT_IDW"
-        "(375,750]": "OPT_IDW"
-        "(750,1500]": "OPT_IDW"
-        "(1500,3125]": "OPT_IDW"
-        "(3125,6000]": "OPT_IDW"
-        "(6000,9000]": "OPT_ILDW"
-        ">9000": "OPT_0p6"
-
-      default_solver: "OPT_IDW"
-
-      solver_outputs:
-        OPT_IDW: "sol_dir_opt_idw"
-        OPT_ILDW: "sol_dir_opt_ildw"
-        OPT_0p6: "sol_dir_opt_0p6"
 
   idw:
     name: "idw"

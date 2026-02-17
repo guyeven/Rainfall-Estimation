@@ -26,6 +26,62 @@ input:
       sol_prefix: "est"
       sol_key_preference: ["R_hat"]
 
+    opt_idw_doubled:
+      name: "opt_idw_doubled"
+      label: "OPT_IDW_DOUBLED"
+      sol_dir: "sol_dir_opt_idw_doubled"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_ildw_doubled:
+      name: "opt_ildw_doubled"
+      label: "OPT_ILDW_DOUBLED"
+      sol_dir: "sol_dir_opt_ildw_doubled"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_eta_0p01:
+      name: "opt_eta_0p01"
+      label: "OPT_ETA_0p01"
+      sol_dir: "sol_dir_opt_eta_0p01"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_eta_0p001:
+      name: "opt_eta_0p001"
+      label: "OPT_ETA_0p001"
+      sol_dir: "sol_dir_opt_eta_0p001"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_eta_0p0001:
+      name: "opt_eta_0p0001"
+      label: "OPT_ETA_0p0001"
+      sol_dir: "sol_dir_opt_eta_0p0001"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_j2_idw:
+      name: "opt_j2_idw"
+      label: "OPT_J2_IDW"
+      sol_dir: "sol_dir_opt_j2_idw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_newobj_log:
+      name: "opt_newobj_log"
+      label: "OPT_NEWOBJ_LOG"
+      sol_dir: "sol_dir_opt_newobj_log"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_newobj_quad:
+      name: "opt_newobj_quad"
+      label: "OPT_NEWOBJ_QUAD"
+      sol_dir: "sol_dir_opt_newobj_quad"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
     idw:
       name: "idw"
       label: "IDW"
@@ -83,7 +139,7 @@ output:
 objective:
   eps: 0.01
   pairs:
-    - {lambda: 0.01, mu: 1.0e-06}
+    - {w_smooth: 0.01, w_shrink: 1.0e-06, w_second_der: 1.0e-06}
 
 rae_hist:
   enabled: true

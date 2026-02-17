@@ -23,10 +23,12 @@ Relative paths are resolved relative to the config file.
 from __future__ import annotations
 
 import argparse
+import os
 import importlib
 import importlib.util
 import inspect
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -160,15 +162,26 @@ def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: 
 
     kwargs = {
         "est_input_json": est_json,
-        "lam": float(opt.get("lambda", opt.get("lam", 0.01))),
-        "mu": float(opt.get("mu", 1e-6)),
+        "lam": float(opt.get("w_smooth", opt.get("lambda", opt.get("lam", 0.01)))),
+        "mu": float(opt.get("w_shrink", opt.get("mu", 1e-6))),
         "eps": float(opt.get("epsilon", opt.get("eps", 0.01))),
+        "eta": float(opt.get("w_second_der", opt.get("eta", 0.0))),
+        "j2_w": float(opt.get("w_shrink", opt.get("j2_w", opt.get("w_j2", 0.01)))),
+        "j3_w": float(
+            opt.get(
+                "w_quad_neighbors",
+                opt.get("w_log_neighbors", opt.get("w_neighbors", opt.get("j3_w", opt.get("w_j3", 1e-6)))),
+            )
+        ),
+        "j4_w": float(opt.get("w_second_der", opt.get("j4_w", opt.get("w_j4", 1e-6)))),
+        "use_linear_j3": bool(opt.get("use_linear_j3", False)),
         "R0": float(opt.get("R0", 0.1)),
         "maxiter": int(opt.get("maxiter", 300)),
         "ftol": float(tol.get("ftol", 1e-5)),
         "gtol": float(tol.get("gtol", 1e-4)),
         "maxls": int(tol.get("maxls", 20)),
         "npz_out": out_npz,
+        "optinfo_out": out_npz.with_name(f"{out_npz.stem}_optinfo.json"),
         "warn": bool(solver_cfg.get("warn", True)),
         # optional IDW init:
         "R0_from_IDW": bool(opt.get("R0_from_IDW", False)),
@@ -221,6 +234,65 @@ def solve_with_idw_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: dic
     save_npz(out_npz, R_hat=field, meta=meta)
 
 
+def run_solver_batch(
+    solver_cfg: dict,
+    *,
+    est_files: List[Path],
+    base_dir: Path,
+) -> Tuple[str, int, int]:
+    label = str(solver_cfg.get("label") or solver_cfg.get("name") or "solver")
+    module_spec = solver_cfg.get("module", None)
+    if module_spec is None:
+        raise RuntimeError(f"Solver {label}: missing 'module'")
+    out_dir = resolve_path(solver_cfg.get("out_dir", None), base_dir=base_dir)
+    if out_dir is None:
+        raise RuntimeError(f"Solver {label}: missing 'out_dir'")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    mod = import_module_from_spec(str(module_spec), base_dir=base_dir)
+
+    solver_type = str(solver_cfg.get("type", "")).lower().strip()
+    if not solver_type:
+        if hasattr(mod, "idw_field_from_est_input"):
+            solver_type = "idw"
+        elif hasattr(mod, "solve_lbfgsb_and_save"):
+            solver_type = "lbfgsb"
+        else:
+            solver_type = "custom"
+
+    print(f"[{label}] type={solver_type} module={module_spec} -> {out_dir}")
+
+    failures = 0
+    n_total = len(est_files)
+    progress_step = max(1, n_total // 20)  # ~5% steps
+    for i, est_path in enumerate(est_files, 1):
+        out_npz = out_dir / (est_path.stem + "_solution.npz")
+        try:
+            if solver_type == "idw":
+                solve_with_idw_module(mod, est_json=est_path, out_npz=out_npz, solver_cfg=solver_cfg)
+            elif solver_type == "lbfgsb":
+                solve_with_lbfgsb_module(mod, est_json=est_path, out_npz=out_npz, solver_cfg=solver_cfg)
+            else:
+                if not hasattr(mod, "solve_and_save"):
+                    raise AttributeError("custom solver requires solve_and_save(est_input_json, out_npz, cfg)")
+                s_with_base = dict(solver_cfg)
+                s_with_base["_base_dir"] = str(base_dir)
+                mod.solve_and_save(est_path, out_npz, s_with_base)  # type: ignore
+        except Exception as e:
+            failures += 1
+            print(f"[{label}] [{i}/{len(est_files)}] FAIL {est_path.name}: {e}")
+        if i == 1 or i == n_total or (i % progress_step == 0):
+            pct = (100.0 * float(i) / float(n_total)) if n_total > 0 else 100.0
+            print(f"[{label}] progress {i}/{n_total} ({pct:.1f}%) | failures={failures}")
+
+    if failures:
+        print(f"[{label}] finished with failures: {failures}/{len(est_files)}")
+    else:
+        print(f"[{label}] finished OK ({len(est_files)} files).")
+
+    return label, failures, len(est_files)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
@@ -246,53 +318,29 @@ def main() -> int:
         raise SystemExit("Config must include 'solvers:' (list or mapping)")
 
     print(f"Found {len(est_files)} est_input file(s). Running {len(solvers)} solver(s).")
+    workers_cfg = deep_get(cfg, "parallel.solver_workers", None)
+    if workers_cfg is None:
+        solver_workers = min(len(solvers), max(1, os.cpu_count() or 1))
+    else:
+        solver_workers = max(1, int(workers_cfg))
+        solver_workers = min(solver_workers, len(solvers))
 
-    for s in solvers:
-        label = str(s.get("label") or s.get("name") or "solver")
-        module_spec = s.get("module", None)
-        if module_spec is None:
-            raise SystemExit(f"Solver {label}: missing 'module'")
-        out_dir = resolve_path(s.get("out_dir", None), base_dir=base_dir)
-        if out_dir is None:
-            raise SystemExit(f"Solver {label}: missing 'out_dir'")
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        mod = import_module_from_spec(str(module_spec), base_dir=base_dir)
-
-        solver_type = str(s.get("type", "")).lower().strip()
-        if not solver_type:
-            if hasattr(mod, "idw_field_from_est_input"):
-                solver_type = "idw"
-            elif hasattr(mod, "solve_lbfgsb_and_save"):
-                solver_type = "lbfgsb"
-            else:
-                solver_type = "custom"
-
-        print(f"[{label}] type={solver_type} module={module_spec} -> {out_dir}")
-
-        failures = 0
-        for i, est_path in enumerate(est_files, 1):
-            out_npz = out_dir / (est_path.stem + "_solution.npz")
-            try:
-                if solver_type == "idw":
-                    solve_with_idw_module(mod, est_json=est_path, out_npz=out_npz, solver_cfg=s)
-                elif solver_type == "lbfgsb":
-                    solve_with_lbfgsb_module(mod, est_json=est_path, out_npz=out_npz, solver_cfg=s)
-                else:
-                    if not hasattr(mod, "solve_and_save"):
-                        raise AttributeError("custom solver requires solve_and_save(est_input_json, out_npz, cfg)")
-                    s_with_base = dict(s)
-                    s_with_base["_base_dir"] = str(base_dir)
-                    mod.solve_and_save(est_path, out_npz, s_with_base)  # type: ignore
-                print(f"  [{i}/{len(est_files)}] OK {est_path.name}")
-            except Exception as e:
-                failures += 1
-                print(f"  [{i}/{len(est_files)}] FAIL {est_path.name}: {e}")
-
-        if failures:
-            print(f"[{label}] finished with failures: {failures}/{len(est_files)}")
-        else:
-            print(f"[{label}] finished OK ({len(est_files)} files).")
+    if solver_workers <= 1:
+        for s in solvers:
+            run_solver_batch(s, est_files=est_files, base_dir=base_dir)
+    else:
+        print(f"Running solvers in parallel with {solver_workers} worker(s).")
+        futures = {}
+        with ThreadPoolExecutor(max_workers=solver_workers) as ex:
+            for s in solvers:
+                fut = ex.submit(run_solver_batch, s, est_files=est_files, base_dir=base_dir)
+                futures[fut] = str(s.get("label") or s.get("name") or "solver")
+            for fut in as_completed(futures):
+                label = futures[fut]
+                try:
+                    fut.result()
+                except Exception as e:
+                    print(f"[{label}] ABORTED: {e}")
 
     return 0
 
