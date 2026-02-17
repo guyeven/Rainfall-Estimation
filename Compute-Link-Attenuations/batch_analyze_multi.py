@@ -82,6 +82,106 @@ def deep_get(d: dict, path: str, default=None):
     return cur
 
 
+def objective_scaling_from_module(module_name: str) -> str:
+    m = str(module_name or "").strip()
+    normalized_modules = {
+        "solve_rain_lbfgsb_normalized_obj_log",
+        "solve_rain_lbfgsb_normalized_obj_quad",
+        # backward-compatible names
+        "solve_rain_lbfgsb_j1norm_j2j3j4",
+        "solve_rain_lbfgsb_j1norm_j2j3lin_j4",
+    }
+    unnormalized_modules = {
+        "solve_rain_lbfgsb",
+        "solve_rain_lbfgsb_j2",
+        "solve_rain_lbfgsb_j3",
+        "solve_rain_lbfgsb_j2_j3",
+    }
+    baseline_modules = {"idw_baseline", "ildw_baseline"}
+    if m in normalized_modules:
+        return "NORMALIZED"
+    if m in unnormalized_modules:
+        return "UNNORMALIZED"
+    if m in baseline_modules:
+        return "N/A_BASELINE"
+    return "UNKNOWN"
+
+
+def objective_scaling_from_meta(meta: Dict[str, float]) -> str:
+    if "meta_j2_w" in meta or "meta_j3_w" in meta or "meta_j4_w" in meta:
+        return "NORMALIZED"
+    if "meta_lambda" in meta or "meta_mu" in meta or "meta_eta" in meta:
+        return "UNNORMALIZED"
+    return "N/A_BASELINE" if len(meta) == 0 else "UNKNOWN"
+
+
+def solver_objective_formula_text(*, scaling: str, meta: Dict[str, float]) -> str:
+    if scaling == "N/A_BASELINE":
+        return "N/A (baseline interpolation; no optimization objective)."
+    if scaling == "NORMALIZED":
+        use_linear = bool(meta.get("meta_use_linear_j3", 0.0))
+        j3_name = "linear-neighbor" if use_linear else "log-neighbor"
+        return (
+            "J = J1 + w_shrink*J2 + w_neighbors*J3 + w_second_der*J4; "
+            "J1 normalized by #valid links; J2/J3/J4 normalized by #pixels "
+            f"(J3 uses {j3_name} smoothness)."
+        )
+    if scaling == "UNNORMALIZED":
+        return (
+            "J = J1 + w_smooth*J2 + w_shrinkage*J3 + w_second_der*J4 "
+            "(some solver variants may omit terms). Terms are raw sums (not normalized)."
+        )
+    return "Unknown objective form (insufficient metadata)."
+
+
+def objective_term_presence_from_module(module_name: str, *, solver_label: str = "") -> Dict[str, bool]:
+    """
+    Infer which objective terms are part of the solver's native objective.
+    Keys: J1, J2, J3, J4
+    """
+    m = str(module_name or "").strip()
+    s = str(solver_label or "").strip().upper()
+    if s == "GT":
+        return {"J1": True, "J2": True, "J3": True, "J4": True}
+    if m in {"idw_baseline", "ildw_baseline"}:
+        return {"J1": False, "J2": False, "J3": False, "J4": False}
+    if m in {"solve_rain_lbfgsb_j2"}:
+        return {"J1": True, "J2": True, "J3": False, "J4": False}
+    if m in {"solve_rain_lbfgsb_j3"}:
+        return {"J1": True, "J2": False, "J3": True, "J4": False}
+    if m in {"solve_rain_lbfgsb_j2_j3"}:
+        return {"J1": True, "J2": True, "J3": True, "J4": False}
+    if m in {
+        "solve_rain_lbfgsb",
+        "solve_rain_lbfgsb_normalized_obj_log",
+        "solve_rain_lbfgsb_normalized_obj_quad",
+        "solve_rain_lbfgsb_j1norm_j2j3j4",
+        "solve_rain_lbfgsb_j1norm_j2j3lin_j4",
+    }:
+        return {"J1": True, "J2": True, "J3": True, "J4": True}
+    # Unknown module: keep terms available to avoid dropping potentially valid data.
+    return {"J1": True, "J2": True, "J3": True, "J4": True}
+
+
+def summarize_solver_settings(meta: Dict[str, float]) -> str:
+    if not meta:
+        return "No meta_* settings found in solution npz."
+    keys = [
+        "meta_lambda", "meta_mu", "meta_eta",
+        "meta_j2_w", "meta_j3_w", "meta_j4_w",
+        "meta_eps", "meta_R0", "meta_use_linear_j3",
+        "meta_R0_from_IDW", "meta_R0_from_ILDW",
+        "meta_ftol", "meta_gtol", "meta_maxiter", "meta_maxls",
+    ]
+    parts: List[str] = []
+    for k in keys:
+        if k in meta:
+            parts.append(f"{k}={meta[k]}")
+    if not parts:
+        return "meta_* found, but no recognized optimization setting keys."
+    return "; ".join(parts)
+
+
 def resolve_path(p: str | Path | None, *, base_dir: Path) -> Optional[Path]:
     if p is None:
         return None
@@ -200,29 +300,33 @@ def load_npz_meta_scalars(path: Path) -> Dict[str, float]:
     return out
 
 
+def load_json_dict(path: Path) -> Dict[str, Any]:
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            obj = json.load(f)
+        return obj if isinstance(obj, dict) else {}
+    except Exception:
+        return {}
+
+
 def build_neighbor_triplets(H: int, W: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     a_idx: List[int] = []
     b_idx: List[int] = []
     c_idx: List[int] = []
     for i in range(H):
+        base = i * W
+        for j in range(W - 2):
+            a_idx.append(base + j)
+            b_idx.append(base + j + 1)
+            c_idx.append(base + j + 2)
+    for i in range(H - 2):
+        base0 = i * W
+        base1 = (i + 1) * W
+        base2 = (i + 2) * W
         for j in range(W):
-            b = i * W + j
-            neigh: List[int] = []
-            if i > 0:
-                neigh.append((i - 1) * W + j)
-            if i + 1 < H:
-                neigh.append((i + 1) * W + j)
-            if j > 0:
-                neigh.append(i * W + (j - 1))
-            if j + 1 < W:
-                neigh.append(i * W + (j + 1))
-            for a in neigh:
-                for c in neigh:
-                    if a == c:
-                        continue
-                    a_idx.append(a)
-                    b_idx.append(b)
-                    c_idx.append(c)
+            a_idx.append(base0 + j)
+            b_idx.append(base1 + j)
+            c_idx.append(base2 + j)
     if not a_idx:
         z = np.zeros(0, dtype=np.int64)
         return z, z, z
@@ -712,10 +816,11 @@ def evaluate_objective_values(
     # --- J3 shrinkage term ---
     J3 = float(np.dot(R, R))
 
-    # --- J4 triplet term: sum((f(b)-f(a))-(f(c)-f(b))) ---
+    # --- J4 triplet term: sum(((f(b)-f(a))-(f(c)-f(b)))^2) on collinear triplets ---
     t_a, t_b, t_c = build_neighbor_triplets(prob.H, prob.W)
     if t_a.size > 0:
-        J4 = float(np.sum((R[t_b] - R[t_a]) - (R[t_c] - R[t_b])))
+        d2 = (R[t_b] - R[t_a]) - (R[t_c] - R[t_b])
+        J4 = float(np.dot(d2, d2))
     else:
         J4 = 0.0
 
@@ -723,6 +828,8 @@ def evaluate_objective_values(
     muJ3 = float(mu * J3)
     etaJ4 = float(eta * J4)
     J = J1 + lamJ2 + muJ3 + etaJ4
+    n_valid_links = int(np.sum(valid))
+    n_pixels = int(prob.P)
     return dict(
         J=float(J),
         J1=float(J1),
@@ -735,6 +842,8 @@ def evaluate_objective_values(
         wJ4=etaJ4,
         etaJ4=etaJ4,
         eta=float(eta),
+        n_valid_links=n_valid_links,
+        n_pixels=n_pixels,
     )
 
 
@@ -836,9 +945,15 @@ def safe_sheet_name(name: str) -> str:
     return s[:31]
 
 
-def write_workbook(path: Path, sheets: Dict[str, List[Dict[str, Any]]]):
+def write_workbook(
+    path: Path,
+    sheets: Dict[str, List[Dict[str, Any]]],
+    header_comments: Optional[Dict[str, Dict[str, str]]] = None,
+):
     try:
         from openpyxl import Workbook  # type: ignore
+        from openpyxl.comments import Comment  # type: ignore
+        from openpyxl.styles import PatternFill  # type: ignore
     except Exception as e:
         raise RuntimeError("openpyxl required to write Excel (pip install openpyxl).") from e
 
@@ -850,9 +965,22 @@ def write_workbook(path: Path, sheets: Dict[str, List[Dict[str, Any]]]):
         ws = wb.create_sheet(title=safe_sheet_name(sheet_name))
         if not rows:
             continue
-        # header
-        cols = list(rows[0].keys())
+        # header (union of keys in first-seen order across all rows)
+        cols: List[str] = []
+        seen: set = set()
+        for r in rows:
+            for c in r.keys():
+                if c not in seen:
+                    seen.add(c)
+                    cols.append(c)
         ws.append(cols)
+        comments_for_sheet = (header_comments or {}).get(sheet_name, {})
+        term_fill = PatternFill(fill_type="solid", fgColor="FFFDEB")
+        for cidx, col_name in enumerate(cols, start=1):
+            if col_name in comments_for_sheet:
+                cell = ws.cell(row=1, column=cidx)
+                cell.comment = Comment(comments_for_sheet[col_name], "batch_analyze_multi")
+                cell.fill = term_fill
         for r in rows:
             ws.append([r.get(c, "") for c in cols])
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1216,10 +1344,12 @@ def plot_gt_binned_patchavg_error(
     *,
     title: str,
     bin_labels: List[str],
+    bin_count_stats: Optional[Dict[str, Tuple[float, float]]] = None,
     solver_order: List[str],
     mean_by_solver: Dict[str, List[float]],
     std_by_solver: Dict[str, List[float]],
     y_label: str,
+    footnote: Optional[str] = None,
     dpi: int = 150,
 ):
     import matplotlib.pyplot as plt  # type: ignore
@@ -1251,14 +1381,34 @@ def plot_gt_binned_patchavg_error(
             error_kw={"elinewidth": 1.0, "capsize": 2.0},
         )
 
+    tick_labels = list(bin_labels)
+    if bin_count_stats:
+        tick_labels = []
+        for lab in bin_labels:
+            m_sd = bin_count_stats.get(lab, None)
+            if m_sd is None:
+                tick_labels.append(f"{lab}\nN_avg=NA\n[N_avg-std,N_avg+std]=NA")
+                continue
+            m, sd = float(m_sd[0]), float(m_sd[1])
+            lo, hi = m - sd, m + sd
+            tick_labels.append(f"{lab}\nN_avg={m:.1f}\n[{lo:.1f},{hi:.1f}]")
+
     ax.set_xticks(x)
-    ax.set_xticklabels(bin_labels, rotation=35, ha="right")
+    ax.set_xticklabels(tick_labels, rotation=35, ha="right")
     ax.set_ylabel(y_label)
-    ax.set_xlabel("GT rain interval (mm/h)")
+    ax.set_xlabel(
+        "GT rain interval (mm/h)\n"
+        "Per-bin patch-pixel stats: N_avg = average #pixels per patch in bin; "
+        "[N_avg-std, N_avg+std] = mean ± std interval."
+    )
     ax.set_title(title)
     ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
     ax.legend(loc="best", fontsize=8)
-    fig.tight_layout()
+    if footnote:
+        fig.text(0.01, 0.01, footnote, ha="left", va="bottom", fontsize=8)
+        fig.tight_layout(rect=[0, 0.04, 1, 1])
+    else:
+        fig.tight_layout()
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png)
     plt.close(fig)
@@ -1290,15 +1440,23 @@ def main() -> int:
     solvers_cfg = normalize_solvers(deep_get(cfg, "input.solvers"), path_for_err="input.solvers")
     # build solver list: (name,label,dir,prefix,key_pref)
     solvers: List[Tuple[str,str,Path,str,List[str]]] = []
+    solver_module_by_label: Dict[str, str] = {}
+    solver_scaling_by_label: Dict[str, str] = {}
+    solver_effective_scaling_by_label: Dict[str, str] = {}
+    solver_cfg_by_label: Dict[str, Dict[str, Any]] = {}
     for s in solvers_cfg:
         name = str(s.get("name") or s.get("label") or "solver")
         label = str(s.get("label") or name)
+        module_name = str(s.get("module", ""))
         sol_dir = resolve_path(s.get("sol_dir"), base_dir=base_dir)
         if sol_dir is None:
             raise SystemExit(f"Solver {label}: missing sol_dir")
         sol_prefix = str(s.get("sol_prefix", "est"))
         sol_key_pref = list(s.get("sol_key_preference", ["R_hat"]))
         solvers.append((name, label, sol_dir, sol_prefix, sol_key_pref))
+        solver_module_by_label[label] = module_name
+        solver_scaling_by_label[label] = objective_scaling_from_module(module_name)
+        solver_cfg_by_label[label] = dict(s)
 
     # outputs
     out_dir = resolve_path(deep_get(cfg, "output.out_dir", "batch_analyze_output_multi"), base_dir=base_dir) or (base_dir / "batch_analyze_output_multi").resolve()
@@ -1345,6 +1503,13 @@ def main() -> int:
             obj_pairs.append((float(item[0]), float(item[1]), float(item[2])))
     if not obj_pairs:
         obj_pairs = []
+    else:
+        # Always include eta=0 counterparts so objective reporting captures the
+        # common "no second-derivative weight" setting explicitly.
+        obj_pairs_set = {(float(lam), float(mu), float(eta)) for (lam, mu, eta) in obj_pairs}
+        for lam, mu, _ in list(obj_pairs_set):
+            obj_pairs_set.add((float(lam), float(mu), 0.0))
+        obj_pairs = sorted(obj_pairs_set, key=lambda x: (x[0], x[1], x[2]))
 
     rae_cfg = deep_get(cfg, "rae_hist", {}) or {}
     rae_enabled = bool(rae_cfg.get("enabled", False))
@@ -1413,6 +1578,7 @@ def main() -> int:
     objective_vals: Dict[Tuple[float, float, float], Dict[str, Dict[str, float]]] = {}
     link_metrics: Dict[str, Dict[str, Dict[str, float]]] = {}
     stop_rows: List[Dict[str, Any]] = []
+    solver_info_rows: List[Dict[str, Any]] = []
     gtbin_counts_global: Dict[str, Dict[str, int]] = {lab: {} for _, _, lab in rainy_intervals}
     gtbin_rel_patch_means: Dict[str, Dict[str, List[float]]] = {}
     gtbin_abs_patch_means: Dict[str, Dict[str, List[float]]] = {}
@@ -1428,6 +1594,30 @@ def main() -> int:
     ):
         sol_files = list_npz(sol_dir, sol_prefix)
         sol_by_key = {patch_key_from_filename(p.name): p for p in sol_files}
+
+        # Solver settings/objective summary from representative solution metadata.
+        meta_sample: Dict[str, float] = {}
+        sample_npz: Optional[Path] = sol_files[0] if sol_files else None
+        if sample_npz is not None:
+            meta_sample = load_npz_meta_scalars(sample_npz)
+        scaling_cfg = solver_scaling_by_label.get(label, "UNKNOWN")
+        scaling_meta = objective_scaling_from_meta(meta_sample)
+        scaling = scaling_cfg if scaling_cfg != "UNKNOWN" else scaling_meta
+        solver_effective_scaling_by_label[label] = scaling
+        module_name = solver_module_by_label.get(label, "")
+        if not module_name:
+            module_name = "(not provided in analyze config)"
+        solver_info_rows.append(dict(
+            solver=label,
+            solver_name=name,
+            module=module_name,
+            objective_scaling=scaling,
+            objective_formula=solver_objective_formula_text(scaling=scaling, meta=meta_sample),
+            settings_summary=summarize_solver_settings(meta_sample),
+            sol_dir=str(sol_dir),
+            sol_prefix=sol_prefix,
+            sample_solution_npz=(str(sample_npz) if sample_npz is not None else None),
+        ))
 
         cov_rows: List[Dict[str, Any]] = []
         dist_rows_by_k: Dict[int, List[Dict[str, Any]]] = {k: [] for k in k_values}
@@ -1468,6 +1658,37 @@ def main() -> int:
             est_path = est_by_key.get(key, None)
             if est_path is None:
                 raise SystemExit(f"Missing est_input JSON for patch {key} under {est_input_dir}")
+
+            # Per-patch stopping diagnostics from solver optinfo JSON.
+            optinfo_path = sol_path.with_name(f"{sol_path.stem}_optinfo.json")
+            has_optinfo = optinfo_path.exists()
+            opt = load_json_dict(optinfo_path) if has_optinfo else {}
+            stop_reason_raw = opt.get("stop_reason", None)
+            stop_reason = str(stop_reason_raw) if stop_reason_raw is not None and str(stop_reason_raw) != "" else None
+            reason_bucket = stop_reason if stop_reason is not None else ("missing_optinfo" if not has_optinfo else "unknown")
+            stop_rows.append(dict(
+                patch_key=key,
+                solver=label,
+                solver_name=name,
+                has_optinfo=bool(has_optinfo),
+                stop_reason=stop_reason,
+                reason_bucket=reason_bucket,
+                success=opt.get("success", None),
+                status=opt.get("status", None),
+                message=opt.get("message", None),
+                nit=opt.get("nit", None),
+                nfev=opt.get("nfev", None),
+                njev=opt.get("njev", None),
+                proj_grad_inf=opt.get("proj_grad_inf", None),
+                rel_decrease=opt.get("rel_decrease", None),
+                ftol=opt.get("ftol", None),
+                gtol=opt.get("gtol", None),
+                ftol_met=opt.get("ftol_met", None),
+                gtol_met=opt.get("gtol_met", None),
+                line_search_failed=opt.get("line_search_failed", None),
+                maxiter_reached=opt.get("maxiter_reached", None),
+                optinfo_json=str(optinfo_path) if has_optinfo else None,
+            ))
 
             gt = load_npz_first_key(gt_path, gt_key_pref)
             pred = load_npz_first_key(sol_path, sol_key_pref)
@@ -1728,45 +1949,148 @@ def main() -> int:
                     dpi=dpi,
                 )
 
+    # stopping diagnostics sheets
+    if stop_rows:
+        sheets["StoppingInfo"] = stop_rows
+        sheet_order.append("StoppingInfo")
+
+        by_solver: Dict[str, List[Dict[str, Any]]] = {}
+        for r in stop_rows:
+            by_solver.setdefault(str(r.get("solver", "")), []).append(r)
+
+        reason_stats_rows: List[Dict[str, Any]] = []
+        for solver in sorted(by_solver.keys()):
+            rows_s = by_solver[solver]
+            total_patches = len(rows_s)
+            counts: Dict[str, int] = {}
+            for r in rows_s:
+                reason = str(r.get("reason_bucket", "unknown"))
+                counts[reason] = counts.get(reason, 0) + 1
+            for reason in sorted(counts.keys()):
+                cnt = counts[reason]
+                pct = (100.0 * float(cnt) / float(total_patches)) if total_patches > 0 else 0.0
+                reason_stats_rows.append(dict(
+                    solver=solver,
+                    stop_reason=reason,
+                    n_patches=int(cnt),
+                    total_patches=int(total_patches),
+                    pct_of_patches=float(pct),
+                ))
+        sheets["StoppingReasonStats"] = reason_stats_rows
+        sheet_order.append("StoppingReasonStats")
+
+    # solver objective-scaling conventions
+    if solvers:
+        conventions_rows: List[Dict[str, Any]] = []
+        for name, label, _, _, _ in solvers:
+            module_name = solver_module_by_label.get(label, "")
+            scaling = solver_scaling_by_label.get(label, "UNKNOWN")
+            if scaling == "UNKNOWN":
+                r = next((x for x in solver_info_rows if str(x.get("solver", "")) == label), None)
+                if r is not None:
+                    scaling = str(r.get("objective_scaling", "UNKNOWN"))
+            if scaling == "NORMALIZED":
+                note = "Solver objective terms are normalized (e.g., by #valid links and/or #pixels)."
+            elif scaling == "UNNORMALIZED":
+                note = "Solver objective terms are not normalized (raw sums)."
+            elif scaling == "N/A_BASELINE":
+                note = "Baseline method; no L-BFGS objective minimization."
+            else:
+                note = "Could not infer normalization from module name."
+            conventions_rows.append(dict(
+                solver=label,
+                solver_name=name,
+                module=module_name,
+                objective_scaling=scaling,
+                note=note,
+            ))
+        sheets["Objective_J_Conventions"] = conventions_rows
+        sheet_order.append("Objective_J_Conventions")
+    if solver_info_rows:
+        sheets["SolverSettingsAndObjective"] = solver_info_rows
+        sheet_order.append("SolverSettingsAndObjective")
+
     # optional objective sheet
     if obj_enabled and objective_vals:
         solver_labels = [label for _, label, _, _, _ in solvers]
-        # ensure GT first
-        cols = ["GT"] + [lab for lab in solver_labels if lab != "GT"]
-        metric_suffixes = ["J", "J1", "J2", "J3", "J4", "wJ1", "wJ2", "wJ3", "wJ4"]
-        wide_rows: List[Dict[str, Any]] = []
-        for (lam, mu, eta), by_patch in objective_vals.items():
+        solver_order = ["GT"] + [lab for lab in solver_labels if lab != "GT"]
+        solver_rank = {lab: i for i, lab in enumerate(solver_order)}
+        metric_name_map = [
+            ("objective", "J"),
+            ("unnormalized_data_fit_term", "J1"),
+            ("unnormalized_smoothness_term", "J2"),
+            ("unnormalized_shrinkage_term", "J3"),
+            ("unnormalized_second_derivative_term", "J4"),
+            ("weighted_unnormalized_data_fit_term", "wJ1"),
+            ("weighted_unnormalized_smoothness_term", "wJ2"),
+            ("weighted_unnormalized_shrinkage_term", "wJ3"),
+            ("weighted_unnormalized_second_derivative_term", "wJ4"),
+        ]
+        long_rows: List[Dict[str, Any]] = []
+        for (lam, mu, eta), by_patch in sorted(objective_vals.items(), key=lambda x: (x[0][0], x[0][1], x[0][2])):
             for key in sorted(by_patch.keys()):
-                row: Dict[str, Any] = dict(
-                    patch_key=key,
-                    lambda_val=float(lam),
-                    mu_val=float(mu),
-                    eta_val=float(eta),
-                    eps=float(obj_eps),
-                )
                 vals = by_patch[key]
-                for col in cols:
-                    v = vals.get(col, {})
-                    for suf in metric_suffixes:
-                        row[f"{col}_{suf}"] = float(v.get(suf, 0.0))
-                wide_rows.append(row)
+                for solver in sorted(vals.keys(), key=lambda s: solver_rank.get(s, 10_000)):
+                    v = vals.get(solver, {})
+                    if not v:
+                        continue
+                    scaling = solver_effective_scaling_by_label.get(str(solver), "UNKNOWN")
+                    row: Dict[str, Any] = dict(
+                        patch_key=key,
+                        solver=str(solver),
+                        objective_scaling=scaling,
+                        w_smooth=float(lam),
+                        w_shrinkage=float(mu),
+                        w_second_der=float(eta),
+                        eps=float(obj_eps),
+                    )
+                    module_name = solver_module_by_label.get(str(solver), "")
+                    term_present = objective_term_presence_from_module(module_name, solver_label=str(solver))
+                    for out_name, src_name in metric_name_map:
+                        term_key = src_name[1:] if src_name.startswith("w") else src_name
+                        if not term_present.get(term_key, True):
+                            continue
+                        raw_val = v.get(src_name, None)
+                        if raw_val is not None:
+                            row[out_name] = float(raw_val)
+                    if scaling == "NORMALIZED":
+                        j1 = v.get("J1", None)
+                        j2 = v.get("J2", None)
+                        j3 = v.get("J3", None)
+                        j4 = v.get("J4", None)
+                        n_valid = v.get("n_valid_links", None)
+                        n_pix = v.get("n_pixels", None)
+                        den_links = float(n_valid) if n_valid is not None and float(n_valid) > 0.0 else None
+                        den_pix = float(n_pix) if n_pix is not None and float(n_pix) > 0.0 else None
+                        if term_present.get("J1", True) and j1 is not None and den_links is not None:
+                            row["normalized_data_fit_term"] = float(j1) / den_links
+                        if term_present.get("J2", True) and j2 is not None and den_pix is not None:
+                            row["normalized_smoothness_term"] = float(j2) / den_pix
+                        if term_present.get("J3", True) and j3 is not None and den_pix is not None:
+                            row["normalized_shrinkage_term"] = float(j3) / den_pix
+                        if term_present.get("J4", True) and j4 is not None and den_pix is not None:
+                            row["normalized_second_der_term"] = float(j4) / den_pix
+                        nd1 = row.get("normalized_data_fit_term", None)
+                        nd2 = row.get("normalized_smoothness_term", None)
+                        nd3 = row.get("normalized_shrinkage_term", None)
+                        nd4 = row.get("normalized_second_der_term", None)
+                        if nd1 is not None:
+                            row["weighted_normalized_data_fit_term"] = float(nd1)
+                        if nd2 is not None:
+                            row["weighted_normalized_smoothness_term"] = float(lam) * float(nd2)
+                        if nd3 is not None:
+                            row["weighted_normalized_shrinkage_term"] = float(mu) * float(nd3)
+                        if nd4 is not None:
+                            row["weighted_normalized_second_der_term"] = float(eta) * float(nd4)
+                        wn1 = row.get("weighted_normalized_data_fit_term", None)
+                        wn2 = row.get("weighted_normalized_smoothness_term", None)
+                        wn3 = row.get("weighted_normalized_shrinkage_term", None)
+                        wn4 = row.get("weighted_normalized_second_der_term", None)
+                        if wn1 is not None and wn2 is not None and wn3 is not None and wn4 is not None:
+                            row["normalized_objective"] = float(wn1) + float(wn2) + float(wn3) + float(wn4)
+                    long_rows.append(row)
 
-            # averages
-            avg_row: Dict[str, Any] = dict(
-                patch_key="AVERAGE",
-                lambda_val=float(lam),
-                mu_val=float(mu),
-                eta_val=float(eta),
-                eps=float(obj_eps),
-            )
-            for col in cols:
-                for suf in metric_suffixes:
-                    col_vals = [by_patch[k].get(col, {}).get(suf, None) for k in by_patch.keys()]
-                    col_vals = [v for v in col_vals if v is not None]
-                    avg_row[f"{col}_{suf}"] = float(np.mean(col_vals)) if col_vals else 0.0
-            wide_rows.append(avg_row)
-
-        sheets["Objective_J"] = wide_rows
+        sheets["Objective_J"] = long_rows
         sheet_order.append("Objective_J")
 
     # dry classification summary
@@ -1818,7 +2142,58 @@ def main() -> int:
         if name not in ordered_sheets:
             ordered_sheets[name] = sheets[name]
 
-    write_workbook(excel_path, ordered_sheets)
+    objective_header_comments = {
+        "patch_key": (
+            "Objective_J terms are evaluated with one common legacy objective evaluator for all solvers, "
+            "for apples-to-apples comparison. Solver-native objective normalization status is listed in "
+            "sheet Objective_J_Conventions."
+        ),
+        "solver": (
+            "Solver label for this row (GT is included as a reference row). "
+            "Each row is one patch-solver-parameter triple."
+        ),
+        "objective_scaling": (
+            "Objective convention inferred per solver (NORMALIZED, UNNORMALIZED, N/A_BASELINE, or UNKNOWN)."
+        ),
+        "unnormalized_data_fit_term": (
+            "Unnormalized data-fit term J1 = sum_valid_links ((A_hat - A_obs) / L_km)^2."
+        ),
+        "unnormalized_smoothness_term": (
+            "Unnormalized smoothness term J2 = sum_neighbor_pairs (log(R + eps)_u - log(R + eps)_v)^2."
+        ),
+        "unnormalized_shrinkage_term": (
+            "Unnormalized shrinkage term J3 = sum_pixels R^2."
+        ),
+        "unnormalized_second_derivative_term": (
+            "Unnormalized second-derivative term J4 = sum_triplets (((R_b-R_a)-(R_c-R_b))^2)."
+        ),
+        "normalized_data_fit_term": (
+            "Normalized data-fit term: J1 / #valid_links (for NORMALIZED-objective solvers)."
+        ),
+        "normalized_smoothness_term": (
+            "Normalized smoothness term: J2 / #pixels (for NORMALIZED-objective solvers)."
+        ),
+        "normalized_shrinkage_term": (
+            "Normalized shrinkage term: J3 / #pixels (for NORMALIZED-objective solvers)."
+        ),
+        "normalized_second_der_term": (
+            "Normalized second-derivative term: J4 / #pixels (for NORMALIZED-objective solvers)."
+        ),
+    }
+    objective_sheet_comments: Dict[str, str] = {}
+    obj_rows = ordered_sheets.get("Objective_J", [])
+    if obj_rows:
+        for col_name in obj_rows[0].keys():
+            for target_col, txt in objective_header_comments.items():
+                if col_name == target_col:
+                    objective_sheet_comments[col_name] = txt
+                    break
+
+    write_workbook(
+        excel_path,
+        ordered_sheets,
+        header_comments={"Objective_J": objective_sheet_comments},
+    )
     print(f"Wrote Excel: {excel_path}")
 
     # ratio plot vs IDW for link metrics
@@ -1880,6 +2255,12 @@ def main() -> int:
 
         solver_order = [label for _, label, _, _, _ in solvers if label in gtbin_rel_patch_means]
         if labels_to_plot and solver_order:
+            bin_count_stats: Dict[str, Tuple[float, float]] = {}
+            for bin_lab in labels_to_plot:
+                counts = np.array(list(gtbin_counts_global.get(bin_lab, {}).values()), dtype=np.float64)
+                if counts.size > 0:
+                    bin_count_stats[bin_lab] = (float(np.mean(counts)), float(np.std(counts, ddof=0)))
+
             rel_mean: Dict[str, List[float]] = {}
             rel_std: Dict[str, List[float]] = {}
             abs_mean: Dict[str, List[float]] = {}
@@ -1901,16 +2282,19 @@ def main() -> int:
                 img_dir / "gt_binned_patchavg_relative_abs_error_all_pixels.png",
                 title="GT-binned all-pixels error (avg of patch-averaged error ± std)",
                 bin_labels=labels_to_plot,
+                bin_count_stats=bin_count_stats,
                 solver_order=solver_order,
                 mean_by_solver=rel_mean,
                 std_by_solver=rel_std,
                 y_label="Avg patch error (|GT-PRED|/GT; [0,1) uses |GT-PRED|)",
+                footnote="Note: For GT in [0,1) mm/h, the metric uses absolute error |GT-PRED| (not RAE).",
                 dpi=dpi,
-            )
+                )
             plot_gt_binned_patchavg_error(
                 img_dir / "gt_binned_patchavg_absolute_error_all_pixels.png",
                 title="GT-binned all-pixels absolute error (avg of patch means ± std)",
                 bin_labels=labels_to_plot,
+                bin_count_stats=bin_count_stats,
                 solver_order=solver_order,
                 mean_by_solver=abs_mean,
                 std_by_solver=abs_std,
