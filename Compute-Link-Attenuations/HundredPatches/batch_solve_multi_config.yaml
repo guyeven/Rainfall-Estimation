@@ -199,12 +199,12 @@ solvers:
       eps_m: 1.0
       default_value: 0.0
 
-  opt_newobj_log:
-    name: "opt_newobj_log"
-    label: "OPT_NEWOBJ_LOG"
+  opt_idw_newobj_log:
+    name: "opt_idw_newobj_log"
+    label: "OPT_IDW_NEWOBJ_LOG"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_j1norm_j2j3j4"
-    out_dir: "sol_dir_opt_newobj_log"
+    module: "solve_rain_lbfgsb_normalized_obj_log"
+    out_dir: "sol_dir_opt_idw_newobj_log"
 
     optimization:
       epsilon: 0.01
@@ -226,12 +226,12 @@ solvers:
       eps_m: 1.0
       default_value: 0.0
 
-  opt_newobj_quad:
-    name: "opt_newobj_quad"
-    label: "OPT_NEWOBJ_QUAD"
+  opt_idw_newobj_quad:
+    name: "opt_idw_newobj_quad"
+    label: "OPT_IDW_NEWOBJ_QUAD"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_j1norm_j2j3lin_j4"
-    out_dir: "sol_dir_opt_newobj_quad"
+    module: "solve_rain_lbfgsb_normalized_obj_quad"
+    out_dir: "sol_dir_opt_idw_newobj_quad"
 
     optimization:
       epsilon: 0.01

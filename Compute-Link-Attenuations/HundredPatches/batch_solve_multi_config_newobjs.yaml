@@ -1,0 +1,88 @@
+input:
+  est_dir: "est_dir"
+  file_pattern: "est_input_*.json"
+  recursive: false
+
+solvers:
+  opt_ildw_newobj_log:
+    name: "opt_ildw_newobj_log"
+    label: "OPT_ILDW_NEWOBJ_LOG"
+    type: "lbfgsb"
+    module: "solve_rain_lbfgsb_normalized_obj_log"
+    out_dir: "sol_dir_opt_ildw_newobj_log"
+
+    optimization:
+      epsilon: 0.01
+      w_shrink: 0.01
+      w_log_neighbors: 1.0e-06
+      w_second_der: 1.0e-06
+      maxiter: 300
+      R0: 0.6
+      R0_from_ILDW: true
+      R0_from_IDW: false
+
+    tolerances:
+      ftol: 1.0e-05
+      gtol: 1.0e-04
+      maxls: 20
+
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+
+  opt_idw_newobj_log:
+    name: "opt_idw_newobj_log"
+    label: "OPT_IDW_NEWOBJ_LOG"
+    type: "lbfgsb"
+    module: "solve_rain_lbfgsb_normalized_obj_log"
+    out_dir: "sol_dir_opt_idw_newobj_log"
+
+    optimization:
+      epsilon: 0.01
+      w_shrink: 0.01
+      w_log_neighbors: 1.0e-06
+      w_second_der: 1.0e-06
+      maxiter: 300
+      R0: 0.6
+      R0_from_IDW: true
+
+    tolerances:
+      ftol: 1.0e-05
+      gtol: 1.0e-04
+      maxls: 20
+
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+
+  opt_ildw_newobj_quad:
+    name: "opt_ildw_newobj_quad"
+    label: "OPT_ILDW_NEWOBJ_QUAD"
+    type: "lbfgsb"
+    module: "solve_rain_lbfgsb_normalized_obj_quad"
+    out_dir: "sol_dir_opt_ildw_newobj_quad"
+
+    optimization:
+      epsilon: 0.01
+      w_shrink: 0.01
+      w_quad_neighbors: 1.0e-06
+      w_second_der: 1.0e-06
+      maxiter: 300
+      R0: 0.6
+      R0_from_ILDW: true
+      R0_from_IDW: false
+
+    tolerances:
+      ftol: 1.0e-05
+      gtol: 1.0e-04
+      maxls: 20
+
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
