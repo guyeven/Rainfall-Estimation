@@ -52,6 +52,126 @@ except Exception:
 from itu_r_p_8383 import k_alpha
 
 
+def _build_neighbor_triplets(H: int, W: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Build ordered triplets (a,b,c) such that a-b and b-c are 4-neighbor edges.
+    """
+    a_idx: List[int] = []
+    b_idx: List[int] = []
+    c_idx: List[int] = []
+    for i in range(H):
+        for j in range(W):
+            b = i * W + j
+            neigh: List[int] = []
+            if i > 0:
+                neigh.append((i - 1) * W + j)
+            if i + 1 < H:
+                neigh.append((i + 1) * W + j)
+            if j > 0:
+                neigh.append(i * W + (j - 1))
+            if j + 1 < W:
+                neigh.append(i * W + (j + 1))
+            for a in neigh:
+                for c in neigh:
+                    if a == c:
+                        continue
+                    a_idx.append(a)
+                    b_idx.append(b)
+                    c_idx.append(c)
+    if not a_idx:
+        z = np.zeros(0, dtype=np.int64)
+        return z, z, z
+    return (
+        np.asarray(a_idx, dtype=np.int64),
+        np.asarray(b_idx, dtype=np.int64),
+        np.asarray(c_idx, dtype=np.int64),
+    )
+
+
+def _projected_grad_inf_norm(x: np.ndarray, g: np.ndarray, *, lb: float = 0.0) -> float:
+    """
+    Infinity norm of projected gradient for bounds [lb, +inf).
+    """
+    x = np.asarray(x, dtype=np.float64).ravel()
+    g = np.asarray(g, dtype=np.float64).ravel()
+    pg = g.copy()
+    active_lower = (x <= lb) & (g > 0.0)
+    pg[active_lower] = 0.0
+    if pg.size == 0:
+        return 0.0
+    return float(np.max(np.abs(pg)))
+
+
+def _write_opt_diagnostics(
+    out_path: Path,
+    *,
+    res,
+    x_star: np.ndarray,
+    jac_fn,
+    f_history: List[float],
+    maxiter: int,
+    ftol: float,
+    gtol: float,
+    maxls: int,
+) -> Dict[str, Any]:
+    message = str(getattr(res, "message", ""))
+    f_final = float(getattr(res, "fun", np.nan))
+    nit = int(getattr(res, "nit", -1))
+    nfev = int(getattr(res, "nfev", -1))
+    njev = int(getattr(res, "njev", -1))
+    proj_grad = _projected_grad_inf_norm(x_star, jac_fn(x_star), lb=0.0)
+
+    rel_decrease = None
+    f_prev = None
+    if len(f_history) >= 2:
+        f_prev = float(f_history[-2])
+        denom = max(1.0, abs(f_prev), abs(f_final))
+        rel_decrease = float(abs(f_prev - f_final) / denom)
+
+    msg_upper = message.upper()
+    line_search_issue = ("LNSRCH" in msg_upper) or ("LINE SEARCH" in msg_upper)
+    hit_maxiter = (nit >= int(maxiter)) or ("TOTAL NO. OF ITERATIONS REACHED LIMIT" in msg_upper)
+    gtol_met = (proj_grad <= float(gtol))
+    ftol_met = (rel_decrease is not None) and (rel_decrease <= float(ftol))
+
+    if hit_maxiter:
+        stop_reason = "maxiter"
+    elif line_search_issue:
+        stop_reason = "line_search"
+    elif gtol_met:
+        stop_reason = "gtol"
+    elif ftol_met:
+        stop_reason = "ftol"
+    elif bool(getattr(res, "success", False)):
+        stop_reason = "converged_other"
+    else:
+        stop_reason = "other"
+
+    payload = {
+        "success": bool(getattr(res, "success", False)),
+        "status": int(getattr(res, "status", -1)),
+        "message": message,
+        "stop_reason": stop_reason,
+        "iteration": nit,
+        "maxiter": int(maxiter),
+        "nfev": nfev,
+        "njev": njev,
+        "f_final": f_final,
+        "f_prev": f_prev,
+        "rel_decrease": rel_decrease,
+        "ftol": float(ftol),
+        "ftol_met": bool(ftol_met),
+        "proj_grad_inf": float(proj_grad),
+        "gtol": float(gtol),
+        "gtol_met": bool(gtol_met),
+        "maxls": int(maxls),
+        "line_search_issue": bool(line_search_issue),
+    }
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return payload
+
+
 # ----------------------------
 # Data model
 # ----------------------------
@@ -261,7 +381,7 @@ def forward_Ahat_and_r(prob: EstProblem, R_flat: np.ndarray) -> Tuple[np.ndarray
     return A_hat, r
 
 
-def make_objective(prob: EstProblem, lam: float, mu: float, eps: float):
+def make_objective(prob: EstProblem, lam: float, mu: float, eps: float, eta: float = 0.0):
     """
     Objective:
       J = sum_{valid l} ((A_hat_l - A_obs_l)/L_l)^2
@@ -278,6 +398,12 @@ def make_objective(prob: EstProblem, lam: float, mu: float, eps: float):
     a = prob.alpha
     n_u = prob.n_u
     n_v = prob.n_v
+    t_a, t_b, t_c = _build_neighbor_triplets(prob.H, prob.W)
+    g_curv_const = (
+        2.0 * np.bincount(t_b, minlength=prob.P).astype(np.float64)
+        - np.bincount(t_a, minlength=prob.P).astype(np.float64)
+        - np.bincount(t_c, minlength=prob.P).astype(np.float64)
+    )
 
     def f_and_g(R_flat: np.ndarray) -> Tuple[float, np.ndarray]:
         R = np.asarray(R_flat, dtype=np.float64).ravel()
@@ -318,8 +444,16 @@ def make_objective(prob: EstProblem, lam: float, mu: float, eps: float):
         J_shrink = float(np.dot(R, R))
         g_shrink = 2.0 * R
 
-        J = J_data + lam * J_smooth + mu * J_shrink
-        g = g_data + lam * g_smooth + mu * g_shrink
+        # --- curvature-like triplet term ---
+        if t_a.size > 0:
+            d_triplet = (R[t_b] - R[t_a]) - (R[t_c] - R[t_b])
+            J_curv = float(np.sum(d_triplet))
+        else:
+            J_curv = 0.0
+        g_curv = g_curv_const
+
+        J = J_data + lam * J_smooth + mu * J_shrink + eta * J_curv
+        g = g_data + lam * g_smooth + mu * g_shrink + eta * g_curv
         return J, g
 
     def fun(R_flat: np.ndarray) -> float:
@@ -343,6 +477,7 @@ def solve_lbfgsb_and_save(
     lam: float,
     mu: float,
     eps: float = 0.01,
+    eta: float = 0.0,
     R0: float = 0.0,
     maxiter: int = 80,
     ftol: float = 1e-9,
@@ -357,9 +492,10 @@ def solve_lbfgsb_and_save(
     idw_power: float = 2.0,
     idw_eps_m: float = 1.0,
     idw_default_value: float = 0.0,
+    optinfo_out: str | Path | None = None,
 ) -> dict:
     prob = load_est_input_json(est_input_json, warn=warn)
-    fun, jac = make_objective(prob, lam=lam, mu=mu, eps=eps)
+    fun, jac = make_objective(prob, lam=lam, mu=mu, eps=eps, eta=eta)
 
     # ----------------------------
     # Initialisation
@@ -406,12 +542,17 @@ def solve_lbfgsb_and_save(
         x0 = np.full(prob.P, float(R0), dtype=np.float64)
 
     bounds = [(0.0, None)] * prob.P
+    f_history: List[float] = [float(fun(x0))]
+
+    def _cb(xk: np.ndarray):
+        f_history.append(float(fun(xk)))
 
     res = minimize(
         fun,
         x0,
         method="L-BFGS-B",
         jac=jac,
+        callback=_cb,
         bounds=bounds,
         options={
             "maxiter": int(maxiter),
@@ -426,6 +567,21 @@ def solve_lbfgsb_and_save(
 
     npz_out = Path(npz_out)
     npz_out.parent.mkdir(parents=True, exist_ok=True)
+    if optinfo_out is None:
+        optinfo_path = npz_out.with_name(f"{npz_out.stem}_optinfo.json")
+    else:
+        optinfo_path = Path(optinfo_out)
+    opt_diag = _write_opt_diagnostics(
+        optinfo_path,
+        res=res,
+        x_star=res.x,
+        jac_fn=jac,
+        f_history=f_history if len(f_history) >= 2 else [float(fun(x0)), float(res.fun)],
+        maxiter=maxiter,
+        ftol=ftol,
+        gtol=gtol,
+        maxls=maxls,
+    )
 
     np.savez(
         npz_out,
@@ -453,6 +609,7 @@ def solve_lbfgsb_and_save(
         meta_lambda=float(lam),
         meta_mu=float(mu),
         meta_eps=float(eps),
+        meta_eta=float(eta),
         meta_R0=float(R0),
         meta_maxiter=int(maxiter),
         meta_ftol=float(ftol),
@@ -468,6 +625,10 @@ def solve_lbfgsb_and_save(
         meta_idw_power=float(idw_power),
         meta_idw_eps_m=float(idw_eps_m),
         meta_idw_default_value=float(idw_default_value),
+        meta_stop_reason=str(opt_diag.get("stop_reason", "other")),
+        meta_proj_grad_inf=float(opt_diag.get("proj_grad_inf", 0.0)),
+        meta_rel_decrease=float(opt_diag.get("rel_decrease") if opt_diag.get("rel_decrease") is not None else np.nan),
+        meta_optinfo_json=str(optinfo_path),
     )
 
     return {
@@ -477,6 +638,7 @@ def solve_lbfgsb_and_save(
         "nit": int(getattr(res, "nit", -1)),
         "fun": float(res.fun),
         "out_npz": str(npz_out),
+        "optinfo_json": str(optinfo_path),
         "init_method": str(init_method),
     }
 def run_from_config(cfg: dict) -> List[dict]:
@@ -522,6 +684,7 @@ def run_from_config(cfg: dict) -> List[dict]:
             raise ValueError(f"Run #{idx}: missing optimization.lambda and/or optimization.mu")
 
         eps = float(deep_get(rcfg, "optimization.epsilon", 0.01))
+        eta = float(deep_get(rcfg, "optimization.eta", 0.0))
         R0 = float(deep_get(rcfg, "optimization.R0", 0.0))
         maxiter = int(deep_get(rcfg, "optimization.maxiter", 80))
 
@@ -536,6 +699,7 @@ def run_from_config(cfg: dict) -> List[dict]:
             lam=float(lam),
             mu=float(mu),
             eps=eps,
+            eta=eta,
             R0=R0,
             maxiter=maxiter,
             ftol=ftol,
@@ -549,6 +713,7 @@ def run_from_config(cfg: dict) -> List[dict]:
         info["lambda"] = float(lam)
         info["mu"] = float(mu)
         info["epsilon"] = eps
+        info["eta"] = eta
         results.append(info)
 
     return results
@@ -569,6 +734,7 @@ def build_argparser() -> argparse.ArgumentParser:
     ap.add_argument("--lam", type=float, default=None, help="Smoothness weight lambda (CLI mode)")
     ap.add_argument("--mu", type=float, default=None, help="Shrinkage weight mu (CLI mode)")
     ap.add_argument("--eps", type=float, default=0.01, help="Epsilon for log(R+eps) (CLI mode)")
+    ap.add_argument("--eta", type=float, default=0.0, help="Triplet-term weight eta (CLI mode)")
     ap.add_argument("--R0", type=float, default=0.0, help="Initial rainfall value (mm/h) (CLI mode)")
     ap.add_argument("--maxiter", type=int, default=80, help="Max L-BFGS-B iterations (CLI mode)")
     ap.add_argument("--ftol", type=float, default=1e-9, help="L-BFGS-B ftol (CLI mode)")
@@ -602,6 +768,7 @@ def main():
         lam=float(args.lam),
         mu=float(args.mu),
         eps=float(args.eps),
+        eta=float(args.eta),
         R0=float(args.R0),
         maxiter=int(args.maxiter),
         ftol=float(args.ftol),

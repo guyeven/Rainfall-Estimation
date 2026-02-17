@@ -50,6 +50,7 @@ except Exception:
 
 # Uses your repo's ITU implementation
 from itu_r_p_8383 import k_alpha
+from solve_rain_lbfgsb import _write_opt_diagnostics  # type: ignore
 
 
 # ----------------------------
@@ -356,6 +357,7 @@ def solve_lbfgsb_and_save(
     idw_power: float = 2.0,
     idw_eps_m: float = 1.0,
     idw_default_value: float = 0.0,
+    optinfo_out: str | Path | None = None,
 ) -> dict:
     prob = load_est_input_json(est_input_json, warn=warn)
 
@@ -418,12 +420,17 @@ def solve_lbfgsb_and_save(
         x0 = np.full(prob.P, float(R0), dtype=np.float64)
 
     bounds = [(0.0, None)] * prob.P
+    f_history: List[float] = [float(fun(x0))]
+
+    def _cb(xk: np.ndarray):
+        f_history.append(float(fun(xk)))
 
     res = minimize(
         fun,
         x0,
         method="L-BFGS-B",
         jac=jac,
+        callback=_cb,
         bounds=bounds,
         options={
             "maxiter": int(maxiter),
@@ -438,6 +445,21 @@ def solve_lbfgsb_and_save(
 
     npz_out = Path(npz_out)
     npz_out.parent.mkdir(parents=True, exist_ok=True)
+    if optinfo_out is None:
+        optinfo_path = npz_out.with_name(f"{npz_out.stem}_optinfo.json")
+    else:
+        optinfo_path = Path(optinfo_out)
+    opt_diag = _write_opt_diagnostics(
+        optinfo_path,
+        res=res,
+        x_star=res.x,
+        jac_fn=jac,
+        f_history=f_history if len(f_history) >= 2 else [float(fun(x0)), float(res.fun)],
+        maxiter=maxiter,
+        ftol=ftol,
+        gtol=gtol,
+        maxls=maxls,
+    )
 
     np.savez(
         npz_out,
@@ -481,6 +503,10 @@ def solve_lbfgsb_and_save(
         meta_idw_eps_m=float(idw_eps_m),
         meta_idw_default_value=float(idw_default_value),
         meta_sum_idw=float(sum_idw),
+        meta_stop_reason=str(opt_diag.get("stop_reason", "other")),
+        meta_proj_grad_inf=float(opt_diag.get("proj_grad_inf", 0.0)),
+        meta_rel_decrease=float(opt_diag.get("rel_decrease") if opt_diag.get("rel_decrease") is not None else np.nan),
+        meta_optinfo_json=str(optinfo_path),
     )
 
     return {
@@ -490,6 +516,7 @@ def solve_lbfgsb_and_save(
         "nit": int(getattr(res, "nit", -1)),
         "fun": float(res.fun),
         "out_npz": str(npz_out),
+        "optinfo_json": str(optinfo_path),
         "init_method": str(init_method),
     }
 def run_from_config(cfg: dict) -> List[dict]:

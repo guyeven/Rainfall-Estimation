@@ -91,6 +91,20 @@ def prompt_int(msg: str) -> int:
             print("Invalid integer. Try again.")
 
 
+def prompt_int_default(msg: str, *, default: int) -> int:
+    while True:
+        raw = input(msg).strip()
+        if raw == "":
+            return int(default)
+        try:
+            v = int(raw)
+            if v <= 0:
+                raise ValueError
+            return v
+        except ValueError:
+            print("Invalid integer. Try again.")
+
+
 def prompt_choice(msg: str, allowed: List[str]) -> str:
     allowed_u = {a.upper() for a in allowed}
     while True:
@@ -138,6 +152,11 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     k = prompt_int("Number of patches to process (k): ")
+    start_patch_1based = prompt_int_default(
+        f"Start patch index in patch-list JSONL "
+        f"(press Enter for 1; input 1 means patches [1,{k}] are considered): ",
+        default=1,
+    )
     default_pol = prompt_choice("Default polarization if missing", ["H", "V"])
     export_gt = prompt_yes_default_yes("Export ground truth as gt_<patch_id>.npz? (Y/n): ")
     if args.gaussian_gt and args.no_gaussian_gt:
@@ -166,8 +185,16 @@ def main() -> None:
     attr_ids: Set[str] = {_pid(r) for r in load_jsonl(patch_attr_path) if _pid(r)}
     links = list(load_jsonl(links_path))
 
-    selected = [p for p in patches if _pid(p) in attr_ids][:k]
-    print(f"Processing {len(selected)} patches")
+    start0 = max(0, int(start_patch_1based) - 1)
+    end0 = start0 + int(k)
+    window = patches[start0:end0]
+    selected = [p for p in window if _pid(p) in attr_ids]
+    n_skipped = len(window) - len(selected)
+    print(
+        f"Requested patch-list window [{start0 + 1},{min(len(patches), end0)}] "
+        f"({len(window)} records); processing {len(selected)} after attr-id filter"
+        + (f" (skipped {n_skipped} without matching attrs)." if n_skipped > 0 else ".")
+    )
     if not selected:
         print("No selected patches found. Check that patch ids match between files.")
         return
