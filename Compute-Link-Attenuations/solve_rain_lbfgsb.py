@@ -54,30 +54,25 @@ from itu_r_p_8383 import k_alpha
 
 def _build_neighbor_triplets(H: int, W: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Build ordered triplets (a,b,c) such that a-b and b-c are 4-neighbor edges.
+    Build collinear triplets (a,b,c) of consecutive pixels in a row/column.
     """
     a_idx: List[int] = []
     b_idx: List[int] = []
     c_idx: List[int] = []
     for i in range(H):
+        base = i * W
+        for j in range(W - 2):
+            a_idx.append(base + j)
+            b_idx.append(base + j + 1)
+            c_idx.append(base + j + 2)
+    for i in range(H - 2):
+        base0 = i * W
+        base1 = (i + 1) * W
+        base2 = (i + 2) * W
         for j in range(W):
-            b = i * W + j
-            neigh: List[int] = []
-            if i > 0:
-                neigh.append((i - 1) * W + j)
-            if i + 1 < H:
-                neigh.append((i + 1) * W + j)
-            if j > 0:
-                neigh.append(i * W + (j - 1))
-            if j + 1 < W:
-                neigh.append(i * W + (j + 1))
-            for a in neigh:
-                for c in neigh:
-                    if a == c:
-                        continue
-                    a_idx.append(a)
-                    b_idx.append(b)
-                    c_idx.append(c)
+            a_idx.append(base0 + j)
+            b_idx.append(base1 + j)
+            c_idx.append(base2 + j)
     if not a_idx:
         z = np.zeros(0, dtype=np.int64)
         return z, z, z
@@ -399,11 +394,6 @@ def make_objective(prob: EstProblem, lam: float, mu: float, eps: float, eta: flo
     n_u = prob.n_u
     n_v = prob.n_v
     t_a, t_b, t_c = _build_neighbor_triplets(prob.H, prob.W)
-    g_curv_const = (
-        2.0 * np.bincount(t_b, minlength=prob.P).astype(np.float64)
-        - np.bincount(t_a, minlength=prob.P).astype(np.float64)
-        - np.bincount(t_c, minlength=prob.P).astype(np.float64)
-    )
 
     def f_and_g(R_flat: np.ndarray) -> Tuple[float, np.ndarray]:
         R = np.asarray(R_flat, dtype=np.float64).ravel()
@@ -444,13 +434,18 @@ def make_objective(prob: EstProblem, lam: float, mu: float, eps: float, eta: flo
         J_shrink = float(np.dot(R, R))
         g_shrink = 2.0 * R
 
-        # --- curvature-like triplet term ---
+        # --- second-derivative triplet term ---
         if t_a.size > 0:
             d_triplet = (R[t_b] - R[t_a]) - (R[t_c] - R[t_b])
-            J_curv = float(np.sum(d_triplet))
+            J_curv = float(np.dot(d_triplet, d_triplet))
+            g_curv = (
+                np.bincount(t_a, weights=(-2.0 * d_triplet), minlength=prob.P).astype(np.float64)
+                + np.bincount(t_b, weights=(4.0 * d_triplet), minlength=prob.P).astype(np.float64)
+                + np.bincount(t_c, weights=(-2.0 * d_triplet), minlength=prob.P).astype(np.float64)
+            )
         else:
             J_curv = 0.0
-        g_curv = g_curv_const
+            g_curv = np.zeros(prob.P, dtype=np.float64)
 
         J = J_data + lam * J_smooth + mu * J_shrink + eta * J_curv
         g = g_data + lam * g_smooth + mu * g_shrink + eta * g_curv

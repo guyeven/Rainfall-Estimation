@@ -37,8 +37,10 @@ Relative paths in the YAML are resolved relative to the YAML file location.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import math
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -847,6 +849,278 @@ def evaluate_objective_values(
     )
 
 
+def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Per-(solver,patch) worker. Returns all per-patch artifacts so callers can
+    aggregate deterministically in key order.
+    """
+    key = str(task["key"])
+    label = str(task["label"])
+    name = str(task["name"])
+    gt_path = Path(str(task["gt_path"]))
+    sol_path = Path(str(task["sol_path"]))
+    est_path = Path(str(task["est_path"]))
+
+    gt_key_pref = list(task["gt_key_pref"])
+    sol_key_pref = list(task["sol_key_pref"])
+    thr = float(task["thr"])
+    cov_exact = list(task["cov_exact"])
+    cov_ge = task["cov_ge"]
+    k_values = [int(k) for k in task["k_values"]]
+    dist_bins = list(task["dist_bins"])
+    dist_method = str(task["dist_method"])
+    sample_spacing_m = float(task["sample_spacing_m"])
+    k_query_samples = int(task["k_query_samples"])
+    chunk_size = int(task["chunk_size"])
+    max_samples_per_link = int(task["max_samples_per_link"])
+    max_candidates = int(task["max_candidates"])
+    rainy_bins_enabled = bool(task["rainy_bins_enabled"])
+    rainy_intervals = list(task["rainy_intervals"])
+    obj_enabled = bool(task["obj_enabled"])
+    obj_pairs = [tuple(x) for x in task["obj_pairs"]]
+    obj_eps = float(task["obj_eps"])
+    include_rae_hist = bool(task["include_rae_hist"])
+
+    # Per-patch stopping diagnostics from solver optinfo JSON.
+    optinfo_path = sol_path.with_name(f"{sol_path.stem}_optinfo.json")
+    has_optinfo = optinfo_path.exists()
+    opt = load_json_dict(optinfo_path) if has_optinfo else {}
+    stop_reason_raw = opt.get("stop_reason", None)
+    stop_reason = str(stop_reason_raw) if stop_reason_raw is not None and str(stop_reason_raw) != "" else None
+    reason_bucket = stop_reason if stop_reason is not None else ("missing_optinfo" if not has_optinfo else "unknown")
+    stop_row = dict(
+        patch_key=key,
+        solver=label,
+        solver_name=name,
+        has_optinfo=bool(has_optinfo),
+        stop_reason=stop_reason,
+        reason_bucket=reason_bucket,
+        success=opt.get("success", None),
+        status=opt.get("status", None),
+        message=opt.get("message", None),
+        nit=opt.get("nit", None),
+        nfev=opt.get("nfev", None),
+        njev=opt.get("njev", None),
+        proj_grad_inf=opt.get("proj_grad_inf", None),
+        rel_decrease=opt.get("rel_decrease", None),
+        ftol=opt.get("ftol", None),
+        gtol=opt.get("gtol", None),
+        ftol_met=opt.get("ftol_met", None),
+        gtol_met=opt.get("gtol_met", None),
+        line_search_failed=opt.get("line_search_failed", None),
+        maxiter_reached=opt.get("maxiter_reached", None),
+        optinfo_json=str(optinfo_path) if has_optinfo else None,
+    )
+
+    gt = load_npz_first_key(gt_path, gt_key_pref)
+    pred = load_npz_first_key(sol_path, sol_key_pref)
+    if gt.shape != pred.shape:
+        raise ValueError(f"Shape mismatch for {key}: GT {gt.shape} vs {label} {pred.shape}")
+    gt = gt.astype(np.float64)
+    pred = pred.astype(np.float64)
+
+    rainy = gt >= thr
+    gt_wet = gt >= thr
+    pred_wet = pred >= thr
+    fp = np.logical_and(pred_wet, ~gt_wet)  # predicted wet but GT dry
+    fn = np.logical_and(~pred_wet, gt_wet)  # predicted dry but GT wet
+    total_pixels = gt.size
+    dry_fp_rate = (float(np.sum(fp)) / float(total_pixels)) if total_pixels > 0 else None
+    dry_fn_rate = (float(np.sum(fn)) / float(total_pixels)) if total_pixels > 0 else None
+
+    # coverage map + bins
+    est = load_est_payload(est_path)
+    cov_map, _, _ = compute_coverage_map(est)
+    if cov_map.shape != gt.shape:
+        raise ValueError(f"Coverage map shape {cov_map.shape} != GT shape {gt.shape} for {key}")
+
+    # distance maps d_k
+    if dist_method in ("sampled_points", "sampled", "samples"):
+        dk_maps, _ = compute_dk_maps_sampled_points(
+            est,
+            k_values,
+            sample_spacing_m=sample_spacing_m,
+            k_query_samples=k_query_samples,
+            chunk_size=chunk_size,
+            max_samples_per_link=max_samples_per_link,
+        )
+    else:
+        dk_maps, _ = compute_dk_maps(est, k_values, max_candidates=max_candidates)
+    for k in k_values:
+        d_map = dk_maps.get(k)
+        if d_map is None:
+            raise ValueError(f"Missing d{k} map for {key}")
+        if d_map.shape != gt.shape:
+            raise ValueError(f"d{k} map shape {d_map.shape} != GT shape {gt.shape} for {key}")
+
+    # Precompute full-field error arrays aligned to pixels for bin masking
+    signed_full = np.empty_like(gt, dtype=np.float64)
+    abs_full = np.empty_like(gt, dtype=np.float64)
+    abs_rae_full = np.empty_like(gt, dtype=np.float64)
+    abs_mmph_full = np.abs(gt - pred)
+    denom = np.where(gt == 0.0, 1.0, gt)
+    signed_full[rainy] = (gt[rainy] - pred[rainy]) / denom[rainy]
+    abs_full[rainy] = np.abs(signed_full[rainy])
+    abs_rae_full[rainy] = abs_full[rainy]
+    signed_full[~rainy] = pred[~rainy] - gt[~rainy]
+    abs_full[~rainy] = np.abs(signed_full[~rainy])
+    abs_rae_full[~rainy] = abs_mmph_full[~rainy] / denom[~rainy]
+
+    gtbin_counts_by_lab: Dict[str, int] = {}
+    gtbin_rel_means_by_lab: Dict[str, Optional[float]] = {}
+    gtbin_abs_means_by_lab: Dict[str, Optional[float]] = {}
+    if rainy_bins_enabled:
+        for lo, hi, bin_lab in rainy_intervals:
+            gmask_bin = (gt >= lo) & (gt < hi)
+            n_bin = int(np.sum(gmask_bin))
+            gtbin_counts_by_lab[bin_lab] = n_bin
+            if n_bin == 0:
+                gtbin_rel_means_by_lab[bin_lab] = None
+                gtbin_abs_means_by_lab[bin_lab] = None
+                continue
+            abs_vals = abs_mmph_full[gmask_bin]
+            if lo < 1.0:
+                rel_vals = abs_vals
+            else:
+                den_bin = np.where(gt[gmask_bin] == 0.0, 1.0, gt[gmask_bin])
+                rel_vals = abs_vals / den_bin
+            gtbin_rel_means_by_lab[bin_lab] = float(np.mean(rel_vals))
+            gtbin_abs_means_by_lab[bin_lab] = float(np.mean(abs_vals))
+
+    objective_pairs: List[Tuple[float, float, float, Dict[str, float], Dict[str, float]]] = []
+    if obj_enabled:
+        from solve_rain_lbfgsb import load_est_input_json as load_est_for_obj  # type: ignore
+        prob = load_est_for_obj(est_path, warn=False)
+        for lam, mu, eta in obj_pairs:
+            j_gt = evaluate_objective_values(prob, gt, lam=lam, mu=mu, eps=obj_eps, eta=eta)
+            j_sol = evaluate_objective_values(prob, pred, lam=lam, mu=mu, eps=obj_eps, eta=eta)
+            objective_pairs.append((float(lam), float(mu), float(eta), j_gt, j_sol))
+
+    cov_rows: List[Dict[str, Any]] = []
+    for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
+        cov_vals = cov_map[mask].ravel()
+        for v in cov_exact + ([] if cov_ge is None else [cov_ge]):
+            if cov_ge is not None and v == cov_ge:
+                m = cov_vals >= cov_ge
+                bin_lab = f"{cov_ge}+"
+            else:
+                m = cov_vals == v
+                bin_lab = str(v)
+            if not np.any(m):
+                cov_rows.append(dict(
+                    patch_key=key, mask_type=mask_name, coverage_bin=bin_lab,
+                    n_pixels=0,
+                    mean_signed=0.0, median_signed=0.0,
+                    mean_abs=0.0, std_abs=0.0,
+                    median_abs=0.0, p90_abs=0.0, p99_abs=0.0, linf_abs=0.0,
+                    l1_rae_sum=0.0,
+                    l1_abs_mmph_sum=0.0,
+                    l1_abs_mmph_sum_norm_hw=0.0,
+                ))
+                continue
+            if cov_ge is not None and bin_lab.endswith("+"):
+                gmask = mask & (cov_map >= cov_ge)
+            else:
+                gmask = mask & (cov_map == int(bin_lab))
+            e_signed = signed_full[gmask].ravel()
+            e_abs = abs_full[gmask].ravel()
+            l1_rae = float(np.sum(abs_rae_full[gmask]))
+            l1_abs_mmph = float(np.sum(abs_mmph_full[gmask]))
+            s = stats_row(e_signed, e_abs, l1_rae_sum=l1_rae, l1_abs_mmph_sum=l1_abs_mmph)
+            cov_rows.append(dict(
+                patch_key=key,
+                mask_type=mask_name,
+                coverage_bin=bin_lab,
+                l1_abs_mmph_sum_norm_hw=(l1_abs_mmph / float(gt.size)),
+                **s,
+            ))
+
+    dist_rows_by_k: Dict[int, List[Dict[str, Any]]] = {k: [] for k in k_values}
+    bin_counts_entries: List[Tuple[int, str, str, int]] = []
+    medians_r_entries: List[Tuple[int, str, float]] = []
+    medians_n_entries: List[Tuple[int, str, float]] = []
+    p90s_r_entries: List[Tuple[int, str, float]] = []
+    p90s_n_entries: List[Tuple[int, str, float]] = []
+    rae_hist_entries: List[Tuple[int, str, List[float]]] = []
+
+    for k in k_values:
+        d_map = dk_maps[k]
+        d_vals = d_map.ravel()
+        d_labels = assign_bin_labels(d_vals, dist_bins).reshape(gt.shape)
+        for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
+            for _, _, bin_lab in dist_bins:
+                gmask = mask & (d_labels == bin_lab)
+                bin_counts_entries.append((k, mask_name, bin_lab, int(np.sum(gmask))))
+                e_signed = signed_full[gmask].ravel()
+                e_abs = abs_full[gmask].ravel()
+                l1_rae = float(np.sum(abs_rae_full[gmask]))
+                l1_abs_mmph = float(np.sum(abs_mmph_full[gmask]))
+                s = stats_row(e_signed, e_abs, l1_rae_sum=l1_rae, l1_abs_mmph_sum=l1_abs_mmph)
+                dist_rows_by_k[k].append(dict(
+                    patch_key=key,
+                    mask_type=mask_name,
+                    distance_bin_m=bin_lab,
+                    l1_abs_mmph_sum_norm_hw=(l1_abs_mmph / float(gt.size)),
+                    **s,
+                ))
+                if mask_name == "rainy" and e_abs.size > 0:
+                    medians_r_entries.append((k, bin_lab, float(np.median(e_abs))))
+                    p90s_r_entries.append((k, bin_lab, float(np.percentile(e_abs, 90))))
+                if mask_name == "nonrainy" and e_abs.size > 0:
+                    medians_n_entries.append((k, bin_lab, float(np.median(e_abs))))
+                    p90s_n_entries.append((k, bin_lab, float(np.percentile(e_abs, 90))))
+                if include_rae_hist and mask_name == "rainy" and e_abs.size > 0:
+                    rae_hist_entries.append((k, bin_lab, e_abs.tolist()))
+
+    try:
+        A_obs, A_hat, L_km, valid, ge10 = compute_link_terms(est, pred)
+        attn_all, J1_all, n_valid = attn_l1_and_J1(A_obs, A_hat, L_km, valid)
+        attn_10, J1_10, n_10 = attn_l1_and_J1(A_obs, A_hat, L_km, ge10)
+        denom_L = float(np.sum(np.abs(L_km[valid])))
+        if denom_L > 0:
+            E_all = float(np.sum(A_obs[valid] - A_hat[valid]) / denom_L)
+            E2_all = float(np.sum((A_obs[valid] - A_hat[valid]) ** 2) / denom_L)
+        else:
+            E_all = 0.0
+            E2_all = 0.0
+    except Exception as e:
+        raise RuntimeError(f"Failed to compute link stats for {key} ({label}): {e}") from e
+
+    link_row = dict(
+        patch_key=key,
+        n_links_valid=n_valid,
+        attn_l1_all=attn_all,
+        J1_all=J1_all,
+        n_links_ge10km=n_10,
+        attn_l1_ge10km=attn_10,
+        J1_ge10km=J1_10,
+        E_all=E_all,
+        E2_all=E2_all,
+    )
+    link_metric = dict(L1=attn_all, J1=J1_all, E=E_all, E2=E2_all)
+
+    return dict(
+        patch_key=key,
+        stop_row=stop_row,
+        dry_fp_rate=dry_fp_rate,
+        dry_fn_rate=dry_fn_rate,
+        gtbin_counts=gtbin_counts_by_lab,
+        gtbin_rel_means=gtbin_rel_means_by_lab,
+        gtbin_abs_means=gtbin_abs_means_by_lab,
+        objective_pairs=objective_pairs,
+        cov_rows=cov_rows,
+        dist_rows_by_k=dist_rows_by_k,
+        bin_counts_entries=bin_counts_entries,
+        medians_r_entries=medians_r_entries,
+        medians_n_entries=medians_n_entries,
+        p90s_r_entries=p90s_r_entries,
+        p90s_n_entries=p90s_n_entries,
+        rae_hist_entries=rae_hist_entries,
+        link_row=link_row,
+        link_metric=link_metric,
+    )
+
+
 # ----------------------------
 # Attenuation / J1 (link-based)
 # ----------------------------
@@ -945,6 +1219,21 @@ def safe_sheet_name(name: str) -> str:
     return s[:31]
 
 
+def unique_sheet_name(name: str, used: set) -> str:
+    base = safe_sheet_name(name)
+    if base not in used:
+        used.add(base)
+        return base
+    idx = 2
+    while True:
+        suffix = f"_{idx}"
+        cand = f"{base[:31 - len(suffix)]}{suffix}"
+        if cand not in used:
+            used.add(cand)
+            return cand
+        idx += 1
+
+
 def write_workbook(
     path: Path,
     sheets: Dict[str, List[Dict[str, Any]]],
@@ -960,9 +1249,10 @@ def write_workbook(
     wb = Workbook()
     # remove default
     wb.remove(wb.active)
+    used_titles: set = set()
 
     for sheet_name, rows in sheets.items():
-        ws = wb.create_sheet(title=safe_sheet_name(sheet_name))
+        ws = wb.create_sheet(title=unique_sheet_name(sheet_name, used_titles))
         if not rows:
             continue
         # header (union of keys in first-seen order across all rows)
@@ -1484,6 +1774,16 @@ def main() -> int:
     k_query_samples = int(deep_get(cfg, "distance.k_query_samples", 48))
     chunk_size = int(deep_get(cfg, "distance.chunk_size", 8000))
     max_samples_per_link = int(deep_get(cfg, "distance.max_samples_per_link", 200))
+    n_jobs_raw = deep_get(cfg, "analysis.n_jobs", deep_get(cfg, "n_jobs", 1))
+    try:
+        n_jobs = int(n_jobs_raw)
+    except Exception:
+        raise SystemExit("analysis.n_jobs (or n_jobs) must be an integer")
+    if n_jobs == 0:
+        raise SystemExit("analysis.n_jobs must be != 0")
+    if n_jobs < 0:
+        n_jobs = max(1, (os.cpu_count() or 1) + 1 + n_jobs)
+    n_jobs = max(1, n_jobs)
 
     obj_cfg = deep_get(cfg, "objective", {}) or {}
     obj_eps = float(obj_cfg.get("eps", 0.01))
@@ -1573,7 +1873,6 @@ def main() -> int:
     bin_counts_seen: set = set()
     dry_metrics: Dict[str, Dict[str, List[float]]] = {}
 
-    objective_rows: List[Dict[str, Any]] = []
     objective_gt_done: set = set()
     objective_vals: Dict[Tuple[float, float, float], Dict[str, Dict[str, float]]] = {}
     link_metrics: Dict[str, Dict[str, Dict[str, float]]] = {}
@@ -1584,9 +1883,6 @@ def main() -> int:
     gtbin_abs_patch_means: Dict[str, Dict[str, List[float]]] = {}
 
     obj_enabled = len(obj_pairs) > 0
-    if obj_enabled:
-        from solve_rain_lbfgsb import load_est_input_json as load_est_for_obj  # type: ignore
-        prob_cache: Dict[str, Any] = {}
 
     # iterate per solver
     for name, label, sol_dir, sol_prefix, sol_key_pref in progress_iter(
@@ -1652,264 +1948,122 @@ def main() -> int:
             except Exception:
                 pass
 
-        for key in progress_iter(keys, total=len(keys), desc=f"{label} patches"):
+        tasks: List[Dict[str, Any]] = []
+        hist_key_set = set(hist_keys)
+        for key in keys:
             gt_path = gt_by_key[key]
             sol_path = sol_by_key[key]
             est_path = est_by_key.get(key, None)
             if est_path is None:
                 raise SystemExit(f"Missing est_input JSON for patch {key} under {est_input_dir}")
-
-            # Per-patch stopping diagnostics from solver optinfo JSON.
-            optinfo_path = sol_path.with_name(f"{sol_path.stem}_optinfo.json")
-            has_optinfo = optinfo_path.exists()
-            opt = load_json_dict(optinfo_path) if has_optinfo else {}
-            stop_reason_raw = opt.get("stop_reason", None)
-            stop_reason = str(stop_reason_raw) if stop_reason_raw is not None and str(stop_reason_raw) != "" else None
-            reason_bucket = stop_reason if stop_reason is not None else ("missing_optinfo" if not has_optinfo else "unknown")
-            stop_rows.append(dict(
-                patch_key=key,
-                solver=label,
-                solver_name=name,
-                has_optinfo=bool(has_optinfo),
-                stop_reason=stop_reason,
-                reason_bucket=reason_bucket,
-                success=opt.get("success", None),
-                status=opt.get("status", None),
-                message=opt.get("message", None),
-                nit=opt.get("nit", None),
-                nfev=opt.get("nfev", None),
-                njev=opt.get("njev", None),
-                proj_grad_inf=opt.get("proj_grad_inf", None),
-                rel_decrease=opt.get("rel_decrease", None),
-                ftol=opt.get("ftol", None),
-                gtol=opt.get("gtol", None),
-                ftol_met=opt.get("ftol_met", None),
-                gtol_met=opt.get("gtol_met", None),
-                line_search_failed=opt.get("line_search_failed", None),
-                maxiter_reached=opt.get("maxiter_reached", None),
-                optinfo_json=str(optinfo_path) if has_optinfo else None,
+            tasks.append(dict(
+                key=key,
+                label=label,
+                name=name,
+                gt_path=str(gt_path),
+                sol_path=str(sol_path),
+                est_path=str(est_path),
+                gt_key_pref=list(gt_key_pref),
+                sol_key_pref=list(sol_key_pref),
+                thr=thr,
+                cov_exact=list(cov_exact),
+                cov_ge=cov_ge,
+                k_values=list(k_values),
+                dist_bins=list(dist_bins),
+                dist_method=dist_method,
+                sample_spacing_m=sample_spacing_m,
+                k_query_samples=k_query_samples,
+                chunk_size=chunk_size,
+                max_samples_per_link=max_samples_per_link,
+                max_candidates=max_candidates,
+                rainy_bins_enabled=rainy_bins_enabled,
+                rainy_intervals=list(rainy_intervals),
+                obj_enabled=obj_enabled,
+                obj_pairs=[list(x) for x in obj_pairs],
+                obj_eps=obj_eps,
+                include_rae_hist=(rae_hist_data is not None and key in hist_key_set),
             ))
 
-            gt = load_npz_first_key(gt_path, gt_key_pref)
-            pred = load_npz_first_key(sol_path, sol_key_pref)
+        patch_results: List[Dict[str, Any]] = []
+        if n_jobs <= 1:
+            for t in progress_iter(tasks, total=len(tasks), desc=f"{label} patches"):
+                try:
+                    patch_results.append(analyze_single_patch(t))
+                except Exception as e:
+                    raise SystemExit(f"Patch analysis failed for {t.get('key')} ({label}): {e}") from e
+        else:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=n_jobs) as ex:
+                for res in progress_iter(
+                    ex.map(analyze_single_patch, tasks),
+                    total=len(tasks),
+                    desc=f"{label} patches",
+                ):
+                    patch_results.append(res)
 
-            if gt.shape != pred.shape:
-                raise SystemExit(f"Shape mismatch for {key}: GT {gt.shape} vs {label} {pred.shape}")
+        for res in patch_results:
+            key = str(res["patch_key"])
+            stop_rows.append(dict(res["stop_row"]))
 
-            gt = gt.astype(np.float64)
-            pred = pred.astype(np.float64)
+            fp_rate = res.get("dry_fp_rate", None)
+            fn_rate = res.get("dry_fn_rate", None)
+            if fp_rate is not None:
+                dry_metrics[label]["fp_rates"].append(float(fp_rate))
+            if fn_rate is not None:
+                dry_metrics[label]["fn_rates"].append(float(fn_rate))
 
-            rainy = gt >= thr
-            # dry classification metrics (dry = pred < thr)
-            gt_wet = gt >= thr
-            pred_wet = pred >= thr
-            fp = np.logical_and(pred_wet, ~gt_wet)  # predicted wet but GT dry
-            fn = np.logical_and(~pred_wet, gt_wet)  # predicted dry but GT wet
-            total_pixels = gt.size
-            if total_pixels > 0:
-                dry_metrics[label]["fp_rates"].append(float(np.sum(fp)) / float(total_pixels))
-                dry_metrics[label]["fn_rates"].append(float(np.sum(fn)) / float(total_pixels))
-
-            # coverage map + bins
-            est = load_est_payload(est_path)
-            cov_map, Hc, Wc = compute_coverage_map(est)
-            if cov_map.shape != gt.shape:
-                # allow if transposed? for now strict
-                raise SystemExit(f"Coverage map shape {cov_map.shape} != GT shape {gt.shape} for {key}")
-
-            # distance maps d_k
-            if dist_method in ("sampled_points", "sampled", "samples"):
-                dk_maps, pix_m = compute_dk_maps_sampled_points(
-                    est,
-                    k_values,
-                    sample_spacing_m=sample_spacing_m,
-                    k_query_samples=k_query_samples,
-                    chunk_size=chunk_size,
-                    max_samples_per_link=max_samples_per_link,
-                )
-            else:
-                dk_maps, pix_m = compute_dk_maps(est, k_values, max_candidates=max_candidates)
-            for k in k_values:
-                d_map = dk_maps.get(k)
-                if d_map is None:
-                    raise SystemExit(f"Missing d{k} map for {key}")
-                if d_map.shape != gt.shape:
-                    raise SystemExit(f"d{k} map shape {d_map.shape} != GT shape {gt.shape} for {key}")
-
-            # compute signed/abs arrays for whole field
-            # rainy relative:
-            signed_r, abs_r, signed_n, abs_n = compute_pixel_errors(gt, pred, rainy)
-
-            # Precompute full-field error arrays aligned to pixels for bin masking
-            signed_full = np.empty_like(gt, dtype=np.float64)
-            abs_full = np.empty_like(gt, dtype=np.float64)
-            abs_rae_full = np.empty_like(gt, dtype=np.float64)
-            abs_mmph_full = np.abs(gt - pred)
-            # rainy
-            denom = np.where(gt == 0.0, 1.0, gt)
-            signed_full[rainy] = (gt[rainy] - pred[rainy]) / denom[rainy]
-            abs_full[rainy] = np.abs(signed_full[rainy])
-            abs_rae_full[rainy] = abs_full[rainy]
-            # nonrainy
-            signed_full[~rainy] = pred[~rainy] - gt[~rainy]
-            abs_full[~rainy] = np.abs(signed_full[~rainy])
-            abs_rae_full[~rainy] = abs_mmph_full[~rainy] / denom[~rainy]
-
-            # --- GT-binned all-pixels error (powers of 2 buckets) ---
             if rainy_bins_enabled:
-                for lo, hi, bin_lab in rainy_intervals:
-                    gmask_bin = (gt >= lo) & (gt < hi)
-                    n_bin = int(np.sum(gmask_bin))
+                gt_counts = res.get("gtbin_counts", {}) or {}
+                gt_rel = res.get("gtbin_rel_means", {}) or {}
+                gt_abs = res.get("gtbin_abs_means", {}) or {}
+                for _, _, bin_lab in rainy_intervals:
                     if key not in gtbin_counts_global[bin_lab]:
-                        gtbin_counts_global[bin_lab][key] = n_bin
-                    if n_bin == 0:
-                        continue
-                    abs_vals = abs_mmph_full[gmask_bin]
-                    # Per request, the [0,1) bucket uses absolute error also in the "relative" plot.
-                    if lo < 1.0:
-                        rel_vals = abs_vals
-                    else:
-                        den_bin = np.where(gt[gmask_bin] == 0.0, 1.0, gt[gmask_bin])
-                        rel_vals = abs_vals / den_bin
-                    gtbin_rel_patch_means[label][bin_lab].append(float(np.mean(rel_vals)))
-                    gtbin_abs_patch_means[label][bin_lab].append(float(np.mean(abs_vals)))
+                        gtbin_counts_global[bin_lab][key] = int(gt_counts.get(bin_lab, 0))
+                    rel_v = gt_rel.get(bin_lab, None)
+                    abs_v = gt_abs.get(bin_lab, None)
+                    if rel_v is not None:
+                        gtbin_rel_patch_means[label][bin_lab].append(float(rel_v))
+                    if abs_v is not None:
+                        gtbin_abs_patch_means[label][bin_lab].append(float(abs_v))
 
-            # --- Objective values (GT + solver) ---
             if obj_enabled:
-                est_key = str(est_path)
-                prob = prob_cache.get(est_key)
-                if prob is None:
-                    prob = load_est_for_obj(est_path, warn=False)
-                    prob_cache[est_key] = prob
-                for lam, mu, eta in obj_pairs:
-                    gt_tag = (key, lam, mu, eta)
+                for lam, mu, eta, j_gt, j_sol in res.get("objective_pairs", []):
+                    gt_tag = (key, float(lam), float(mu), float(eta))
                     if gt_tag not in objective_gt_done:
-                        j_gt = evaluate_objective_values(
-                            prob, gt,
-                            lam=lam, mu=mu, eps=obj_eps, eta=eta,
-                        )
                         objective_vals.setdefault((float(lam), float(mu), float(eta)), {}).setdefault(key, {})["GT"] = j_gt
                         objective_gt_done.add(gt_tag)
-
-                    j_sol = evaluate_objective_values(
-                        prob, pred,
-                        lam=lam, mu=mu, eps=obj_eps, eta=eta,
-                    )
                     objective_vals.setdefault((float(lam), float(mu), float(eta)), {}).setdefault(key, {})[label] = j_sol
 
-            # --- CoverageStats per mask + coverage bin ---
-            for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
-                cov_vals = cov_map[mask].ravel()
-                # per requested bins: exact + ge
-                for v in cov_exact + ([] if cov_ge is None else [cov_ge]):
-                    if cov_ge is not None and v == cov_ge:
-                        m = cov_vals >= cov_ge
-                        bin_lab = f"{cov_ge}+"
-                    else:
-                        m = cov_vals == v
-                        bin_lab = str(v)
-                    if not np.any(m):
-                        # still add row? previous analyzer did include zeros sometimes.
-                        n_pix = 0
-                        row = dict(
-                            patch_key=key, mask_type=mask_name, coverage_bin=bin_lab,
-                            n_pixels=0,
-                            mean_signed=0.0, median_signed=0.0,
-                            mean_abs=0.0, std_abs=0.0,
-                            median_abs=0.0, p90_abs=0.0, p99_abs=0.0, linf_abs=0.0,
-                            l1_rae_sum=0.0,
-                            l1_abs_mmph_sum=0.0,
-                            l1_abs_mmph_sum_norm_hw=0.0,
-                        )
-                        cov_rows.append(row)
-                        continue
-                    # pixel indices within this (mask & covbin)
-                    # build boolean for full image: this mask & cov condition
-                    if cov_ge is not None and bin_lab.endswith("+"):
-                        gmask = mask & (cov_map >= cov_ge)
-                    else:
-                        gmask = mask & (cov_map == int(bin_lab))
-                    e_signed = signed_full[gmask].ravel()
-                    e_abs = abs_full[gmask].ravel()
-                    l1_rae = float(np.sum(abs_rae_full[gmask]))
-                    l1_abs_mmph = float(np.sum(abs_mmph_full[gmask]))
-                    s = stats_row(e_signed, e_abs, l1_rae_sum=l1_rae, l1_abs_mmph_sum=l1_abs_mmph)
-                    cov_rows.append(dict(
-                        patch_key=key,
-                        mask_type=mask_name,
-                        coverage_bin=bin_lab,
-                        l1_abs_mmph_sum_norm_hw=(l1_abs_mmph / float(gt.size)),
-                        **s,
-                    ))
+            cov_rows.extend(res.get("cov_rows", []))
 
-            # --- DistanceStats per mask + distance bin (per k) ---
+            dist_rows_payload = res.get("dist_rows_by_k", {}) or {}
             for k in k_values:
-                d_map = dk_maps[k]
-                d_vals = d_map.ravel()
-                d_labels = assign_bin_labels(d_vals, dist_bins).reshape(gt.shape)
+                dist_rows_by_k[k].extend(dist_rows_payload.get(k, []))
 
-                for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
-                    for _, _, bin_lab in dist_bins:
-                        gmask = mask & (d_labels == bin_lab)
-                        count_key = (k, mask_name, bin_lab, key)
-                        if count_key not in bin_counts_seen:
-                            bin_counts[k][mask_name][bin_lab].append(int(np.sum(gmask)))
-                            bin_counts_seen.add(count_key)
-                        e_signed = signed_full[gmask].ravel()
-                        e_abs = abs_full[gmask].ravel()
-                        l1_rae = float(np.sum(abs_rae_full[gmask]))
-                        l1_abs_mmph = float(np.sum(abs_mmph_full[gmask]))
-                        s = stats_row(e_signed, e_abs, l1_rae_sum=l1_rae, l1_abs_mmph_sum=l1_abs_mmph)
-                        dist_rows_by_k[k].append(dict(
-                            patch_key=key,
-                            mask_type=mask_name,
-                            distance_bin_m=bin_lab,
-                            l1_abs_mmph_sum_norm_hw=(l1_abs_mmph / float(gt.size)),
-                            **s,
-                        ))
+            for k, mask_name, bin_lab, cnt in res.get("bin_counts_entries", []):
+                count_key = (int(k), str(mask_name), str(bin_lab), key)
+                if count_key not in bin_counts_seen:
+                    bin_counts[int(k)][str(mask_name)][str(bin_lab)].append(int(cnt))
+                    bin_counts_seen.add(count_key)
 
-                        # For final IQR plot: per-patch median_abs per bin (rainy uses abs_rel, nonrainy uses abs_diff)
-                        if mask_name == "rainy" and e_abs.size > 0:
-                            medians_rainy[k][label][bin_lab].append(float(np.median(e_abs)))
-                            p90s_rainy[k][label][bin_lab].append(float(np.percentile(e_abs, 90)))
-                        if mask_name == "nonrainy" and e_abs.size > 0:
-                            medians_nonrainy[k][label][bin_lab].append(float(np.median(e_abs)))
-                            p90s_nonrainy[k][label][bin_lab].append(float(np.percentile(e_abs, 90)))
+            for k, bin_lab, v in res.get("medians_r_entries", []):
+                medians_rainy[int(k)][label][str(bin_lab)].append(float(v))
+            for k, bin_lab, v in res.get("medians_n_entries", []):
+                medians_nonrainy[int(k)][label][str(bin_lab)].append(float(v))
+            for k, bin_lab, v in res.get("p90s_r_entries", []):
+                p90s_rainy[int(k)][label][str(bin_lab)].append(float(v))
+            for k, bin_lab, v in res.get("p90s_n_entries", []):
+                p90s_nonrainy[int(k)][label][str(bin_lab)].append(float(v))
 
-                        # RAE histogram data (rainy only, optional)
-                        if rae_hist_data is not None and key in hist_keys and mask_name == "rainy" and e_abs.size > 0:
-                            rae_hist_data[k][bin_lab].extend(e_abs.tolist())
+            if rae_hist_data is not None:
+                for k, bin_lab, vals in res.get("rae_hist_entries", []):
+                    rae_hist_data[int(k)][str(bin_lab)].extend(list(vals))
 
-            # --- LinkStats per patch ---
-            try:
-                A_obs, A_hat, L_km, valid, ge10 = compute_link_terms(est, pred)
-                attn_all, J1_all, n_valid = attn_l1_and_J1(A_obs, A_hat, L_km, valid)
-                attn_10, J1_10, n_10 = attn_l1_and_J1(A_obs, A_hat, L_km, ge10)
-                denom_L = float(np.sum(np.abs(L_km[valid])))
-                if denom_L > 0:
-                    E_all = float(np.sum(A_obs[valid] - A_hat[valid]) / denom_L)
-                else:
-                    E_all = 0.0
-            except Exception as e:
-                raise SystemExit(f"Failed to compute link stats for {key} ({label}): {e}") from e
-
-            link_rows.append(dict(
-                patch_key=key,
-                n_links_valid=n_valid,
-                attn_l1_all=attn_all,
-                J1_all=J1_all,
-                n_links_ge10km=n_10,
-                attn_l1_ge10km=attn_10,
-                J1_ge10km=J1_10,
-                E_all=E_all,
-                E2_all=(float(np.sum((A_obs[valid] - A_hat[valid]) ** 2) / denom_L) if denom_L > 0 else 0.0),
-            ))
-            link_metrics[label][key] = dict(
-                L1=attn_all,
-                J1=J1_all,
-                E=E_all,
-                E2=(float(np.sum((A_obs[valid] - A_hat[valid]) ** 2) / denom_L) if denom_L > 0 else 0.0),
-            )
+            link_row = res.get("link_row", None)
+            if link_row is not None:
+                link_rows.append(link_row)
+            link_metric = res.get("link_metric", None)
+            if link_metric is not None:
+                link_metrics[label][key] = link_metric
 
         # store sheets (order: LinkStats, DistanceStats, CoverageStats)
         link_rows = append_average_rows(link_rows, group_keys=[])
