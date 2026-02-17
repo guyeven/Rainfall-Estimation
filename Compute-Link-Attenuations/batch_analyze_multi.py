@@ -2016,7 +2016,7 @@ def main() -> int:
         solver_order = ["GT"] + [lab for lab in solver_labels if lab != "GT"]
         solver_rank = {lab: i for i, lab in enumerate(solver_order)}
         metric_name_map = [
-            ("objective", "J"),
+            ("unnormalized_objective", "J"),
             ("unnormalized_data_fit_term", "J1"),
             ("unnormalized_smoothness_term", "J2"),
             ("unnormalized_shrinkage_term", "J3"),
@@ -2157,6 +2157,9 @@ def main() -> int:
         ),
         "unnormalized_data_fit_term": (
             "Unnormalized data-fit term J1 = sum_valid_links ((A_hat - A_obs) / L_km)^2."
+        ),
+        "unnormalized_objective": (
+            "Unnormalized weighted objective: J1 + w_smooth*J2 + w_shrinkage*J3 + w_second_der*J4."
         ),
         "unnormalized_smoothness_term": (
             "Unnormalized smoothness term J2 = sum_neighbor_pairs (log(R + eps)_u - log(R + eps)_v)^2."
