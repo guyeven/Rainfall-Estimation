@@ -8,6 +8,10 @@ from solve_rain_lbfgsb_normalized_obj_log import solve_lbfgsb_and_save as _solve
 
 def solve_lbfgsb_and_save(est_input_json: str | Path, **kwargs):
     kwargs = dict(kwargs)
+    # batch_solve_multi may pass lam/mu/eta aliases used by unnormalized solvers.
+    # The normalized solver API uses j2_w/j3_w/j4_w instead.
+    kwargs.pop("lam", None)
+    kwargs.pop("mu", None)
+    kwargs.pop("eta", None)
     kwargs["use_linear_j3"] = True
     return _solve(est_input_json, **kwargs)
-
