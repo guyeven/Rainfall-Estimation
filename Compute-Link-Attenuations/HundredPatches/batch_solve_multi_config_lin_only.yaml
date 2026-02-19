@@ -1,0 +1,61 @@
+input:
+  est_dir: "est_dir"
+  file_pattern: "est_input_*.json"
+  recursive: false
+
+solvers:
+
+  opt_idw_newobj_lin:
+    name: "opt_idw_newobj_lin"
+    label: "OPT_IDW_NEWOBJ_LIN"
+    type: "lbfgsb"
+    module: "solve_rain_lbfgsb_normalized_obj_lin"
+    out_dir: "sol_dir_opt_idw_newobj_lin"
+
+    optimization:
+      epsilon: 0.01
+      w_shrink: 0.01
+      w_lin_neighbors: 1.0e-06
+      w_second_der: 1.0e-06
+      maxiter: 300
+      R0: 0.6
+      R0_from_IDW: true
+
+    tolerances:
+      ftol: 1.0e-08
+      gtol: 1.0e-07
+      maxls: 20
+
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+
+  opt_ildw_newobj_lin:
+    name: "opt_ildw_newobj_lin"
+    label: "OPT_ILDW_NEWOBJ_LIN"
+    type: "lbfgsb"
+    module: "solve_rain_lbfgsb_normalized_obj_lin"
+    out_dir: "sol_dir_opt_ildw_newobj_lin"
+
+    optimization:
+      epsilon: 0.01
+      w_shrink: 0.01
+      w_lin_neighbors: 1.0e-06
+      w_second_der: 1.0e-06
+      maxiter: 300
+      R0: 0.6
+      R0_from_ILDW: true
+      R0_from_IDW: false
+
+    tolerances:
+      ftol: 1.0e-08
+      gtol: 1.0e-07
+      maxls: 20
+
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0

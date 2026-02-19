@@ -20,10 +20,10 @@ input:
       sol_prefix: "est"
       sol_key_preference: ["R_hat"]
 
-    opt_idw_newobj_quad:
-      name: "opt_idw_newobj_quad"
-      label: "OPT_IDW_NEWOBJ_QUAD"
-      sol_dir: "sol_dir_opt_idw_newobj_quad"
+    opt_idw_newobj_lin:
+      name: "opt_idw_newobj_lin"
+      label: "OPT_IDW_NEWOBJ_LIN"
+      sol_dir: "sol_dir_opt_idw_newobj_lin"
       sol_prefix: "est"
       sol_key_preference: ["R_hat"]
 
@@ -34,10 +34,10 @@ input:
       sol_prefix: "est"
       sol_key_preference: ["R_hat"]
 
-    opt_ildw_newobj_quad:
-      name: "opt_ildw_newobj_quad"
-      label: "OPT_ILDW_NEWOBJ_QUAD"
-      sol_dir: "sol_dir_opt_ildw_newobj_quad"
+    opt_ildw_newobj_lin:
+      name: "opt_ildw_newobj_lin"
+      label: "OPT_ILDW_NEWOBJ_LIN"
+      sol_dir: "sol_dir_opt_ildw_newobj_lin"
       sol_prefix: "est"
       sol_key_preference: ["R_hat"]
 
@@ -97,11 +97,6 @@ output:
 
 analysis:
   n_jobs: 4
-
-objective:
-  eps: 0.01
-  pairs:
-    - {w_smooth: 0.01, w_shrink: 1.0e-06, w_second_der: 1.0e-06}
 
 rae_hist:
   enabled: true

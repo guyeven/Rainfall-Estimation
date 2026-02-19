@@ -169,7 +169,7 @@ def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: 
         "j2_w": float(opt.get("w_shrink", opt.get("j2_w", opt.get("w_j2", 0.01)))),
         "j3_w": float(
             opt.get(
-                "w_quad_neighbors",
+                "w_lin_neighbors",
                 opt.get("w_log_neighbors", opt.get("w_neighbors", opt.get("j3_w", opt.get("w_j3", 1e-6)))),
             )
         ),
