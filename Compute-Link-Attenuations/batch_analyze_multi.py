@@ -22,11 +22,12 @@ Multi-solver analyzer that:
 
 2) Adds per-solver link-based sheets:
    - LinkStats_GTvs<LABEL>
-     patch_key, n_links_valid, attn_l1_all, J1_all, attn_l1_ge10km, J1_ge10km
+     patch_key, n_links_valid, attn_l1_all, J_atten_all, attn_l1_ge10km, J_atten_ge10km,
+     max_abs_diff, p95_abs_diff, p99_abs_diff
 
    Where:
      attn_l1 = sum_{links} |A_hat - A_obs|
-     J1      = sum_{links} ((A_hat - A_obs)/L_km)^2
+     J_atten = (1 / #links) * sum_{links} ((A_hat - A_obs)^2 / L_km)
    and the *_ge10km versions restrict to links with L_km >= 10.
 
 3) Keeps the nice final plots (IQR of per-patch medians by distance bin) across all solvers.
@@ -52,7 +53,6 @@ DEFAULT_REFERENCE_W_SMOOTH = 1.0
 DEFAULT_REFERENCE_W_SHRINK = 1.0
 DEFAULT_REFERENCE_W_SECOND_DER = 1.0
 DEFAULT_REFERENCE_EPS = 0.01
-DEFAULT_REFERENCE_USE_LINEAR_J3 = False
 
 
 # ----------------------------
@@ -116,6 +116,8 @@ def objective_scaling_from_module(module_name: str) -> str:
 
 
 def objective_scaling_from_meta(meta: Dict[str, float]) -> str:
+    if "meta_alphas_1d" in meta or "meta_alphas_2d" in meta or "meta_alphas_total" in meta:
+        return "CONSTRAINED_NORMALIZED"
     if "meta_j2_w" in meta or "meta_j3_w" in meta or "meta_j4_w" in meta:
         return "NORMALIZED"
     if "meta_lambda" in meta or "meta_mu" in meta or "meta_eta" in meta:
@@ -126,21 +128,19 @@ def objective_scaling_from_meta(meta: Dict[str, float]) -> str:
 def solver_objective_formula_text(*, scaling: str, meta: Dict[str, float]) -> str:
     if scaling == "N/A_BASELINE":
         return "N/A (baseline interpolation; no optimization objective)."
-    if scaling == "NORMALIZED":
-        use_linear = bool(meta.get("meta_use_linear_j3", 0.0))
-        j3_name = "linear-neighbor" if use_linear else "log-neighbor"
+    if scaling == "CONSTRAINED_NORMALIZED":
         return (
-            "normalized_J_total = normalized_J_data + w_smooth*normalized_J_smoothness + "
-            "w_shrinkage*normalized_J_shrinkage + w_second_der*normalized_J_second_derivative; "
-            "normalized_J_data = J_data/#valid_links; "
-            "normalized_J_smoothness, normalized_J_shrinkage, normalized_J_second_derivative = "
-            "J_term/#pixels "
-            f"(smoothness variant: {j3_name})."
+            "J_native_total = w_1d*J_1d + w_2d*J_2d + w_total*J_total, "
+            "with attenuation fit J_atten handled as a constraint."
+        )
+    if scaling == "NORMALIZED":
+        return (
+            "J_native_total = J_atten + w_1d*J_1d + w_total*J_total + w_2d*J_2d; "
+            "J_atten is normalized by #valid_links; J_1d, J_total, J_2d are normalized by #pixels."
         )
     if scaling == "UNNORMALIZED":
         return (
-            "J_total = J_data + w_smooth*J_smoothness + w_shrinkage*J_shrinkage + "
-            "w_second_der*J_second_derivative "
+            "J_native_total = J_atten + w_1d*J_1d + w_total*J_total + w_2d*J_2d "
             "(some solver variants may omit terms). Terms are raw sums (not normalized)."
         )
     return "Unknown objective form (insufficient metadata)."
@@ -178,25 +178,28 @@ def objective_term_presence_from_module(module_name: str, *, solver_label: str =
 def summarize_solver_settings(meta: Dict[str, float]) -> str:
     if not meta:
         return "No meta_* settings found in solution npz."
+    has_constrained = any(k in meta for k in ("meta_alphas_1d", "meta_alphas_2d", "meta_alphas_total"))
     has_norm = any(k in meta for k in ("meta_j2_w", "meta_j3_w", "meta_j4_w"))
     has_unnorm = any(k in meta for k in ("meta_lambda", "meta_mu", "meta_eta"))
 
     parts: List[str] = []
-    if has_norm:
-        parts.append(f"w_smooth={float(meta.get('meta_j2_w', 0.0))}")
-        parts.append(f"w_shrinkage={float(meta.get('meta_j3_w', 0.0))}")
-        parts.append(f"w_second_der={float(meta.get('meta_j4_w', 0.0))}")
+    if has_constrained:
+        parts.append(f"w_1d={float(meta.get('meta_alphas_1d', 0.0))}")
+        parts.append(f"w_total={float(meta.get('meta_alphas_total', 0.0))}")
+        parts.append(f"w_2d={float(meta.get('meta_alphas_2d', 0.0))}")
+    elif has_norm:
+        parts.append(f"w_1d={float(meta.get('meta_j2_w', 0.0))}")
+        parts.append(f"w_total={float(meta.get('meta_j3_w', 0.0))}")
+        parts.append(f"w_2d={float(meta.get('meta_j4_w', 0.0))}")
     elif has_unnorm:
-        parts.append(f"w_smooth={float(meta.get('meta_lambda', 0.0))}")
-        parts.append(f"w_shrinkage={float(meta.get('meta_mu', 0.0))}")
-        parts.append(f"w_second_der={float(meta.get('meta_eta', 0.0))}")
+        parts.append(f"w_1d={float(meta.get('meta_lambda', 0.0))}")
+        parts.append(f"w_total={float(meta.get('meta_mu', 0.0))}")
+        parts.append(f"w_2d={float(meta.get('meta_eta', 0.0))}")
 
     if "meta_eps" in meta:
         parts.append(f"eps={float(meta['meta_eps'])}")
     if "meta_R0" in meta:
         parts.append(f"R0={float(meta['meta_R0'])}")
-    if "meta_use_linear_j3" in meta:
-        parts.append(f"use_linear_j3={bool(meta['meta_use_linear_j3'])}")
     if "meta_R0_from_IDW" in meta:
         parts.append(f"R0_from_IDW={bool(meta['meta_R0_from_IDW'])}")
     if "meta_R0_from_ILDW" in meta:
@@ -336,24 +339,33 @@ def load_npz_meta_scalars(path: Path) -> Dict[str, float]:
 def native_objective_params_from_meta(meta: Dict[str, float]) -> Optional[Dict[str, float | str]]:
     """
     Infer solver-native objective weights from scalar meta_* fields saved in solution NPZ.
-    Returns standardized weights (w_smooth, w_shrinkage, w_second_der) plus scaling label.
+    Returns standardized weights (w_1d, w_total, w_2d) plus scaling label.
     """
+    has_constrained = any(k in meta for k in ("meta_alphas_1d", "meta_alphas_2d", "meta_alphas_total"))
+    if has_constrained:
+        return dict(
+            objective_scaling="CONSTRAINED_NORMALIZED",
+            w_1d=float(meta.get("meta_alphas_1d", 0.0)),
+            w_total=float(meta.get("meta_alphas_total", 0.0)),
+            w_2d=float(meta.get("meta_alphas_2d", 0.0)),
+        )
+
     has_norm = any(k in meta for k in ("meta_j2_w", "meta_j3_w", "meta_j4_w"))
     if has_norm:
         return dict(
             objective_scaling="NORMALIZED",
-            w_smooth=float(meta.get("meta_j2_w", 0.0)),
-            w_shrinkage=float(meta.get("meta_j3_w", 0.0)),
-            w_second_der=float(meta.get("meta_j4_w", 0.0)),
+            w_1d=float(meta.get("meta_j2_w", 0.0)),
+            w_total=float(meta.get("meta_j3_w", 0.0)),
+            w_2d=float(meta.get("meta_j4_w", 0.0)),
         )
 
     has_unnorm = any(k in meta for k in ("meta_lambda", "meta_mu", "meta_eta"))
     if has_unnorm:
         return dict(
             objective_scaling="UNNORMALIZED",
-            w_smooth=float(meta.get("meta_lambda", 0.0)),
-            w_shrinkage=float(meta.get("meta_mu", 0.0)),
-            w_second_der=float(meta.get("meta_eta", 0.0)),
+            w_1d=float(meta.get("meta_lambda", 0.0)),
+            w_total=float(meta.get("meta_mu", 0.0)),
+            w_2d=float(meta.get("meta_eta", 0.0)),
         )
 
     return None
@@ -816,48 +828,31 @@ def append_native_objective_definition_rows(rows: List[Dict[str, Any]]) -> List[
     defs: List[Dict[str, Any]] = [
         dict(
             patch_key="DEFINITION",
+            solver="J_native_total",
+            definition=(
+                "Native objective value reported in this sheet. For constrained solvers, "
+                "J_atten is reported as a constraint metric while J_native_total uses only regularization terms."
+            ),
+        ),
+        dict(
+            patch_key="DEFINITION",
+            solver="J_atten",
+            definition="J_atten = sum over valid links of ((A_hat - A_obs)/L_km)^2, normalized by #valid_links in this sheet.",
+        ),
+        dict(
+            patch_key="DEFINITION",
+            solver="J_1d",
+            definition="J_1d = first-order smoothness term over neighboring pixels, normalized by #pixels in this sheet.",
+        ),
+        dict(
+            patch_key="DEFINITION",
             solver="J_total",
-            definition=(
-                "Total objective. Unnormalized: J_total = J_data + w_smooth*J_smoothness + "
-                "w_shrinkage*J_shrinkage + w_second_der*J_second_derivative. "
-                "Normalized solvers apply per-term normalization in the solver objective."
-            ),
+            definition="J_total = total-field energy term sum over pixels of R^2, normalized by #pixels in this sheet.",
         ),
         dict(
             patch_key="DEFINITION",
-            solver="J_data",
-            definition="J_data = sum over valid links of ((A_hat - A_obs)/L_km)^2.",
-        ),
-        dict(
-            patch_key="DEFINITION",
-            solver="J_smoothness",
-            definition=(
-                "J_smoothness = sum over neighboring pixel pairs (log(R_u+eps)-log(R_v+eps))^2. "
-                "If use_linear_j3=true, the smoothness variant uses linear differences "
-                "(R_u-R_v)^2 instead of log differences."
-            ),
-        ),
-        dict(
-            patch_key="DEFINITION",
-            solver="J_shrinkage",
-            definition="J_shrinkage = sum over pixels of R^2.",
-        ),
-        dict(
-            patch_key="DEFINITION",
-            solver="J_second_derivative",
-            definition=(
-                "J_second_derivative = sum over collinear triplets ( (R_b-R_a) - (R_c-R_b) )^2."
-            ),
-        ),
-        dict(
-            patch_key="DEFINITION",
-            solver="normalized_J_total",
-            definition=(
-                "Map-evaluated normalized objective (for all solvers, IDW/ILDW, and GT): "
-                "J1/#valid_links + w_smooth*(J2/#pixels) + w_shrinkage*(J3/#pixels) + "
-                "w_second_der*(J4/#pixels). For non-optimization maps (IDW/ILDW/GT), "
-                "weights are set to 1."
-            ),
+            solver="J_2d",
+            definition="J_2d = second-order smoothness term over collinear triplets, normalized by #pixels in this sheet.",
         ),
     ]
     return rows + defs
@@ -896,7 +891,6 @@ def evaluate_objective_values(
     mu: float,
     eps: float,
     eta: float = 0.0,
-    use_linear_j3: bool = False,
 ) -> Dict[str, float]:
     if R_field.shape != (prob.H, prob.W):
         raise ValueError(f"R_field shape {R_field.shape} != (H,W)=({prob.H},{prob.W})")
@@ -922,14 +916,7 @@ def evaluate_objective_values(
     J1 = float(np.dot(r[valid], r[valid]))
 
     # --- J2 smoothness term ---
-    if use_linear_j3:
-        # NEWOBJ_LIN variant: smoothness on raw rainfall field.
-        du = R[prob.n_u] - R[prob.n_v]
-    else:
-        # NEWOBJ_LOG variant: smoothness on log-transformed rainfall.
-        R_eps = R + eps
-        u = np.log(R_eps)
-        du = u[prob.n_u] - u[prob.n_v]
+    du = R[prob.n_u] - R[prob.n_v]
     J2 = float(np.dot(du, du))
 
     # --- J3 shrinkage term ---
@@ -1002,7 +989,6 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     ref_eval_mu = float(task.get("ref_eval_mu", DEFAULT_REFERENCE_W_SHRINK))
     ref_eval_eta = float(task.get("ref_eval_eta", DEFAULT_REFERENCE_W_SECOND_DER))
     ref_eval_eps = float(task.get("ref_eval_eps", DEFAULT_REFERENCE_EPS))
-    ref_eval_use_linear_j3 = bool(task.get("ref_eval_use_linear_j3", DEFAULT_REFERENCE_USE_LINEAR_J3))
     include_rae_hist = bool(task["include_rae_hist"])
 
     # Per-patch stopping diagnostics from solver optinfo JSON.
@@ -1135,11 +1121,10 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
             j_sol = evaluate_objective_values(prob, pred, lam=lam, mu=mu, eps=obj_eps, eta=eta)
             objective_pairs.append((float(lam), float(mu), float(eta), j_gt, j_sol))
     if native_params is not None and prob is not None:
-        lam = float(native_params["w_smooth"])
-        mu = float(native_params["w_shrinkage"])
-        eta = float(native_params["w_second_der"])
+        lam = float(native_params["w_1d"])
+        mu = float(native_params["w_total"])
+        eta = float(native_params["w_2d"])
         eps_native = float(native_meta.get("meta_eps", obj_eps))
-        use_linear_native = bool(native_meta.get("meta_use_linear_j3", 0.0))
         j_native = evaluate_objective_values(
             prob,
             pred,
@@ -1147,20 +1132,16 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
             mu=mu,
             eps=eps_native,
             eta=eta,
-            use_linear_j3=use_linear_native,
         )
         native_objective = dict(
             objective_scaling=str(native_params["objective_scaling"]),
-            w_smooth=lam,
-            w_shrinkage=mu,
-            w_second_der=eta,
+            w_1d=lam,
+            w_total=mu,
+            w_2d=eta,
             eps=eps_native,
-            use_linear_j3=use_linear_native,
             **j_native,
         )
     if ref_eval_enabled and prob is not None:
-        # Non-native rows (no solver-native objective metadata) should use linear smoothness.
-        use_linear_pred = True if native_params is None else ref_eval_use_linear_j3
         j_ref_pred = evaluate_objective_values(
             prob,
             pred,
@@ -1168,15 +1149,13 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
             mu=ref_eval_mu,
             eps=ref_eval_eps,
             eta=ref_eval_eta,
-            use_linear_j3=use_linear_pred,
         )
         reference_objective_pred = dict(
             objective_scaling="NORMALIZED_REFERENCE",
-            w_smooth=ref_eval_lam,
-            w_shrinkage=ref_eval_mu,
-            w_second_der=ref_eval_eta,
+            w_1d=ref_eval_lam,
+            w_total=ref_eval_mu,
+            w_2d=ref_eval_eta,
             eps=ref_eval_eps,
-            use_linear_j3=use_linear_pred,
             **j_ref_pred,
         )
         j_ref_gt = evaluate_objective_values(
@@ -1186,15 +1165,13 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
             mu=ref_eval_mu,
             eps=ref_eval_eps,
             eta=ref_eval_eta,
-            use_linear_j3=True,
         )
         reference_objective_gt = dict(
             objective_scaling="NORMALIZED_REFERENCE",
-            w_smooth=ref_eval_lam,
-            w_shrinkage=ref_eval_mu,
-            w_second_der=ref_eval_eta,
+            w_1d=ref_eval_lam,
+            w_total=ref_eval_mu,
+            w_2d=ref_eval_eta,
             eps=ref_eval_eps,
-            use_linear_j3=True,
             **j_ref_gt,
         )
 
@@ -1238,6 +1215,7 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
             ))
 
     dist_rows_by_k: Dict[int, List[Dict[str, Any]]] = {k: [] for k in k_values}
+    overall_rows: List[Dict[str, Any]] = []
     bin_counts_entries: List[Tuple[int, str, str, int]] = []
     medians_r_entries: List[Tuple[int, str, float]] = []
     medians_n_entries: List[Tuple[int, str, float]] = []
@@ -1274,12 +1252,30 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
                 if include_rae_hist and mask_name == "rainy" and e_abs.size > 0:
                     rae_hist_entries.append((k, bin_lab, e_abs.tolist()))
 
+    # Distance-like stats without binning (all distances together).
+    for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
+        e_signed = signed_full[mask].ravel()
+        e_abs = abs_full[mask].ravel()
+        l1_rae = float(np.sum(abs_rae_full[mask]))
+        l1_abs_mmph = float(np.sum(abs_mmph_full[mask]))
+        s = stats_row(e_signed, e_abs, l1_rae_sum=l1_rae, l1_abs_mmph_sum=l1_abs_mmph)
+        overall_rows.append(dict(
+            patch_key=key,
+            mask_type=mask_name,
+            distance_bin_m="ALL",
+            l1_abs_mmph_sum_norm_hw=(l1_abs_mmph / float(gt.size)),
+            **s,
+        ))
+
     try:
         A_obs, A_hat, L_km, valid, ge10 = compute_link_terms(est, pred)
         attn_all, J1_all, n_valid = attn_l1_and_J1(A_obs, A_hat, L_km, valid)
         attn_10, J1_10, n_10 = attn_l1_and_J1(A_obs, A_hat, L_km, ge10)
+        max_abs_diff, p95_abs_diff, p99_abs_diff = abs_diff_summary(A_obs, A_hat, valid)
         J1_len1_all = j1_len1(A_obs, A_hat, L_km, valid)
         J1_len1_10 = j1_len1(A_obs, A_hat, L_km, ge10)
+        J_atten_all = float(J1_len1_all / float(n_valid)) if n_valid > 0 else 0.0
+        J_atten_10 = float(J1_len1_10 / float(n_10)) if n_10 > 0 else 0.0
         denom_L = float(np.sum(np.abs(L_km[valid])))
         if denom_L > 0:
             E_all = float(np.sum(A_obs[valid] - A_hat[valid]) / denom_L)
@@ -1294,16 +1290,28 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         patch_key=key,
         n_links_valid=n_valid,
         attn_l1_all=attn_all,
-        J1_all=J1_all,
+        J_atten_all=J_atten_all,
         n_links_ge10km=n_10,
         attn_l1_ge10km=attn_10,
-        J1_ge10km=J1_10,
-        J1_len1_all=J1_len1_all,
-        J1_len1_ge10km=J1_len1_10,
+        J_atten_ge10km=J_atten_10,
+        max_abs_diff=max_abs_diff,
+        p95_abs_diff=p95_abs_diff,
+        p99_abs_diff=p99_abs_diff,
+        J_atten_x_num_links_all=J1_len1_all,
+        J_atten_x_num_links_ge10km=J1_len1_10,
         E_all=E_all,
         E2_all=E2_all,
     )
-    link_metric = dict(L1=attn_all, J1=J1_all, J1_len1=J1_len1_all, E=E_all, E2=E2_all)
+    idx_valid = np.where(valid)[0]
+    abs_norm_resid_valid = np.abs(A_hat[idx_valid] - A_obs[idx_valid]) / L_km[idx_valid] if idx_valid.size > 0 else np.zeros(0, dtype=np.float64)
+    link_metric = dict(
+        L1=attn_all,
+        J1=J1_all,
+        J1_len1=J1_len1_all,
+        E=E_all,
+        E2=E2_all,
+        abs_norm_resid_valid=abs_norm_resid_valid.tolist(),
+    )
 
     return dict(
         patch_key=key,
@@ -1319,6 +1327,7 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         reference_objective_gt=reference_objective_gt,
         cov_rows=cov_rows,
         dist_rows_by_k=dist_rows_by_k,
+        overall_rows=overall_rows,
         bin_counts_entries=bin_counts_entries,
         medians_r_entries=medians_r_entries,
         medians_n_entries=medians_n_entries,
@@ -1415,6 +1424,22 @@ def attn_l1_and_J1(A_obs: np.ndarray, A_hat: np.ndarray, L_km: np.ndarray, mask:
     return attn_l1, J1, int(idx.size)
 
 
+def abs_diff_summary(A_obs: np.ndarray, A_hat: np.ndarray, mask: np.ndarray) -> Tuple[float, float, float]:
+    """
+    Summary stats over |A_hat - A_obs| on links selected by mask:
+      max, p95, p99
+    """
+    idx = np.where(mask)[0]
+    if idx.size == 0:
+        return 0.0, 0.0, 0.0
+    abs_diff = np.abs(A_hat[idx] - A_obs[idx])
+    return (
+        float(np.max(abs_diff)),
+        float(np.percentile(abs_diff, 95)),
+        float(np.percentile(abs_diff, 99)),
+    )
+
+
 def j1_len1(A_obs: np.ndarray, A_hat: np.ndarray, L_km: np.ndarray, mask: np.ndarray) -> float:
     """
     J1 variant with first-power link-length denominator:
@@ -1508,36 +1533,22 @@ def write_workbook(
                 "objective_unavailable_reason",
                 "objective_scaling",
                 "objective_formula",
-                "w_smooth",
-                "w_shrinkage",
-                "w_second_der",
-                "normalized_weight_data",
-                "normalized_weight_smoothness",
-                "normalized_weight_shrinkage",
-                "normalized_weight_second_derivative",
+                "w_1d",
+                "w_total",
+                "w_2d",
                 "eps",
-                "use_linear_j3",
                 "n_valid_links",
                 "n_pixels",
                 "solver",
-                "normalized_J_total",
-                "normalized_J_data",
-                "normalized_J_smoothness",
-                "normalized_J_shrinkage",
-                "normalized_J_second_derivative",
-                "weighted_normalized_J_data",
-                "weighted_normalized_J_smoothness",
-                "weighted_normalized_J_shrinkage",
-                "weighted_normalized_J_second_derivative",
+                "J_native_total",
+                "J_atten",
+                "J_1d",
                 "J_total",
-                "J_data",
-                "J_smoothness",
-                "J_shrinkage",
-                "J_second_derivative",
-                "weighted_J_data",
-                "weighted_J_smoothness",
-                "weighted_J_shrinkage",
-                "weighted_J_second_derivative",
+                "J_2d",
+                "weighted_J_atten",
+                "weighted_J_1d",
+                "weighted_J_total",
+                "weighted_J_2d",
             ]
             rank = {name: i for i, name in enumerate(preferred)}
             cols = sorted(cols, key=lambda c: (rank.get(c, 10_000), cols.index(c)))
@@ -2098,7 +2109,6 @@ def main() -> int:
     ref_eval_mu = float(DEFAULT_REFERENCE_W_SHRINK)
     ref_eval_eta = float(DEFAULT_REFERENCE_W_SECOND_DER)
     ref_eval_eps = float(DEFAULT_REFERENCE_EPS)
-    ref_eval_use_linear_j3 = bool(DEFAULT_REFERENCE_USE_LINEAR_J3)
 
     rae_cfg = deep_get(cfg, "rae_hist", {}) or {}
     rae_enabled = bool(rae_cfg.get("enabled", False))
@@ -2166,7 +2176,7 @@ def main() -> int:
     objective_vals: Dict[Tuple[float, float, float], Dict[str, Dict[str, float]]] = {}
     native_objective_rows: List[Dict[str, Any]] = []
     gt_rows_done: set = set()
-    link_metrics: Dict[str, Dict[str, Dict[str, float]]] = {}
+    link_metrics: Dict[str, Dict[str, Dict[str, Any]]] = {}
     stop_rows: List[Dict[str, Any]] = []
     solver_info_rows: List[Dict[str, Any]] = []
     solver_formula_by_label: Dict[str, str] = {}
@@ -2211,6 +2221,7 @@ def main() -> int:
 
         cov_rows: List[Dict[str, Any]] = []
         dist_rows_by_k: Dict[int, List[Dict[str, Any]]] = {k: [] for k in k_values}
+        overall_rows: List[Dict[str, Any]] = []
         link_rows: List[Dict[str, Any]] = []
         link_metrics[label] = {}
         dry_metrics[label] = {"fp_rates": [], "fn_rates": []}
@@ -2281,7 +2292,6 @@ def main() -> int:
                 ref_eval_mu=float(ref_eval_mu),
                 ref_eval_eta=float(ref_eval_eta),
                 ref_eval_eps=float(ref_eval_eps),
-                ref_eval_use_linear_j3=bool(ref_eval_use_linear_j3),
                 include_rae_hist=(rae_hist_data is not None and key in hist_key_set),
             ))
 
@@ -2351,67 +2361,54 @@ def main() -> int:
                 native_row["objective_unavailable_reason"] = (
                     "No scalar meta_* objective weights found in solution npz."
                 )
-                native_row["normalized_weight_data"] = 1.0
-                native_row["normalized_weight_smoothness"] = 1.0
-                native_row["normalized_weight_shrinkage"] = 1.0
-                native_row["normalized_weight_second_derivative"] = 1.0
             else:
                 native_row["objective_scaling"] = str(native.get("objective_scaling", native_row["objective_scaling"]))
-                native_row["w_smooth"] = float(native.get("w_smooth", 0.0))
-                native_row["w_shrinkage"] = float(native.get("w_shrinkage", 0.0))
-                native_row["w_second_der"] = float(native.get("w_second_der", 0.0))
-                native_row["normalized_weight_data"] = 1.0
-                native_row["normalized_weight_smoothness"] = float(native_row["w_smooth"])
-                native_row["normalized_weight_shrinkage"] = float(native_row["w_shrinkage"])
-                native_row["normalized_weight_second_derivative"] = float(native_row["w_second_der"])
+                native_row["w_1d"] = float(native.get("w_1d", native.get("w_smooth", 0.0)))
+                native_row["w_total"] = float(native.get("w_total", native.get("w_shrinkage", 0.0)))
+                native_row["w_2d"] = float(native.get("w_2d", native.get("w_second_der", 0.0)))
                 native_row["eps"] = float(native.get("eps", obj_eps))
-                native_row["use_linear_j3"] = bool(native.get("use_linear_j3", False))
-                native_row["J_total"] = float(native.get("J", 0.0))
-                native_row["J_data"] = float(native.get("J1", 0.0))
-                native_row["J_smoothness"] = float(native.get("J2", 0.0))
-                native_row["J_shrinkage"] = float(native.get("J3", 0.0))
-                native_row["J_second_derivative"] = float(native.get("J4", 0.0))
-                native_row["weighted_J_data"] = float(native.get("wJ1", 0.0))
-                native_row["weighted_J_smoothness"] = float(native.get("wJ2", 0.0))
-                native_row["weighted_J_shrinkage"] = float(native.get("wJ3", 0.0))
-                native_row["weighted_J_second_derivative"] = float(native.get("wJ4", 0.0))
                 n_valid = native.get("n_valid_links", None)
                 n_pix = native.get("n_pixels", None)
                 if n_valid is not None:
                     native_row["n_valid_links"] = int(n_valid)
                 if n_pix is not None:
                     native_row["n_pixels"] = int(n_pix)
-                if (
-                    str(native_row.get("objective_scaling", "")) == "NORMALIZED"
-                    and n_valid is not None and float(n_valid) > 0.0
-                    and n_pix is not None and float(n_pix) > 0.0
-                ):
-                    den_links = float(n_valid)
-                    den_pix = float(n_pix)
-                    j1 = float(native.get("J1", 0.0))
-                    j2 = float(native.get("J2", 0.0))
-                    j3 = float(native.get("J3", 0.0))
-                    j4 = float(native.get("J4", 0.0))
-                    ws = float(native_row["w_smooth"])
-                    wk = float(native_row["w_shrinkage"])
-                    wd = float(native_row["w_second_der"])
-                    native_row["normalized_weight_data"] = 1.0
-                    native_row["normalized_weight_smoothness"] = ws
-                    native_row["normalized_weight_shrinkage"] = wk
-                    native_row["normalized_weight_second_derivative"] = wd
-                    native_row["normalized_J_data"] = j1 / den_links
-                    native_row["normalized_J_smoothness"] = j2 / den_pix
-                    native_row["normalized_J_shrinkage"] = j3 / den_pix
-                    native_row["normalized_J_second_derivative"] = j4 / den_pix
-                    native_row["weighted_normalized_J_data"] = native_row["normalized_J_data"]
-                    native_row["weighted_normalized_J_smoothness"] = ws * float(native_row["normalized_J_smoothness"])
-                    native_row["weighted_normalized_J_shrinkage"] = wk * float(native_row["normalized_J_shrinkage"])
-                    native_row["weighted_normalized_J_second_derivative"] = wd * float(native_row["normalized_J_second_derivative"])
-                    native_row["normalized_J_total"] = (
-                        float(native_row["weighted_normalized_J_data"])
-                        + float(native_row["weighted_normalized_J_smoothness"])
-                        + float(native_row["weighted_normalized_J_shrinkage"])
-                        + float(native_row["weighted_normalized_J_second_derivative"])
+                den_links = float(n_valid) if (n_valid is not None and float(n_valid) > 0.0) else None
+                den_pix = float(n_pix) if (n_pix is not None and float(n_pix) > 0.0) else None
+                j1 = float(native.get("J1", 0.0))
+                j2 = float(native.get("J2", 0.0))
+                j3 = float(native.get("J3", 0.0))
+                j4 = float(native.get("J4", 0.0))
+                ws = float(native_row["w_1d"])
+                wk = float(native_row["w_total"])
+                wd = float(native_row["w_2d"])
+
+                j_atten = float(j1 / den_links) if den_links is not None else j1
+                j_1d = float(j2 / den_pix) if den_pix is not None else j2
+                j_total = float(j3 / den_pix) if den_pix is not None else j3
+                j_2d = float(j4 / den_pix) if den_pix is not None else j4
+
+                native_row["J_atten"] = j_atten
+                native_row["J_1d"] = j_1d
+                native_row["J_total"] = j_total
+                native_row["J_2d"] = j_2d
+                native_row["weighted_J_atten"] = j_atten
+                native_row["weighted_J_1d"] = ws * j_1d
+                native_row["weighted_J_total"] = wk * j_total
+                native_row["weighted_J_2d"] = wd * j_2d
+
+                if str(native_row.get("objective_scaling", "")) == "CONSTRAINED_NORMALIZED":
+                    native_row["J_native_total"] = (
+                        float(native_row["weighted_J_1d"])
+                        + float(native_row["weighted_J_total"])
+                        + float(native_row["weighted_J_2d"])
+                    )
+                else:
+                    native_row["J_native_total"] = (
+                        float(native_row["weighted_J_atten"])
+                        + float(native_row["weighted_J_1d"])
+                        + float(native_row["weighted_J_total"])
+                        + float(native_row["weighted_J_2d"])
                     )
             if native is None and ref_obj_pred is not None:
                 n_valid_ref = float(ref_obj_pred.get("n_valid_links", 0.0))
@@ -2420,35 +2417,26 @@ def main() -> int:
                 j2_ref = float(ref_obj_pred.get("J2", 0.0))
                 j3_ref = float(ref_obj_pred.get("J3", 0.0))
                 j4_ref = float(ref_obj_pred.get("J4", 0.0))
-                native_row["w_smooth"] = 1.0
-                native_row["w_shrinkage"] = 1.0
-                native_row["w_second_der"] = 1.0
-                native_row["normalized_weight_data"] = 1.0
-                native_row["normalized_weight_smoothness"] = 1.0
-                native_row["normalized_weight_shrinkage"] = 1.0
-                native_row["normalized_weight_second_derivative"] = 1.0
+                native_row["w_1d"] = 1.0
+                native_row["w_total"] = 1.0
+                native_row["w_2d"] = 1.0
                 native_row["eps"] = float(ref_obj_pred.get("eps", ref_eval_eps))
-                native_row["use_linear_j3"] = bool(ref_obj_pred.get("use_linear_j3", ref_eval_use_linear_j3))
                 native_row["n_valid_links"] = int(n_valid_ref) if n_valid_ref > 0.0 else int(ref_obj_pred.get("n_valid_links", 0))
                 native_row["n_pixels"] = int(n_pix_ref) if n_pix_ref > 0.0 else int(ref_obj_pred.get("n_pixels", 0))
-                native_row["J_data"] = j1_ref
-                native_row["J_smoothness"] = j2_ref
-                native_row["J_shrinkage"] = j3_ref
-                native_row["J_second_derivative"] = j4_ref
                 if n_valid_ref > 0.0 and n_pix_ref > 0.0:
-                    native_row["normalized_J_data"] = j1_ref / n_valid_ref
-                    native_row["normalized_J_smoothness"] = j2_ref / n_pix_ref
-                    native_row["normalized_J_shrinkage"] = j3_ref / n_pix_ref
-                    native_row["normalized_J_second_derivative"] = j4_ref / n_pix_ref
-                    native_row["weighted_normalized_J_data"] = float(native_row["normalized_J_data"])
-                    native_row["weighted_normalized_J_smoothness"] = float(native_row["normalized_J_smoothness"])
-                    native_row["weighted_normalized_J_shrinkage"] = float(native_row["normalized_J_shrinkage"])
-                    native_row["weighted_normalized_J_second_derivative"] = float(native_row["normalized_J_second_derivative"])
-                    native_row["normalized_J_total"] = (
-                        float(native_row["weighted_normalized_J_data"])
-                        + float(native_row["weighted_normalized_J_smoothness"])
-                        + float(native_row["weighted_normalized_J_shrinkage"])
-                        + float(native_row["weighted_normalized_J_second_derivative"])
+                    native_row["J_atten"] = j1_ref / n_valid_ref
+                    native_row["J_1d"] = j2_ref / n_pix_ref
+                    native_row["J_total"] = j3_ref / n_pix_ref
+                    native_row["J_2d"] = j4_ref / n_pix_ref
+                    native_row["weighted_J_atten"] = float(native_row["J_atten"])
+                    native_row["weighted_J_1d"] = float(native_row["J_1d"])
+                    native_row["weighted_J_total"] = float(native_row["J_total"])
+                    native_row["weighted_J_2d"] = float(native_row["J_2d"])
+                    native_row["J_native_total"] = (
+                        float(native_row["weighted_J_atten"])
+                        + float(native_row["weighted_J_1d"])
+                        + float(native_row["weighted_J_total"])
+                        + float(native_row["weighted_J_2d"])
                     )
             native_objective_rows.append(native_row)
             if ref_obj_gt is not None and key not in gt_rows_done:
@@ -2468,36 +2456,27 @@ def main() -> int:
                     objective_scaling="N/A_BASELINE",
                     objective_available=False,
                     objective_unavailable_reason="GT is not produced by optimization; native objective is not applicable.",
-                    w_smooth=1.0,
-                    w_shrinkage=1.0,
-                    w_second_der=1.0,
-                    normalized_weight_data=1.0,
-                    normalized_weight_smoothness=1.0,
-                    normalized_weight_shrinkage=1.0,
-                    normalized_weight_second_derivative=1.0,
+                    w_1d=1.0,
+                    w_total=1.0,
+                    w_2d=1.0,
                     eps=float(ref_obj_gt.get("eps", ref_eval_eps)),
-                    use_linear_j3=bool(ref_obj_gt.get("use_linear_j3", ref_eval_use_linear_j3)),
                     n_valid_links=int(n_valid_ref) if n_valid_ref > 0.0 else int(ref_obj_gt.get("n_valid_links", 0)),
                     n_pixels=int(n_pix_ref) if n_pix_ref > 0.0 else int(ref_obj_gt.get("n_pixels", 0)),
-                    J_data=j1_ref,
-                    J_smoothness=j2_ref,
-                    J_shrinkage=j3_ref,
-                    J_second_derivative=j4_ref,
                 )
                 if n_valid_ref > 0.0 and n_pix_ref > 0.0:
-                    gt_row["normalized_J_data"] = j1_ref / n_valid_ref
-                    gt_row["normalized_J_smoothness"] = j2_ref / n_pix_ref
-                    gt_row["normalized_J_shrinkage"] = j3_ref / n_pix_ref
-                    gt_row["normalized_J_second_derivative"] = j4_ref / n_pix_ref
-                    gt_row["weighted_normalized_J_data"] = float(gt_row["normalized_J_data"])
-                    gt_row["weighted_normalized_J_smoothness"] = float(gt_row["normalized_J_smoothness"])
-                    gt_row["weighted_normalized_J_shrinkage"] = float(gt_row["normalized_J_shrinkage"])
-                    gt_row["weighted_normalized_J_second_derivative"] = float(gt_row["normalized_J_second_derivative"])
-                    gt_row["normalized_J_total"] = (
-                        float(gt_row["weighted_normalized_J_data"])
-                        + float(gt_row["weighted_normalized_J_smoothness"])
-                        + float(gt_row["weighted_normalized_J_shrinkage"])
-                        + float(gt_row["weighted_normalized_J_second_derivative"])
+                    gt_row["J_atten"] = j1_ref / n_valid_ref
+                    gt_row["J_1d"] = j2_ref / n_pix_ref
+                    gt_row["J_total"] = j3_ref / n_pix_ref
+                    gt_row["J_2d"] = j4_ref / n_pix_ref
+                    gt_row["weighted_J_atten"] = float(gt_row["J_atten"])
+                    gt_row["weighted_J_1d"] = float(gt_row["J_1d"])
+                    gt_row["weighted_J_total"] = float(gt_row["J_total"])
+                    gt_row["weighted_J_2d"] = float(gt_row["J_2d"])
+                    gt_row["J_native_total"] = (
+                        float(gt_row["weighted_J_atten"])
+                        + float(gt_row["weighted_J_1d"])
+                        + float(gt_row["weighted_J_total"])
+                        + float(gt_row["weighted_J_2d"])
                     )
                 native_objective_rows.append(gt_row)
 
@@ -2506,6 +2485,7 @@ def main() -> int:
             dist_rows_payload = res.get("dist_rows_by_k", {}) or {}
             for k in k_values:
                 dist_rows_by_k[k].extend(dist_rows_payload.get(k, []))
+            overall_rows.extend(res.get("overall_rows", []))
 
             for k, mask_name, bin_lab, cnt in res.get("bin_counts_entries", []):
                 count_key = (int(k), str(mask_name), str(bin_lab), key)
@@ -2541,6 +2521,10 @@ def main() -> int:
                 dist_rows_by_k[k],
                 group_keys=["mask_type", "distance_bin_m"],
             )
+        overall_rows = append_average_rows(
+            overall_rows,
+            group_keys=["mask_type", "distance_bin_m"],
+        )
 
         sheet_name = f"LinkStats_GTvs{label}"
         sheets[sheet_name] = link_rows
@@ -2555,6 +2539,9 @@ def main() -> int:
             sheet_order.append(sheet_name)
         sheet_name = f"CoverageStats_GTvs{label}"
         sheets[sheet_name] = cov_rows
+        sheet_order.append(sheet_name)
+        sheet_name = f"OverallStats_GTvs{label}"
+        sheets[sheet_name] = overall_rows
         sheet_order.append(sheet_name)
 
         # RAE histograms (rainy only)
@@ -2654,9 +2641,15 @@ def main() -> int:
         for name in sheet_order:
             if name.startswith(prefix) and name not in ordered_sheets:
                 ordered_sheets[name] = sheets[name]
-    # add remaining sheets in original order
+    # add remaining sheets in original order, except OverallStats (placed last)
     for name in sheet_order:
+        if name.startswith("OverallStats_"):
+            continue
         if name not in ordered_sheets:
+            ordered_sheets[name] = sheets[name]
+    # place all OverallStats tabs at the end
+    for name in sheet_order:
+        if name.startswith("OverallStats_") and name not in ordered_sheets:
             ordered_sheets[name] = sheets[name]
     # add any leftover (shouldn't happen)
     for name in sheets:
@@ -2680,7 +2673,7 @@ def main() -> int:
             "Unnormalized data-fit term J1 = sum_valid_links ((A_hat - A_obs) / L_km)^2."
         ),
         "unnormalized_objective": (
-            "Unnormalized weighted objective: J1 + w_smooth*J2 + w_shrinkage*J3 + w_second_der*J4."
+            "Unnormalized weighted objective: J1 + w_1d*J2 + w_total*J3 + w_2d*J4."
         ),
         "unnormalized_smoothness_term": (
             "Unnormalized smoothness term J2 = sum_neighbor_pairs (log(R + eps)_u - log(R + eps)_v)^2."
@@ -2723,7 +2716,7 @@ def main() -> int:
     # ratio plot vs IDW for link metrics
     if "IDW" in link_metrics:
         entries: List[Tuple[str, str, List[float]]] = []
-        metrics = ["L1", "J1", "E", "E2"]
+        metrics = ["L1", "J1", "E", "E2", "AVG_ABS_NORM_LINK_RATIO"]
         for solver_label in [label for _, label, _, _, _ in solvers if label in link_metrics]:
             per_patch = link_metrics.get(solver_label, {})
             per_patch_idw = link_metrics.get("IDW", {})
@@ -2749,11 +2742,30 @@ def main() -> int:
                 # E2 ratio
                 if v_idw["E2"] != 0:
                     ratio_vals["E2"].append(v["E2"] / v_idw["E2"])
+                # Ratio of per-patch means over links:
+                # mean_l(|A-Ahat_alg|/L) / mean_l(|A-Ahat_IDW|/L)
+                arr_alg = np.asarray(v.get("abs_norm_resid_valid", []), dtype=np.float64)
+                arr_idw = np.asarray(v_idw.get("abs_norm_resid_valid", []), dtype=np.float64)
+                n_common = min(arr_alg.size, arr_idw.size)
+                if n_common > 0:
+                    den = arr_idw[:n_common]
+                    num = arr_alg[:n_common]
+                    good = np.isfinite(num) & np.isfinite(den)
+                    if np.any(good):
+                        mean_num = float(np.mean(num[good]))
+                        mean_den = float(np.mean(den[good]))
+                        if mean_den > 0.0:
+                            ratio_vals["AVG_ABS_NORM_LINK_RATIO"].append(mean_num / mean_den)
 
             entries.append((solver_label, f"L1({solver_label})/L1(IDW)", ratio_vals["L1"]))
             entries.append((solver_label, f"J1_len1({solver_label})/J1_len1(IDW)", ratio_vals["J1"]))
             entries.append((solver_label, f"E({solver_label})/E(IDW)", ratio_vals["E"]))
             entries.append((solver_label, f"E2({solver_label})/E2(IDW)", ratio_vals["E2"]))
+            entries.append((
+                solver_label,
+                f"AvgLinkRatio(|A-Ahat|/L): {solver_label}/IDW",
+                ratio_vals["AVG_ABS_NORM_LINK_RATIO"],
+            ))
 
         if entries:
             plot_ratio_iqr(
