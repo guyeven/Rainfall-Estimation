@@ -12,7 +12,6 @@ BASE_DIR = (
 import json
 from dataclasses import asdict
 from io import BytesIO
-from pathlib import Path
 from typing import List
 from collections import OrderedDict
 
@@ -64,6 +63,36 @@ _LAST_PATCHES: List[RainPatch] = []
 _LAST_PATCH_DATA: "OrderedDict[str, np.ndarray]" = OrderedDict()
 _LAST_PATCH_BY_ID: dict[str, RainPatch] = {}
 _PATCH_CACHE_MAX = 8  # keep only the most recent patches in memory (LRU)
+
+_BACKEND_DIR = Path(__file__).resolve().parent
+_PATCH_GENERATOR_DIR = _BACKEND_DIR.parent
+_REPO_ROOT_DIR = _PATCH_GENERATOR_DIR.parent
+
+
+def _resolve_source_file(path_str: str) -> Path:
+    """Resolve source_file across common launch directories."""
+    p = Path(path_str)
+    candidates: list[Path] = []
+
+    if p.is_absolute():
+        candidates.append(p)
+    else:
+        candidates.append(Path.cwd() / p)
+        candidates.append(_BACKEND_DIR / p)
+        candidates.append(_PATCH_GENERATOR_DIR / p)
+        candidates.append(_REPO_ROOT_DIR / p)
+
+    for c in candidates:
+        try:
+            if c.exists():
+                return c
+        except OSError:
+            continue
+
+    raise FileNotFoundError(
+        f"Could not resolve source_file '{path_str}'. Tried: "
+        + ", ".join(str(c) for c in candidates)
+    )
 
 
 # --------------------------------------------------------------------
@@ -197,7 +226,8 @@ def api_benchmark_load_patch(patch: PatchOut):
 
     # Load full rainfall grid from H5 and crop bbox
     try:
-        m = load_rain_map(patch.source_file)
+        source_file_resolved = _resolve_source_file(patch.source_file)
+        m = load_rain_map(str(source_file_resolved))
         rain = m['rain']
         _ts = m.get('timestamp')
     except Exception as e:
