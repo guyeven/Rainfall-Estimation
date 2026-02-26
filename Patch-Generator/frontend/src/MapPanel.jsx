@@ -1,6 +1,5 @@
 import { API_BASE } from "./apiBase";
 import { MapContainer, TileLayer, Rectangle, useMap } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
 
 function isValidNum(v) {
   return typeof v === "number" && Number.isFinite(v);
