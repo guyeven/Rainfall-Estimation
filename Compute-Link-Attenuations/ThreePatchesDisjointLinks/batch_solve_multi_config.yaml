@@ -1,0 +1,31 @@
+input:
+  est_dir: "est_dir"
+  file_pattern: "est_input_*.json"
+  recursive: false
+
+solvers:
+  idw:
+    name: "idw"
+    label: "IDW"
+    type: "idw"
+    module: "idw_baseline"
+    out_dir: "sol_dir_idw"
+
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+
+  ildw:
+    name: "ildw"
+    label: "ILDW"
+    type: "ildw"
+    module: "ildw_baseline"
+    out_dir: "sol_dir_ildw"
+
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
