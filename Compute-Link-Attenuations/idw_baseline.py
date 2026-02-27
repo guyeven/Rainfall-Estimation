@@ -201,6 +201,28 @@ def pixel_centers_local_xy(header: Dict) -> np.ndarray:
     return np.stack([X.ravel(), Y.ravel()], axis=1)
 
 
+def midpoint_links_by_pixel(header: Dict, midpoints_xy: np.ndarray) -> List[List[int]]:
+    """
+    Build flattened list (H*W) where entry idx=i*W+j holds link indices whose
+    midpoint falls in pixel (i,j).
+    """
+    H = int(header["H"])
+    W = int(header["W"])
+    pix = float(header["pixel_size_m"])
+
+    out: List[List[int]] = [[] for _ in range(H * W)]
+    mids = np.asarray(midpoints_xy, dtype=np.float64)
+
+    for k in range(mids.shape[0]):
+        x = float(mids[k, 0])
+        y = float(mids[k, 1])
+        j = int(math.floor(x / pix))
+        i = int(math.floor(y / pix))
+        if 0 <= i < H and 0 <= j < W:
+            out[i * W + j].append(k)
+    return out
+
+
 def idw_truncated(
     points_xy: np.ndarray,
     values: np.ndarray,
@@ -223,7 +245,6 @@ def idw_truncated(
     Notes
     -----
     - Uses a KD-tree radius query. Complexity depends on how many neighbors fall inside R_max.
-    - If a query point lands exactly on a data point, we return that data value.
     """
     if cKDTree is None:
         raise RuntimeError("scipy is required for IDW (scipy.spatial.cKDTree). Please `pip install scipy`.")
@@ -246,13 +267,6 @@ def idw_truncated(
         P = pts[idxs]
         d = np.hypot(P[:, 0] - p[0], P[:, 1] - p[1])
 
-        # Exact hit
-        j0 = np.where(d <= 0.0)[0]
-        if j0.size > 0:
-            out[i] = vals[idxs[int(j0[0])]]
-            continue
-
-        d = np.maximum(d, float(eps_m))
         w = 1.0 / (d ** float(power))
         sw = np.sum(w)
         if sw <= 0 or not np.isfinite(sw):
@@ -297,6 +311,16 @@ def idw_field_from_est_input(
 
     q = pixel_centers_local_xy(header)
     out = idw_truncated(mids, link_values, q, r_max_m=r_max_m, power=power, eps_m=eps_m, default_value=default_value)
+
+    # Discretized midpoint rule:
+    # if at least one link midpoint falls in pixel (i,j), use the mean of those
+    # link midpoint values for that pixel instead of distance-weighted interpolation.
+    midpoint_links = midpoint_links_by_pixel(header, mids)
+    for idx, lst in enumerate(midpoint_links):
+        if not lst:
+            continue
+        out[idx] = float(np.mean(link_values[lst]))
+
     H = int(header["H"])
     W = int(header["W"])
     return out.reshape(H, W), np.asarray(link_values, dtype=np.float64)
