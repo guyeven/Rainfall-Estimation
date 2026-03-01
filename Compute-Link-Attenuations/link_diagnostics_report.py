@@ -3,7 +3,7 @@
 Per-link ILDW/IDW diagnostics report for attenuation error analysis.
 
 Outputs:
-- Excel workbook (ranked links + ablation + crowding bins + synthetic controls)
+- Excel workbook (ranked links + crowding bins + prefix diagnostics + synthetic controls)
 - Plots:
   * Pareto curve (top-k% links vs cumulative % of J)
   * Crowding-vs-error (overlap fraction and n_neighbors threshold bins)
@@ -552,29 +552,6 @@ def _write_sheet(wb: Workbook, name: str, headers: Sequence[str], rows: Sequence
         ws.append(list(r))
 
 
-def _build_ablation_rows(e_ildw: np.ndarray, valid: np.ndarray, overlap_fraction: np.ndarray, pcts=(0, 5, 10, 20)):
-    idx = np.where(valid & np.isfinite(e_ildw) & np.isfinite(overlap_fraction))[0]
-    if idx.size == 0:
-        return []
-
-    order = idx[np.argsort(overlap_fraction[idx])[::-1]]
-    base = float(np.mean(e_ildw[idx]))
-    rows = []
-    for p in pcts:
-        n_rm = int(math.floor((float(p) / 100.0) * idx.size))
-        rm = set(order[:n_rm].tolist())
-        keep = np.array([i for i in idx if i not in rm], dtype=np.int64)
-        j = float(np.mean(e_ildw[keep])) if keep.size else np.nan
-        rows.append((
-            p,
-            int(n_rm),
-            int(keep.size),
-            j,
-            (j / base) if (np.isfinite(j) and base > 0) else np.nan,
-        ))
-    return rows
-
-
 def _dataset_rows(
     label: str,
     est_json: Path,
@@ -631,7 +608,12 @@ def _dataset_rows(
         cumulative[order] = csum / denom * 100.0
 
     rows = []
+    csum_i = np.cumsum(e_ildw[order]) if order.size > 0 else np.zeros(0, dtype=np.float64)
+    csum_d = np.cumsum(e_idw[order]) if order.size > 0 else np.zeros(0, dtype=np.float64)
     for rank, li in enumerate(order, start=1):
+        prefix_j_i = float(csum_i[rank - 1] / rank)
+        prefix_j_d = float(csum_d[rank - 1] / rank)
+        prefix_ratio_pct = float(100.0 * prefix_j_i / prefix_j_d) if prefix_j_d > 0.0 else np.nan
         rows.append(
             (
                 label,
@@ -644,6 +626,9 @@ def _dataset_rows(
                 float(e_idw[li]) if np.isfinite(e_idw[li]) else np.nan,
                 float(contrib_idw[li]),
                 (float(e_ildw[li] / max(e_idw[li], 1e-18)) if np.isfinite(e_idw[li]) else np.nan),
+                prefix_j_i,
+                prefix_j_d,
+                prefix_ratio_pct,
                 float(A_obs[li]),
                 float(A_hat_ildw[li]),
                 float(A_hat_idw[li]),
@@ -655,17 +640,28 @@ def _dataset_rows(
             )
         )
 
-    overlap_bins = _bin_overlap_fraction(overlap_fraction[valid & np.isfinite(e_ildw)])
-    overlap_vals = e_ildw[valid & np.isfinite(e_ildw)]
+    overlap_mask = valid & np.isfinite(e_ildw) & np.isfinite(e_idw)
+    overlap_bins = _bin_overlap_fraction(overlap_fraction[overlap_mask])
+    overlap_vals_ildw = e_ildw[overlap_mask]
+    overlap_vals_idw = e_idw[overlap_mask]
     overlap_order = ["0", "(0,0.25]", "(0.25,0.50]", "(0.50,0.75]", "(0.75,1.00]"]
-    overlap_stats = _group_mean_count(overlap_vals, overlap_bins, overlap_order)
+    overlap_stats_ildw = _group_mean_count(overlap_vals_ildw, overlap_bins, overlap_order)
+    overlap_stats_idw = _group_mean_count(overlap_vals_idw, overlap_bins, overlap_order)
+    overlap_stats = []
+    for (b, n, mean_i, med_i), (_, _, mean_d, med_d) in zip(overlap_stats_ildw, overlap_stats_idw):
+        ratio_means = float(mean_i / mean_d) if (np.isfinite(mean_i) and np.isfinite(mean_d) and mean_d > 0.0) else np.nan
+        overlap_stats.append((b, n, mean_i, med_i, mean_d, med_d, ratio_means))
 
-    neigh_vals = neighbors[valid & np.isfinite(e_ildw)]
+    neigh_mask = valid & np.isfinite(e_ildw) & np.isfinite(e_idw)
+    neigh_vals = neighbors[neigh_mask]
     neigh_bins = _bin_neighbors(neigh_vals)
     neigh_order = ["0", "1-2", "3-5", "6-10", "11+"]
-    neigh_stats = _group_mean_count(overlap_vals, neigh_bins, neigh_order)
-
-    ablation = _build_ablation_rows(e_ildw, valid, overlap_fraction)
+    neigh_stats_ildw = _group_mean_count(e_ildw[neigh_mask], neigh_bins, neigh_order)
+    neigh_stats_idw = _group_mean_count(e_idw[neigh_mask], neigh_bins, neigh_order)
+    neigh_stats = []
+    for (b, n, mean_i, med_i), (_, _, mean_d, med_d) in zip(neigh_stats_ildw, neigh_stats_idw):
+        ratio_means_pct = float(100.0 * mean_i / mean_d) if (np.isfinite(mean_i) and np.isfinite(mean_d) and mean_d > 0.0) else np.nan
+        neigh_stats.append((b, n, mean_i, med_i, mean_d, med_d, ratio_means_pct))
 
     return {
         "label": label,
@@ -677,7 +673,8 @@ def _dataset_rows(
         "e_ildw": e_ildw,
         "e_idw": e_idw,
         "rows": rows,
-        "ablation": ablation,
+        "link_idx": est["link_idx"],
+        "overlap_fraction": overlap_fraction,
         "overlap_stats": overlap_stats,
         "neighbor_stats": neigh_stats,
         "summary": {
@@ -721,6 +718,95 @@ def _make_synth_plot(rows: List[Tuple[str, float, float, float]], out_png: Path)
     plt.close(fig)
 
 
+
+def _prefix_rows_for_dataset(label: str, e_ildw: np.ndarray, e_idw: np.ndarray, valid: np.ndarray):
+    idx = np.where(valid & np.isfinite(e_ildw) & np.isfinite(e_idw))[0]
+    if idx.size == 0:
+        return []
+    order = idx[np.argsort(e_ildw[idx])[::-1]]
+    e_i = e_ildw[order]
+    e_d = e_idw[order]
+    c_i = np.cumsum(e_i)
+    c_d = np.cumsum(e_d)
+    rows = []
+    for x in range(1, order.size + 1):
+        j_i = float(c_i[x - 1] / x)
+        j_d = float(c_d[x - 1] / x)
+        ratio_pct = float(100.0 * j_i / j_d) if j_d > 0 else np.nan
+        rows.append((label, x, j_i, j_d, ratio_pct))
+    return rows
+
+
+def _overlap_prefix_rows_for_dataset(
+    label: str,
+    link_idx: np.ndarray,
+    overlap_fraction: np.ndarray,
+    e_ildw: np.ndarray,
+    e_idw: np.ndarray,
+    valid: np.ndarray,
+):
+    m = valid & np.isfinite(overlap_fraction) & np.isfinite(e_ildw) & np.isfinite(e_idw)
+    idx = np.where(m)[0]
+    if idx.size == 0:
+        return []
+
+    # Sort by overlap_fraction ascending; tie-break by e_ildw descending.
+    order_local = np.lexsort((-e_ildw[idx], overlap_fraction[idx]))
+    order = idx[order_local]
+
+    c_i = np.cumsum(e_ildw[order])
+    c_d = np.cumsum(e_idw[order])
+
+    rows = []
+    for x, li in enumerate(order, start=1):
+        j_i = float(c_i[x - 1] / x)
+        j_d = float(c_d[x - 1] / x)
+        ratio_pct = float(100.0 * j_i / j_d) if j_d > 0 else np.nan
+        rows.append((
+            label,
+            x,
+            int(link_idx[li]),
+            int(li),
+            float(overlap_fraction[li]),
+            float(e_ildw[li]),
+            float(e_idw[li]),
+            j_i,
+            j_d,
+            ratio_pct,
+        ))
+    return rows
+
+
+def _make_prefix_ratio_plot(prefix_rows: List[Tuple[str, int, float, float, float]], out_png: Path) -> None:
+    if not prefix_rows:
+        return
+    xs = np.array([r[1] for r in prefix_rows], dtype=np.int64)
+    yi = np.array([r[2] for r in prefix_rows], dtype=np.float64)
+    yd = np.array([r[3] for r in prefix_rows], dtype=np.float64)
+    yr = np.array([r[4] for r in prefix_rows], dtype=np.float64)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), dpi=150)
+
+    axes[0].plot(xs, yi, color="#C1121F", linewidth=1.8, label="Prefix J_atten(ILDW)")
+    axes[0].plot(xs, yd, color="#0A84FF", linewidth=1.8, label="Prefix J_atten(IDW)")
+    axes[0].set_yscale("log")
+    axes[0].set_xlabel("Top X links (sorted by e_l desc)")
+    axes[0].set_ylabel("Prefix J_atten")
+    axes[0].set_title("Prefix J_atten by top-X links")
+    axes[0].grid(alpha=0.25)
+    axes[0].legend(loc="best")
+
+    axes[1].plot(xs, yr, color="#6F42C1", linewidth=1.8)
+    axes[1].set_xlabel("Top X links (sorted by e_l desc)")
+    axes[1].set_ylabel("Prefix ratio (%)")
+    axes[1].set_title("100 * Prefix J_atten(ILDW) / Prefix J_atten(IDW)")
+    axes[1].grid(alpha=0.25)
+
+    fig.text(0.01, 0.01, E_NOTE, ha="left", va="bottom", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(out_png)
+    plt.close(fig)
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Per-link diagnostics for ILDW vs IDW attenuation mismatch")
     ap.add_argument("--est-json", type=Path, help="Single est_input JSON path")
@@ -743,6 +829,8 @@ def main() -> None:
 
     out_dir: Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
+    images_dir = out_dir / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
 
     datasets: List[dict] = []
 
@@ -770,19 +858,27 @@ def main() -> None:
 
     # Aggregate workbook rows
     ranked_rows = []
-    ablation_rows = []
+    overlap_prefix_rows = []
     crowd_overlap_rows = []
     crowd_neighbor_rows = []
     summary_rows = []
 
     for ds in datasets:
         ranked_rows.extend(ds["rows"])
-        for r in ds["ablation"]:
-            ablation_rows.append((ds["label"],) + tuple(r))
-        for (b, n, mean_e, med_e) in ds["overlap_stats"]:
-            crowd_overlap_rows.append((ds["label"], b, n, mean_e, med_e))
-        for (b, n, mean_e, med_e) in ds["neighbor_stats"]:
-            crowd_neighbor_rows.append((ds["label"], b, n, mean_e, med_e))
+        overlap_prefix_rows.extend(
+            _overlap_prefix_rows_for_dataset(
+                ds["label"],
+                ds["link_idx"],
+                ds["overlap_fraction"],
+                ds["e_ildw"],
+                ds["e_idw"],
+                ds["valid"],
+            )
+        )
+        for (b, n, mean_e_ildw, med_e_ildw, mean_e_idw, med_e_idw, ratio_means) in ds["overlap_stats"]:
+            crowd_overlap_rows.append((ds["label"], b, n, mean_e_ildw, med_e_ildw, mean_e_idw, med_e_idw, ratio_means))
+        for (b, n, mean_e_ildw, med_e_ildw, mean_e_idw, med_e_idw, ratio_means_pct) in ds["neighbor_stats"]:
+            crowd_neighbor_rows.append((ds["label"], b, n, mean_e_ildw, med_e_ildw, mean_e_idw, med_e_idw, ratio_means_pct))
         s = ds["summary"]
         summary_rows.append((s["label"], s["n_links_total"], s["n_links_valid"], s["J_atten_ildw"], s["J_atten_idw"], s["ratio_ildw_over_idw"]))
 
@@ -803,6 +899,9 @@ def main() -> None:
             "e_idw",
             "contrib_to_J_idw_per_all_links",
             "ratio_e_ildw_over_idw",
+            "prefix_J_atten_ildw",
+            "prefix_J_atten_idw",
+            "prefix_ratio_pct",
             "A_obs",
             "A_hat_ildw",
             "A_hat_idw",
@@ -817,29 +916,51 @@ def main() -> None:
 
     _write_sheet(
         wb,
-        "Ablation",
+        "Overlap_Prefix_J",
         [
             "dataset",
-            "removed_top_overlap_pct",
-            "n_removed",
-            "n_remaining",
-            "J_atten_ildw_remaining",
-            "ratio_vs_baseline",
+            "rank_by_overlap_asc",
+            "link_id",
+            "link_idx_internal",
+            "overlap_fraction",
+            "e_ildw",
+            "e_idw",
+            "prefix_J_atten_ildw",
+            "prefix_J_atten_idw",
+            "prefix_ratio_pct",
         ],
-        ablation_rows,
+        overlap_prefix_rows,
     )
 
     _write_sheet(
         wb,
         "Crowding_Overlap",
-        ["dataset", "overlap_fraction_bin", "n_links", "mean_e_ildw", "median_e_ildw"],
+        [
+            "dataset",
+            "overlap_fraction_bin",
+            "n_links",
+            "mean_e_ildw",
+            "median_e_ildw",
+            "mean_e_idw",
+            "median_e_idw",
+            "ratio_means_e_ildw_idw",
+        ],
         crowd_overlap_rows,
     )
 
     _write_sheet(
         wb,
         "Crowding_Neighbors",
-        ["dataset", "neighbors_bin", "n_links", "mean_e_ildw", "median_e_ildw"],
+        [
+            "dataset",
+            "neighbors_bin",
+            "n_links",
+            "mean_e_ildw",
+            "median_e_ildw",
+            "mean_e_idw",
+            "median_e_idw",
+            "ratio_means_e_ildw_idw_pct",
+        ],
         crowd_neighbor_rows,
     )
 
@@ -873,23 +994,28 @@ def main() -> None:
 
     # Per-request plots for the first dataset as main visual package
     ds0 = datasets[0]
-    _make_pareto_plot(ds0["e_ildw"], ds0["valid"], out_dir / "pareto_topk_cumulative_J.png")
-    _make_crowding_plot(ds0["overlap_stats"], ds0["neighbor_stats"], out_dir / "crowding_vs_error.png")
-    _make_ildw_vs_idw_plot(ds0["e_ildw"], ds0["e_idw"], ds0["valid"], out_dir / "ildw_vs_idw_per_link.png")
+    _make_pareto_plot(ds0["e_ildw"], ds0["valid"], images_dir / "pareto_topk_cumulative_J.png")
+    _make_crowding_plot(ds0["overlap_stats"], ds0["neighbor_stats"], images_dir / "crowding_vs_error.png")
+    _make_ildw_vs_idw_plot(ds0["e_ildw"], ds0["e_idw"], ds0["valid"], images_dir / "ildw_vs_idw_per_link.png")
+    _make_prefix_ratio_plot(
+        _prefix_rows_for_dataset(ds0["label"], ds0["e_ildw"], ds0["e_idw"], ds0["valid"]),
+        images_dir / "prefix_j_ratio_topx.png",
+    )
     _make_map_with_topk(
         ds0["R_ildw"],
         ds0["geoms"],
         ds0["e_ildw"],
         ds0["valid"],
         ds0["header"],
-        out_dir / f"ildw_map_top{int(args.top_k)}_labels.png",
+        images_dir / f"ildw_map_top{int(args.top_k)}_labels.png",
         top_k=int(args.top_k),
     )
 
     if synth_rows:
-        _make_synth_plot([(r[0], r[2], r[3], r[4]) for r in synth_rows], out_dir / "synthetic_controls_ci95.png")
+        _make_synth_plot([(r[0], r[2], r[3], r[4]) for r in synth_rows], images_dir / "synthetic_controls_ci95.png")
 
     print(f"Wrote: {xlsx_path}")
+    print(f"Images dir: {images_dir}")
     print(f"Output dir: {out_dir}")
 
 
