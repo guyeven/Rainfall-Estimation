@@ -18,7 +18,6 @@ from typing import Dict, Tuple
 
 import h5py
 import numpy as np
-from scipy.ndimage import gaussian_filter
 
 
 # Common OPERA-like dataset paths; we keep this tiny and explicit.
@@ -65,6 +64,16 @@ def load_coarse_patch_rain(patch: Dict) -> np.ndarray:
     Returns a 2D float array in mm/h.
     """
     h5_path = Path(str(patch["source_file"]))
+    if not h5_path.is_absolute():
+        # Most patch JSONLs store source_file relative to the repository root.
+        # This module lives in <repo>/Compute-Link-Attenuations.
+        repo_root = Path(__file__).resolve().parent.parent
+        cand_repo = (repo_root / h5_path).resolve()
+        cand_cwd = (Path.cwd() / h5_path).resolve()
+        if cand_repo.is_file():
+            h5_path = cand_repo
+        elif cand_cwd.is_file():
+            h5_path = cand_cwd
     if not h5_path.is_file():
         raise FileNotFoundError(f"H5 file not found: {h5_path}")
 
@@ -102,9 +111,20 @@ def refine_16x16_inherit(coarse_mmph: np.ndarray) -> np.ndarray:
 
 
 def smooth_refined_gaussian(refined_mmph: np.ndarray) -> np.ndarray:
-    """Gaussian smoothing with sigma=1 refined pixel, mode='nearest'."""
-    refined_mmph = np.nan_to_num(refined_mmph, nan=0.0, posinf=0.0, neginf=0.0)
-    return gaussian_filter(refined_mmph, sigma=1.0, mode="nearest")
+    """Gaussian smoothing with sigma=1 refined pixel, edge mode='nearest'."""
+    arr = np.nan_to_num(refined_mmph, nan=0.0, posinf=0.0, neginf=0.0).astype(float, copy=False)
+    sigma = 1.0
+    radius = int(np.ceil(3.0 * sigma))
+    x = np.arange(-radius, radius + 1, dtype=float)
+    k = np.exp(-(x * x) / (2.0 * sigma * sigma))
+    k /= np.sum(k)
+
+    # Separable 2D convolution (horizontal then vertical), with edge replication.
+    pad_h = np.pad(arr, ((0, 0), (radius, radius)), mode="edge")
+    tmp = np.apply_along_axis(lambda row: np.convolve(row, k, mode="valid"), axis=1, arr=pad_h)
+    pad_v = np.pad(tmp, ((radius, radius), (0, 0)), mode="edge")
+    out = np.apply_along_axis(lambda col: np.convolve(col, k, mode="valid"), axis=0, arr=pad_v)
+    return out
 
 
 def prepare_rainfall_for_patch(patch: Dict) -> RainPrepResult:
