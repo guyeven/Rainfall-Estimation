@@ -20,6 +20,7 @@ and
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import math
 from dataclasses import dataclass
@@ -27,6 +28,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 import numpy as np
 from openpyxl import Workbook
 
@@ -206,6 +208,127 @@ def _pixel_overlap_stats(segs_by_link: Sequence[Sequence[Dict[str, float]]]) -> 
         sum(1 for p in pix if pixel_to_count.get(p, 0) >= 2) for pix in link_pixels
     ], dtype=np.int64)
     return pixels_crossed, pixels_with_overlap
+
+
+def _best_overlap_partner_by_shared_pixels(
+    segs_by_link: Sequence[Sequence[Dict[str, float]]],
+    link_idx: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    For each internal link index i, find internal index j != i with max number of shared pixels.
+    Returns:
+      best_partner_internal: (L,) int64, -1 if no shared pixels with any other link
+      best_shared_pixels:    (L,) int64, number of shared pixels with that partner
+    """
+    L = len(segs_by_link)
+    pixel_to_links: Dict[Tuple[int, int], List[int]] = {}
+    for i, segs in enumerate(segs_by_link):
+        for p in _unique_pixels_left_to_right(segs):
+            pixel_to_links.setdefault(p, []).append(i)
+
+    # pair_counts uses internal index pairs (min_i, max_i)
+    pair_counts: Dict[Tuple[int, int], int] = {}
+    for links_here in pixel_to_links.values():
+        uniq = sorted(set(int(x) for x in links_here))
+        n = len(uniq)
+        if n < 2:
+            continue
+        for a in range(n):
+            ia = uniq[a]
+            for b in range(a + 1, n):
+                ib = uniq[b]
+                pair_counts[(ia, ib)] = pair_counts.get((ia, ib), 0) + 1
+
+    best_partner = np.full((L,), -1, dtype=np.int64)
+    best_shared = np.zeros((L,), dtype=np.int64)
+
+    for (i, j), c in pair_counts.items():
+        # Update i
+        if c > best_shared[i]:
+            best_shared[i] = int(c)
+            best_partner[i] = int(j)
+        elif c == best_shared[i] and c > 0 and best_partner[i] >= 0:
+            # tie-break by smaller external link id
+            cur_id = int(link_idx[best_partner[i]])
+            cand_id = int(link_idx[j])
+            if cand_id < cur_id:
+                best_partner[i] = int(j)
+
+        # Update j
+        if c > best_shared[j]:
+            best_shared[j] = int(c)
+            best_partner[j] = int(i)
+        elif c == best_shared[j] and c > 0 and best_partner[j] >= 0:
+            cur_id = int(link_idx[best_partner[j]])
+            cand_id = int(link_idx[i])
+            if cand_id < cur_id:
+                best_partner[j] = int(i)
+
+    return best_partner, best_shared
+
+
+def _line_angle_deg(g1: LinkGeom, g2: LinkGeom) -> float:
+    """
+    Acute angle between two lines in degrees (0..90), treating opposite directions as collinear.
+    """
+    u = np.array([g1.x1 - g1.x0, g1.y1 - g1.y0], dtype=np.float64)
+    v = np.array([g2.x1 - g2.x0, g2.y1 - g2.y0], dtype=np.float64)
+    nu = float(np.hypot(u[0], u[1]))
+    nv = float(np.hypot(v[0], v[1]))
+    if nu <= 1e-12 or nv <= 1e-12:
+        return np.nan
+    c = float(np.dot(u, v) / (nu * nv))
+    c = min(1.0, max(-1.0, c))
+    c = abs(c)  # line angle, not directed vector angle
+    return float(np.degrees(np.arccos(c)))
+
+
+def _segments_intersect_two(g1: LinkGeom, g2: LinkGeom) -> bool:
+    p1 = np.array([g1.x0, g1.y0], dtype=np.float64).reshape(1, 2)
+    p2 = np.array([g1.x1, g1.y1], dtype=np.float64).reshape(1, 2)
+    q1 = np.array([g2.x0, g2.y0], dtype=np.float64).reshape(1, 2)
+    q2 = np.array([g2.x1, g2.y1], dtype=np.float64).reshape(1, 2)
+    return bool(_segments_intersect_many(p1, p2, q1, q2)[0])
+
+
+def _unique_pixels_left_to_right(segs: Sequence[Dict[str, float]]) -> List[Tuple[int, int]]:
+    # Keep crossing order first, then orient left->right by column j.
+    out: List[Tuple[int, int]] = []
+    seen = set()
+    for s in segs:
+        p = (int(s["i"]), int(s["j"]))
+        if p not in seen:
+            seen.add(p)
+            out.append(p)
+    if len(out) >= 2 and out[0][1] > out[-1][1]:
+        out = list(reversed(out))
+    return out
+
+
+def _pixel_path_str(segs: Sequence[Dict[str, float]]) -> str:
+    pix = _unique_pixels_left_to_right(segs)
+    if not pix:
+        return ""
+    return " -> ".join(f"({i},{j})" for i, j in pix)
+
+
+def _pixel_hotspot_rows_for_dataset(
+    label: str,
+    segs_by_link: Sequence[Sequence[Dict[str, float]]],
+    link_idx: np.ndarray,
+) -> List[Tuple[object, ...]]:
+    pixel_to_links: Dict[Tuple[int, int], set] = {}
+    for li, segs in enumerate(segs_by_link):
+        link_id = int(link_idx[li])
+        for p in _unique_pixels_left_to_right(segs):
+            pixel_to_links.setdefault(p, set()).add(link_id)
+
+    items = sorted(pixel_to_links.items(), key=lambda kv: (-len(kv[1]), kv[0][0], kv[0][1]))
+    rows: List[Tuple[object, ...]] = []
+    for (i, j), ids in items:
+        ids_sorted = sorted(int(x) for x in ids)
+        rows.append((label, int(i), int(j), len(ids_sorted), ",".join(str(x) for x in ids_sorted)))
+    return rows
 
 
 def _cross2(ax: np.ndarray, ay: np.ndarray, bx: np.ndarray, by: np.ndarray) -> np.ndarray:
@@ -533,6 +656,206 @@ def _make_map_with_topk(
     plt.close(fig)
 
 
+def _make_focus_link_overlap_plot(
+    R_hat: np.ndarray,
+    header: Dict,
+    geoms: Sequence[LinkGeom],
+    segs_by_link: Sequence[Sequence[Dict[str, float]]],
+    link_idx: np.ndarray,
+    focus_link_id: int,
+    out_png: Path,
+) -> None:
+    H, W = R_hat.shape
+    pix = float(header.get("pixel_size_m", 125.0))
+    width_m = W * pix
+    height_m = H * pix
+
+    focus_candidates = np.where(link_idx == int(focus_link_id))[0]
+    if focus_candidates.size == 0:
+        return
+    li_focus = int(focus_candidates[0])
+
+    focus_pixels = _unique_pixels_left_to_right(segs_by_link[li_focus])
+    if not focus_pixels:
+        return
+    focus_pixel_set = set(focus_pixels)
+
+    pixel_to_links_internal: Dict[Tuple[int, int], set] = {}
+    for li, segs in enumerate(segs_by_link):
+        for p in _unique_pixels_left_to_right(segs):
+            pixel_to_links_internal.setdefault(p, set()).add(li)
+
+    overlap_links_internal = set()
+    for p in focus_pixel_set:
+        overlap_links_internal.update(pixel_to_links_internal.get(p, set()))
+    overlap_links_internal.discard(li_focus)
+
+    # Per-focus-pixel overlap details (other link IDs only)
+    focus_px_to_others: Dict[Tuple[int, int], List[int]] = {}
+    for p in focus_pixels:
+        ids = sorted(int(link_idx[i]) for i in pixel_to_links_internal.get(p, set()) if i != li_focus)
+        focus_px_to_others[p] = ids
+
+    # Dominant companion link across focus pixels (helps visual confirmation in near-collinear tails)
+    companion_counts = Counter()
+    for ids in focus_px_to_others.values():
+        companion_counts.update(ids)
+    dominant_companion_id = companion_counts.most_common(1)[0][0] if companion_counts else None
+    dominant_companion_internal = None
+    if dominant_companion_id is not None:
+        cands = np.where(link_idx == int(dominant_companion_id))[0]
+        if cands.size > 0:
+            dominant_companion_internal = int(cands[0])
+
+    # Zoom bounds around focus pixels with margin, snapped to pixel boundaries.
+    is_ = np.array([p[0] for p in focus_pixels], dtype=np.int64)
+    js_ = np.array([p[1] for p in focus_pixels], dtype=np.int64)
+    margin_pix = 3
+    i0 = max(0, int(is_.min()) - margin_pix)
+    i1 = min(H - 1, int(is_.max()) + margin_pix)
+    j0 = max(0, int(js_.min()) - margin_pix)
+    j1 = min(W - 1, int(js_.max()) + margin_pix)
+
+    x_min = j0 * pix
+    x_max = (j1 + 1) * pix
+    y_min = i0 * pix
+    y_max = (i1 + 1) * pix
+
+    fig, ax = plt.subplots(figsize=(12, 9), dpi=170)
+    ax.imshow(
+        R_hat,
+        cmap="YlGnBu",
+        origin="upper",
+        extent=[0.0, width_m, height_m, 0.0],
+        alpha=0.65,
+        zorder=0,
+    )
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_max, y_min)
+
+    # Draw related links with softer styling
+    for li in sorted(overlap_links_internal):
+        g = geoms[int(li)]
+        ax.plot([g.x0, g.x1], [g.y0, g.y1], color="#2A5CAA", linewidth=1.0, alpha=0.70, zorder=2)
+        xm = 0.5 * (g.x0 + g.x1)
+        ym = 0.5 * (g.y0 + g.y1)
+        if not (x_min <= xm <= x_max and y_min <= ym <= y_max):
+            continue
+        ax.text(
+            xm,
+            ym,
+            str(int(link_idx[int(li)])),
+            fontsize=7,
+            color="#0F172A",
+            bbox=dict(boxstyle="round,pad=0.12", fc="white", ec="#2A5CAA", lw=0.6, alpha=0.85),
+            zorder=4,
+        )
+
+    # Emphasize dominant companion link on its true geometry (no offset).
+    if dominant_companion_internal is not None:
+        g2 = geoms[dominant_companion_internal]
+        ax.plot([g2.x0, g2.x1], [g2.y0, g2.y1], color="#00A3A3", linewidth=2.4, alpha=0.98, zorder=4)
+        mx = 0.5 * (g2.x0 + g2.x1)
+        my = 0.5 * (g2.y0 + g2.y1)
+        if x_min <= mx <= x_max and y_min <= my <= y_max:
+            ax.text(
+                mx,
+                my,
+                f"companion {dominant_companion_id}",
+                fontsize=8,
+                color="#0F172A",
+                bbox=dict(boxstyle="round,pad=0.16", fc="white", ec="#00A3A3", lw=0.9, alpha=0.95),
+                zorder=6,
+            )
+
+    # Focus link on top
+    g = geoms[li_focus]
+    ax.plot([g.x0, g.x1], [g.y0, g.y1], color="#C1121F", linewidth=3.0, alpha=0.95, zorder=3, linestyle=(0, (6, 3)))
+    ax.text(
+        0.5 * (g.x0 + g.x1),
+        0.5 * (g.y0 + g.y1),
+        f"focus {focus_link_id}",
+        fontsize=8,
+        color="black",
+        bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="#C1121F", lw=0.8, alpha=0.9),
+        zorder=5,
+    )
+
+    # Highlight each crossed pixel of the focus link
+    for (i, j) in focus_pixels:
+        x = j * pix
+        y = i * pix
+        ax.add_patch(Rectangle((x, y), pix, pix, fill=True, fc="#FF8C00", ec="#FF8C00", lw=0.9, alpha=0.16, zorder=1))
+        ax.add_patch(Rectangle((x, y), pix, pix, fill=False, ec="#FF8C00", lw=1.3, alpha=0.98, zorder=4))
+        n_links_here = 1 + len(focus_px_to_others.get((i, j), []))
+        ax.text(
+            x + 0.5 * pix,
+            y + 0.5 * pix,
+            f"n={n_links_here}",
+            fontsize=5.5,
+            color="#111827",
+            ha="center",
+            va="center",
+            bbox=dict(boxstyle="round,pad=0.05", fc="white", ec="none", alpha=0.65),
+            zorder=5,
+        )
+
+    # Draw pixel grid in zoomed area to make crossings countable.
+    for jj in range(j0, j1 + 2):
+        x = jj * pix
+        ax.plot([x, x], [y_min, y_max], color="#111827", linewidth=0.28, alpha=0.35, zorder=1)
+    for ii in range(i0, i1 + 2):
+        y = ii * pix
+        ax.plot([x_min, x_max], [y, y], color="#111827", linewidth=0.28, alpha=0.35, zorder=1)
+
+    ax.set_title(
+        f"Focus link {focus_link_id}: zoomed pixel view ({len(focus_pixels)} crossed pixels)"
+    )
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m, local-from-NW)")
+    fig.text(
+        0.01,
+        0.01,
+        f"Orange cells are the {len(focus_pixels)} crossed pixels of link {focus_link_id}. "
+        "Blue links are other links crossing at least one of those cells.",
+        ha="left",
+        va="bottom",
+        fontsize=8,
+    )
+    if dominant_companion_id is not None:
+        fig.text(
+            0.01,
+            0.035,
+            f"Dominant companion link: {dominant_companion_id} (present in {companion_counts[dominant_companion_id]} / {len(focus_pixels)} focus pixels), shown in teal. Focus link is dashed red.",
+            ha="left",
+            va="bottom",
+            fontsize=8,
+        )
+        # Inline legend swatch for clarity
+        ax.plot([], [], color="#00A3A3", linewidth=2.4, label=f"Companion {dominant_companion_id}")
+        ax.plot([], [], color="#C1121F", linewidth=3.0, linestyle=(0, (6, 3)), label=f"Focus {focus_link_id} (dashed)")
+        ax.legend(loc="upper left", fontsize=7, framealpha=0.9)
+
+    # Side note: explicit tail pixel overlap list for auditability.
+    tail = focus_pixels[-12:]
+    tail_lines = ["Tail pixels (i,j): other links"] + [
+        f"{p}: {focus_px_to_others.get(p, [])}" for p in tail
+    ]
+    fig.text(
+        0.99,
+        0.99,
+        "\n".join(tail_lines),
+        ha="right",
+        va="top",
+        fontsize=6.5,
+        family="monospace",
+        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#CBD5E1", lw=0.7, alpha=0.88),
+    )
+    fig.tight_layout()
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
 def _ci95(vals: np.ndarray) -> Tuple[float, float, float]:
     vals = vals[np.isfinite(vals)]
     if vals.size == 0:
@@ -550,6 +873,21 @@ def _write_sheet(wb: Workbook, name: str, headers: Sequence[str], rows: Sequence
     ws.append(list(headers))
     for r in rows:
         ws.append(list(r))
+
+
+def _length_bin_label_km(length_km: float) -> Tuple[int, str]:
+    bins = [
+        (0.0, 1.0, "[0,1) km"),
+        (1.0, 2.0, "[1,2) km"),
+        (2.0, 5.0, "[2,5) km"),
+        (5.0, 10.0, "[5,10) km"),
+        (10.0, 20.0, "[10,20) km"),
+        (20.0, float("inf"), "[20,+inf) km"),
+    ]
+    for i, (lo, hi, lab) in enumerate(bins):
+        if lo <= length_km < hi:
+            return i, lab
+    return len(bins), "unknown"
 
 
 def _dataset_rows(
@@ -586,6 +924,7 @@ def _dataset_rows(
     )
 
     neighbors = _neighbor_counts_within_threshold(est["geoms"], neighbor_threshold_m)
+    best_partner_internal, best_shared_pixels = _best_overlap_partner_by_shared_pixels(est["segs_by_link"], est["link_idx"])
 
     n_total = int(valid.size)
     n_valid = int(np.sum(valid))
@@ -614,6 +953,12 @@ def _dataset_rows(
         prefix_j_i = float(csum_i[rank - 1] / rank)
         prefix_j_d = float(csum_d[rank - 1] / rank)
         prefix_ratio_pct = float(100.0 * prefix_j_i / prefix_j_d) if prefix_j_d > 0.0 else np.nan
+        pixel_path = _pixel_path_str(est["segs_by_link"][li])
+        bp = int(best_partner_internal[li])
+        bp_id = int(est["link_idx"][bp]) if bp >= 0 else np.nan
+        bp_shared = int(best_shared_pixels[li]) if bp >= 0 else 0
+        bp_angle = _line_angle_deg(est["geoms"][li], est["geoms"][bp]) if bp >= 0 else np.nan
+        bp_intersects = _segments_intersect_two(est["geoms"][li], est["geoms"][bp]) if bp >= 0 else False
         rows.append(
             (
                 label,
@@ -637,8 +982,44 @@ def _dataset_rows(
                 int(pixels_with_overlap[li]),
                 float(overlap_fraction[li]),
                 int(neighbors[li]),
+                bp_id,
+                bp_shared,
+                bp_angle,
+                bp_intersects,
+                pixel_path,
             )
         )
+
+    length_bucket_rows: List[Tuple[object, ...]] = []
+    for li in range(len(est["links"])):
+        length_km = float(L_km[li])
+        x0 = float(est["links"][li]["x0_m"])
+        y0 = float(est["links"][li]["y0_m"])
+        x1 = float(est["links"][li]["x1_m"])
+        y1 = float(est["links"][li]["y1_m"])
+        min_x = min(x0, x1)
+        min_y = min(y0, y1)
+        b_idx, b_lab = _length_bin_label_km(length_km)
+        length_bucket_rows.append(
+            (
+                int(b_idx),
+                label,
+                b_lab,
+                int(est["link_idx"][li]),
+                int(li),
+                length_km,
+                float(est["links"][li].get("freq_ghz", np.nan)),
+                float(A_obs[li]),
+                min_x,
+                min_y,
+                x0,
+                y0,
+                x1,
+                y1,
+            )
+        )
+    length_bucket_rows.sort(key=lambda t: (int(t[0]), float(t[5]), float(t[6]), float(t[7]), int(t[3])))
+    length_bucket_rows = [tuple(r[1:]) for r in length_bucket_rows]
 
     overlap_mask = valid & np.isfinite(e_ildw) & np.isfinite(e_idw)
     overlap_bins = _bin_overlap_fraction(overlap_fraction[overlap_mask])
@@ -669,12 +1050,15 @@ def _dataset_rows(
         "R_ildw": R_ildw,
         "header": est["header"],
         "geoms": est["geoms"],
+        "segs_by_link": est["segs_by_link"],
         "valid": valid,
         "e_ildw": e_ildw,
         "e_idw": e_idw,
         "rows": rows,
+        "length_bucket_rows": length_bucket_rows,
         "link_idx": est["link_idx"],
         "overlap_fraction": overlap_fraction,
+        "pixel_hotspots": _pixel_hotspot_rows_for_dataset(label, est["segs_by_link"], est["link_idx"]),
         "overlap_stats": overlap_stats,
         "neighbor_stats": neigh_stats,
         "summary": {
@@ -824,6 +1208,7 @@ def main() -> None:
 
     ap.add_argument("--neighbor-threshold-m", type=float, default=177.0)
     ap.add_argument("--top-k", type=int, default=20)
+    ap.add_argument("--focus-link-id", type=int, default=926, help="Link ID for overlap verification figure")
     ap.add_argument("--out-dir", type=Path, required=True)
     args = ap.parse_args()
 
@@ -858,13 +1243,17 @@ def main() -> None:
 
     # Aggregate workbook rows
     ranked_rows = []
+    length_bucket_rows = []
     overlap_prefix_rows = []
+    pixel_hotspot_rows = []
     crowd_overlap_rows = []
     crowd_neighbor_rows = []
     summary_rows = []
 
     for ds in datasets:
         ranked_rows.extend(ds["rows"])
+        length_bucket_rows.extend(ds["length_bucket_rows"])
+        pixel_hotspot_rows.extend(ds["pixel_hotspots"])
         overlap_prefix_rows.extend(
             _overlap_prefix_rows_for_dataset(
                 ds["label"],
@@ -910,8 +1299,34 @@ def main() -> None:
             "pixels_with_overlap",
             "overlap_fraction",
             "n_neighbors_within_threshold",
+            "best_overlap_link_id",
+            "best_overlap_shared_pixels",
+            "best_overlap_angle_deg",
+            "best_overlap_segments_intersect",
+            "pixel_path_ij_left_to_right",
         ],
         ranked_rows,
+    )
+
+    _write_sheet(
+        wb,
+        "Length_Buckets",
+        [
+            "dataset",
+            "length_bin_km",
+            "link_id",
+            "link_idx_internal",
+            "length_km",
+            "freq_ghz",
+            "A_obs_db",
+            "min_x_m",
+            "min_y_m",
+            "x0_m",
+            "y0_m",
+            "x1_m",
+            "y1_m",
+        ],
+        length_bucket_rows,
     )
 
     _write_sheet(
@@ -930,6 +1345,13 @@ def main() -> None:
             "prefix_ratio_pct",
         ],
         overlap_prefix_rows,
+    )
+
+    _write_sheet(
+        wb,
+        "Pixel_Hotspots",
+        ["dataset", "pixel_i", "pixel_j", "n_links", "link_ids"],
+        pixel_hotspot_rows,
     )
 
     _write_sheet(
@@ -1009,6 +1431,15 @@ def main() -> None:
         ds0["header"],
         images_dir / f"ildw_map_top{int(args.top_k)}_labels.png",
         top_k=int(args.top_k),
+    )
+    _make_focus_link_overlap_plot(
+        ds0["R_ildw"],
+        ds0["header"],
+        ds0["geoms"],
+        ds0["segs_by_link"],
+        ds0["link_idx"],
+        int(args.focus_link_id),
+        images_dir / f"focus_link_{int(args.focus_link_id)}_overlap.png",
     )
 
     if synth_rows:

@@ -995,6 +995,13 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     optinfo_path = sol_path.with_name(f"{sol_path.stem}_optinfo.json")
     has_optinfo = optinfo_path.exists()
     opt = load_json_dict(optinfo_path) if has_optinfo else {}
+    itertrace_path = sol_path.with_name(f"{sol_path.stem}_itertrace.json")
+    has_itertrace = itertrace_path.exists()
+    itertrace = load_json_dict(itertrace_path) if has_itertrace else {}
+    iter_entries_raw = itertrace.get("iterations", [])
+    iter_entries = iter_entries_raw if isinstance(iter_entries_raw, list) else []
+    iter_summary_raw = itertrace.get("summary", {})
+    iter_summary = iter_summary_raw if isinstance(iter_summary_raw, dict) else {}
     stop_reason_raw = opt.get("stop_reason", None)
     stop_reason = str(stop_reason_raw) if stop_reason_raw is not None and str(stop_reason_raw) != "" else None
     reason_bucket = stop_reason if stop_reason is not None else ("missing_optinfo" if not has_optinfo else "unknown")
@@ -1336,6 +1343,9 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         rae_hist_entries=rae_hist_entries,
         link_row=link_row,
         link_metric=link_metric,
+        itertrace_entries=iter_entries,
+        itertrace_summary=iter_summary,
+        itertrace_path=(str(itertrace_path) if has_itertrace else None),
     )
 
 
@@ -1463,6 +1473,17 @@ def safe_sheet_name(name: str) -> str:
     if not s:
         s = "Sheet"
     return s[:31]
+
+
+def safe_path_token(name: str) -> str:
+    out = []
+    for ch in str(name):
+        if ch.isalnum() or ch in ("-", "_"):
+            out.append(ch)
+        else:
+            out.append("_")
+    s = "".join(out).strip("_")
+    return s or "item"
 
 
 def unique_sheet_name(name: str, used: set) -> str:
@@ -1847,6 +1868,58 @@ def plot_fp_fn_summary(
     plt.close(fig)
 
 
+def plot_j_behavior(
+    out_png: Path,
+    *,
+    title: str,
+    iterations: Sequence[Dict[str, Any]],
+    dpi: int = 150,
+):
+    if not iterations:
+        return
+    try:
+        import matplotlib.pyplot as plt  # type: ignore
+    except Exception:
+        return
+
+    xs = [int(it.get("iter", i + 1)) for i, it in enumerate(iterations)]
+
+    def _series(key: str) -> List[float]:
+        out: List[float] = []
+        for it in iterations:
+            v = it.get(key, None)
+            if v is None:
+                out.append(float("nan"))
+            else:
+                try:
+                    out.append(float(v))
+                except Exception:
+                    out.append(float("nan"))
+        return out
+
+    y_total = _series("J_native_total")
+    y_atten = _series("J_atten")
+    y_1d = _series("J_1d")
+    y_total_term = _series("J_total")
+    y_2d = _series("J_2d")
+
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(8.5, 4.8), dpi=dpi)
+    ax.plot(xs, y_total, marker="o", linewidth=1.8, label="J_native_total")
+    ax.plot(xs, y_atten, marker="o", linewidth=1.3, label="J_atten")
+    ax.plot(xs, y_1d, marker="o", linewidth=1.3, label="J_1d")
+    ax.plot(xs, y_total_term, marker="o", linewidth=1.3, label="J_total")
+    ax.plot(xs, y_2d, marker="o", linewidth=1.3, label="J_2d")
+    ax.set_title(title)
+    ax.set_xlabel("Iteration")
+    ax.set_ylabel("Value")
+    ax.grid(axis="y", alpha=0.25)
+    ax.legend(loc="best", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out_png, dpi=dpi)
+    plt.close(fig)
+
+
 def build_bin_tick_labels(dist_labels: List[str], counts_by_bin: Dict[str, List[int]]) -> List[str]:
     out: List[str] = []
     for lab in dist_labels:
@@ -2175,6 +2248,7 @@ def main() -> int:
     objective_gt_done: set = set()
     objective_vals: Dict[Tuple[float, float, float], Dict[str, Dict[str, float]]] = {}
     native_objective_rows: List[Dict[str, Any]] = []
+    iter_feas_rows: List[Dict[str, Any]] = []
     gt_rows_done: set = set()
     link_metrics: Dict[str, Dict[str, Dict[str, Any]]] = {}
     stop_rows: List[Dict[str, Any]] = []
@@ -2237,6 +2311,7 @@ def main() -> int:
         rae_hist_data: Optional[Dict[int, Dict[str, List[float]]]] = None
         if rae_enabled:
             rae_hist_data = {k: {lab: [] for lab in dist_labels} for k in k_values}
+        solver_j_behavior_dir = img_dir / "j_behavior" / safe_path_token(name)
 
         # match patches by keys present in both GT and solver
         keys = sorted(set(gt_by_key.keys()) & set(sol_by_key.keys()))
@@ -2512,6 +2587,35 @@ def main() -> int:
             link_metric = res.get("link_metric", None)
             if link_metric is not None:
                 link_metrics[label][key] = link_metric
+            iter_entries = res.get("itertrace_entries", []) or []
+            iter_summary = res.get("itertrace_summary", {}) or {}
+            itertrace_path = res.get("itertrace_path", None)
+            if isinstance(iter_entries, list) and iter_entries:
+                feasible_n = int(sum(1 for it in iter_entries if bool(it.get("feasible", False))))
+                total_n = int(len(iter_entries))
+                infeasible_n = int(total_n - feasible_n)
+                best_iter = int(iter_summary.get("best_iteration_by_native_total", -1))
+                if best_iter < 0:
+                    best_idx = int(np.argmin([float(it.get("J_native_total", np.inf)) for it in iter_entries]))
+                    best_iter = int(iter_entries[best_idx].get("iter", best_idx + 1))
+                iter_feas_rows.append(
+                    dict(
+                        patch_key=key,
+                        solver=label,
+                        solver_name=name,
+                        total_iterations=total_n,
+                        feasible_iterations=feasible_n,
+                        infeasible_iterations=infeasible_n,
+                        best_iteration_by_native_total=best_iter,
+                        itertrace_json=itertrace_path,
+                    )
+                )
+                plot_j_behavior(
+                    solver_j_behavior_dir / f"{safe_path_token(key)}.png",
+                    title=f"J behavior: {label} | {key}",
+                    iterations=iter_entries,
+                    dpi=dpi,
+                )
 
         # store sheets (order: LinkStats, DistanceStats, CoverageStats)
         link_rows = append_average_rows(link_rows, group_keys=[])
@@ -2633,6 +2737,11 @@ def main() -> int:
             rows=dry_rows,
             dpi=dpi,
         )
+
+    if iter_feas_rows:
+        iter_feas_rows = append_average_rows(iter_feas_rows, group_keys=["solver", "solver_name"])
+        sheets["IterationFeasibility"] = iter_feas_rows
+        sheet_order.append("IterationFeasibility")
 
     # write excel (ordered)
     ordered_sheets: Dict[str, List[Dict[str, Any]]] = {}
