@@ -230,7 +230,6 @@ def idw_truncated(
     *,
     r_max_m: float,
     power: float = 2.0,
-    eps_m: float = 1.0,
     default_value: float = 0.0,
 ) -> np.ndarray:
     """
@@ -310,7 +309,7 @@ def idw_field_from_est_input(
         link_values = link_rain_from_attenuation(A_db, L_km, k, a, invalid_to_zero=True)
 
     q = pixel_centers_local_xy(header)
-    out = idw_truncated(mids, link_values, q, r_max_m=r_max_m, power=power, eps_m=eps_m, default_value=default_value)
+    out = idw_truncated(mids, link_values, q, r_max_m=r_max_m, power=power, default_value=default_value)
 
     # Discretized midpoint rule:
     # if at least one link midpoint falls in pixel (i,j), use the mean of those

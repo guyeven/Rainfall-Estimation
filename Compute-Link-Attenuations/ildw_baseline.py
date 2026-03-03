@@ -105,9 +105,9 @@ def ildw_field_from_est_input(
     *,
     r_max_m: float,
     power: float = 2.0,
-    eps_m: float = 1.0,
     default_value: float = 0.0,
     link_values: Optional[np.ndarray] = None,
+    **unused_kwargs: object,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Compute ILDW / IDW_links rainfall field on the patch grid.
@@ -173,7 +173,6 @@ def ildw_field_from_est_input(
         neigh = tree.query_ball_point(q, r=r_search)  # candidates by midpoint
         r_max_m = float(r_max_m)
         power = float(power)
-        eps_m = float(eps_m)
 
         for idx, cand in enumerate(neigh):
             if crossing[idx]:
@@ -193,13 +192,6 @@ def ildw_field_from_est_input(
             cand2 = cand[mask]
             d2 = d[mask]
 
-            # Exact hit (rare)
-            z = np.where(d2 <= 0.0)[0]
-            if z.size > 0:
-                out[idx] = float(link_values[int(cand2[int(z[0])])])
-                continue
-
-            d2 = np.maximum(d2, eps_m)
             w = 1.0 / (d2 ** power)
             sw = float(np.sum(w))
             if sw <= 0.0 or not np.isfinite(sw):
@@ -224,14 +216,12 @@ def solve_and_save(est_input_json: str | Path, out_npz: str | Path, cfg: dict) -
     idw_cfg = dict(cfg.get("idw", {}))
     r_max_m = float(idw_cfg.get("r_max_m", 15000.0))
     power = float(idw_cfg.get("power", 2.0))
-    eps_m = float(idw_cfg.get("eps_m", 1.0))
     default_value = float(idw_cfg.get("default_value", 0.0))
 
     R_hat, R_link = ildw_field_from_est_input(
         est_input_json,
         r_max_m=r_max_m,
         power=power,
-        eps_m=eps_m,
         default_value=default_value,
     )
 
@@ -252,7 +242,6 @@ def solve_and_save(est_input_json: str | Path, out_npz: str | Path, cfg: dict) -
         meta_init_method="ildw",
         meta_idw_r_max_m=r_max_m,
         meta_idw_power=power,
-        meta_idw_eps_m=eps_m,
         meta_idw_default_value=default_value,
     )
 
