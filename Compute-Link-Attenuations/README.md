@@ -80,9 +80,45 @@ solvers:
     module: "idw_baseline"
     out_dir: "sol_dir_idw"
     idw: { r_max_m: ..., power: ..., ... }
+
+  OPT_ILDW_CONSTR_AL:
+    label: "OPT_ILDW_CONSTR_AL"
+    type: "custom"
+    module: "solve_rain_constrained_al"
+    out_dir: "sol_dir_opt_ildw_constr_al"
+
+    optimization:
+      maxiter: 300
+      R0_from_ILDW: true
+
+    tolerances:
+      ftol: 1.0e-08
+      gtol: 1.0e-07
+      maxls: 20
+
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+
+    augmented_lagrangian:
+      constraint_ratio: 0.1      # tau = 0.1 * J_atten(IDW)
+      constraint_tol: 1.0e-08
+      outer_maxiter: 8
+      rho_init: 10.0
+      rho_growth: 2.0
+      rho_max: 1.0e8
+      min_progress_ratio: 0.9
+      weight_floor: 1.0e-12
+      scale_1d: 1.0
+      scale_2d: 1.0
+      scale_total: 1.0
 ```
 
 **Path convention:** relative paths in the YAML are interpreted **relative to the config file’s location**.
+
+`solve_rain_constrained_al.py` writes standard `R_hat` solver outputs plus `meta_*` fields and `*_alinfo.json`; `batch_analyze_multi.py` works without changes.
 
 ---
 
