@@ -228,6 +228,7 @@ def solve_lbfgsb_and_save(
     at = float(scale_total) / max(float(Jt_ildw), float(weight_floor))
 
     outer_history: List[Dict[str, Any]] = []
+    iter_trace: List[Dict[str, Any]] = []
     f_history: List[float] = []
     x_cur = np.maximum(x0, 0.0)
     lam_k = 0.0
@@ -304,6 +305,9 @@ def solve_lbfgsb_and_save(
         f_history.extend(inner_hist if len(inner_hist) >= 2 else [float(_fun(x_cur))])
 
         Jatt_cur, _, _ = _atten_term_and_grad(prob, x_cur)
+        J1d_cur, _ = _smooth1_term_and_grad(prob, x_cur)
+        J2d_cur, _ = _smooth2_term_and_grad(triplets, prob.P, x_cur)
+        Jt_cur, _ = _total_term_and_grad(prob.P, x_cur)
         c_k = float(Jatt_cur - tau)
         final_constraint = c_k
         if c_k <= float(constraint_tol):
@@ -324,6 +328,31 @@ def solve_lbfgsb_and_save(
                 "status_inner": int(res.status),
                 "nit_inner": int(getattr(res, "nit", -1)),
                 "fun_inner": float(res.fun),
+                "message_inner": str(res.message),
+            }
+        )
+        iter_trace.append(
+            {
+                "iter": int(outer_idx + 1),
+                "outer_iter": int(outer_idx),
+                "feasible": bool(c_k <= float(constraint_tol)),
+                "constraint_residual": float(c_k),
+                "constraint_tol": float(constraint_tol),
+                "J_atten": float(Jatt_cur),
+                "J_1d": float(J1d_cur),
+                "J_2d": float(J2d_cur),
+                "J_total": float(Jt_cur),
+                "w_1d": float(a1),
+                "w_2d": float(a2),
+                "w_total": float(at),
+                "weighted_J_1d": float(a1 * J1d_cur),
+                "weighted_J_2d": float(a2 * J2d_cur),
+                "weighted_J_total": float(at * Jt_cur),
+                "J_native_total": float(a1 * J1d_cur + a2 * J2d_cur + at * Jt_cur),
+                "AL_fun_inner": float(res.fun),
+                "success_inner": bool(res.success),
+                "status_inner": int(res.status),
+                "nit_inner": int(getattr(res, "nit", -1)),
                 "message_inner": str(res.message),
             }
         )
@@ -387,6 +416,28 @@ def solve_lbfgsb_and_save(
 
     alinfo_path = npz_out.with_name(f"{npz_out.stem}_alinfo.json")
     alinfo_path.write_text(json.dumps(outer_history, indent=2), encoding="utf-8")
+    feasible_count = int(sum(1 for it in iter_trace if bool(it.get("feasible", False))))
+    infeasible_count = int(len(iter_trace) - feasible_count)
+    if iter_trace:
+        best_idx = int(np.argmin([float(it.get("J_native_total", np.inf)) for it in iter_trace]))
+        best_iter = int(iter_trace[best_idx]["iter"])
+        best_obj = float(iter_trace[best_idx]["J_native_total"])
+    else:
+        best_iter = -1
+        best_obj = float("nan")
+    itertrace_path = npz_out.with_name(f"{npz_out.stem}_itertrace.json")
+    itertrace_payload = {
+        "summary": {
+            "solver": "constrained_augmented_lagrangian",
+            "total_iterations": int(len(iter_trace)),
+            "feasible_iterations": int(feasible_count),
+            "infeasible_iterations": int(infeasible_count),
+            "best_iteration_by_native_total": int(best_iter),
+            "best_native_total": float(best_obj),
+        },
+        "iterations": iter_trace,
+    }
+    itertrace_path.write_text(json.dumps(itertrace_payload, indent=2), encoding="utf-8")
 
     np.savez(
         npz_out,
@@ -463,6 +514,10 @@ def solve_lbfgsb_and_save(
         meta_rel_decrease=float(opt_diag.get("rel_decrease") if opt_diag.get("rel_decrease") is not None else np.nan),
         meta_optinfo_json=str(optinfo_path),
         meta_alinfo_json=str(alinfo_path),
+        meta_itertrace_json=str(itertrace_path),
+        meta_feasible_outer_iters=int(feasible_count),
+        meta_infeasible_outer_iters=int(infeasible_count),
+        meta_best_outer_iter_by_native_total=int(best_iter),
     )
 
     return {
@@ -478,6 +533,7 @@ def solve_lbfgsb_and_save(
         "out_npz": str(npz_out),
         "optinfo_json": str(optinfo_path),
         "alinfo_json": str(alinfo_path),
+        "itertrace_json": str(itertrace_path),
         "init_method": str(init_method),
     }
 
