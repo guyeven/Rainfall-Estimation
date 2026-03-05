@@ -93,8 +93,8 @@ def deep_get(d: dict, path: str, default=None):
 def objective_scaling_from_module(module_name: str) -> str:
     m = str(module_name or "").strip()
     normalized_modules = {
-        "solve_rain_lbfgsb_normalized_obj_log",
-        "solve_rain_lbfgsb_normalized_obj_lin",
+        "solve_rain_lbfgsb_normalized_ildw_multipliers",
+        "solve_rain_lbfgsb_normalized_ildw_multipliers",
         # backward-compatible names
         "solve_rain_lbfgsb_j1norm_j2j3j4",
         "solve_rain_lbfgsb_j1norm_j2j3lin_j4",
@@ -116,7 +116,14 @@ def objective_scaling_from_module(module_name: str) -> str:
 
 
 def objective_scaling_from_meta(meta: Dict[str, float]) -> str:
-    if "meta_alphas_1d" in meta or "meta_alphas_2d" in meta or "meta_alphas_total" in meta:
+    if (
+        "meta_alphas_1d" in meta
+        or "meta_alphas_2d" in meta
+        or "meta_alphas_total" in meta
+        or "meta_alpha_1d" in meta
+        or "meta_alpha_2d" in meta
+        or "meta_alpha_total" in meta
+    ):
         return "CONSTRAINED_NORMALIZED"
     if "meta_j2_w" in meta or "meta_j3_w" in meta or "meta_j4_w" in meta:
         return "NORMALIZED"
@@ -128,15 +135,21 @@ def objective_scaling_from_meta(meta: Dict[str, float]) -> str:
 def solver_objective_formula_text(*, scaling: str, meta: Dict[str, float]) -> str:
     if scaling == "N/A_BASELINE":
         return "N/A (baseline interpolation; no optimization objective)."
-    if scaling == "CONSTRAINED_NORMALIZED":
-        return (
-            "J_native_total = w_1d*J_1d + w_2d*J_2d + w_total*J_total, "
-            "with attenuation fit J_atten handled as a constraint."
-        )
     if scaling == "NORMALIZED":
         return (
             "J_native_total = J_atten + w_1d*J_1d + w_total*J_total + w_2d*J_2d; "
             "J_atten is normalized by #valid_links; J_1d, J_total, J_2d are normalized by #pixels."
+        )
+    if scaling == "CONSTRAINED_NORMALIZED":
+        has_alpha_atten = "meta_alpha_atten" in meta
+        if has_alpha_atten:
+            return (
+                "J_native_total = w_atten*J_atten + w_1d*J_1d + w_total*J_total + w_2d*J_2d; "
+                "for ILDW-multiplier solvers these w_* are per-instance alpha_*."
+            )
+        return (
+            "J_native_total = w_1d*J_1d + w_2d*J_2d + w_total*J_total, "
+            "with attenuation fit J_atten handled as a constraint."
         )
     if scaling == "UNNORMALIZED":
         return (
@@ -165,8 +178,8 @@ def objective_term_presence_from_module(module_name: str, *, solver_label: str =
         return {"J1": True, "J2": True, "J3": True, "J4": False}
     if m in {
         "solve_rain_lbfgsb",
-        "solve_rain_lbfgsb_normalized_obj_log",
-        "solve_rain_lbfgsb_normalized_obj_lin",
+        "solve_rain_lbfgsb_normalized_ildw_multipliers",
+        "solve_rain_lbfgsb_normalized_ildw_multipliers",
         "solve_rain_lbfgsb_j1norm_j2j3j4",
         "solve_rain_lbfgsb_j1norm_j2j3lin_j4",
     }:
@@ -178,15 +191,26 @@ def objective_term_presence_from_module(module_name: str, *, solver_label: str =
 def summarize_solver_settings(meta: Dict[str, float]) -> str:
     if not meta:
         return "No meta_* settings found in solution npz."
-    has_constrained = any(k in meta for k in ("meta_alphas_1d", "meta_alphas_2d", "meta_alphas_total"))
+    has_constrained = any(
+        k in meta
+        for k in (
+            "meta_alphas_1d",
+            "meta_alphas_2d",
+            "meta_alphas_total",
+            "meta_alpha_1d",
+            "meta_alpha_2d",
+            "meta_alpha_total",
+        )
+    )
     has_norm = any(k in meta for k in ("meta_j2_w", "meta_j3_w", "meta_j4_w"))
     has_unnorm = any(k in meta for k in ("meta_lambda", "meta_mu", "meta_eta"))
 
     parts: List[str] = []
     if has_constrained:
-        parts.append(f"w_1d={float(meta.get('meta_alphas_1d', 0.0))}")
-        parts.append(f"w_total={float(meta.get('meta_alphas_total', 0.0))}")
-        parts.append(f"w_2d={float(meta.get('meta_alphas_2d', 0.0))}")
+        parts.append(f"w_atten={float(meta.get('meta_alpha_atten', 1.0))}")
+        parts.append(f"w_1d={float(meta.get('meta_alpha_1d', meta.get('meta_alphas_1d', 0.0)))}")
+        parts.append(f"w_total={float(meta.get('meta_alpha_total', meta.get('meta_alphas_total', 0.0)))}")
+        parts.append(f"w_2d={float(meta.get('meta_alpha_2d', meta.get('meta_alphas_2d', 0.0)))}")
     elif has_norm:
         parts.append(f"w_1d={float(meta.get('meta_j2_w', 0.0))}")
         parts.append(f"w_total={float(meta.get('meta_j3_w', 0.0))}")
@@ -196,7 +220,7 @@ def summarize_solver_settings(meta: Dict[str, float]) -> str:
         parts.append(f"w_total={float(meta.get('meta_mu', 0.0))}")
         parts.append(f"w_2d={float(meta.get('meta_eta', 0.0))}")
 
-    if "meta_eps" in meta:
+    if "meta_eps" in meta and not bool(meta.get("meta_use_linear_j3", False)):
         parts.append(f"eps={float(meta['meta_eps'])}")
     if "meta_R0" in meta:
         parts.append(f"R0={float(meta['meta_R0'])}")
@@ -341,13 +365,24 @@ def native_objective_params_from_meta(meta: Dict[str, float]) -> Optional[Dict[s
     Infer solver-native objective weights from scalar meta_* fields saved in solution NPZ.
     Returns standardized weights (w_1d, w_total, w_2d) plus scaling label.
     """
-    has_constrained = any(k in meta for k in ("meta_alphas_1d", "meta_alphas_2d", "meta_alphas_total"))
+    has_constrained = any(
+        k in meta
+        for k in (
+            "meta_alphas_1d",
+            "meta_alphas_2d",
+            "meta_alphas_total",
+            "meta_alpha_1d",
+            "meta_alpha_2d",
+            "meta_alpha_total",
+        )
+    )
     if has_constrained:
         return dict(
             objective_scaling="CONSTRAINED_NORMALIZED",
-            w_1d=float(meta.get("meta_alphas_1d", 0.0)),
-            w_total=float(meta.get("meta_alphas_total", 0.0)),
-            w_2d=float(meta.get("meta_alphas_2d", 0.0)),
+            w_atten=float(meta.get("meta_alpha_atten", 1.0)),
+            w_1d=float(meta.get("meta_alpha_1d", meta.get("meta_alphas_1d", 0.0))),
+            w_total=float(meta.get("meta_alpha_total", meta.get("meta_alphas_total", 0.0))),
+            w_2d=float(meta.get("meta_alpha_2d", meta.get("meta_alphas_2d", 0.0))),
         )
 
     has_norm = any(k in meta for k in ("meta_j2_w", "meta_j3_w", "meta_j4_w"))
@@ -369,6 +404,15 @@ def native_objective_params_from_meta(meta: Dict[str, float]) -> Optional[Dict[s
         )
 
     return None
+
+
+def eps_applicable_from_meta(meta: Dict[str, float]) -> bool:
+    # Linear-neighbor objectives do not use epsilon in their objective terms.
+    if bool(meta.get("meta_use_linear_j3", False)):
+        return False
+    if "meta_eps" not in meta:
+        return False
+    return True
 
 
 def load_json_dict(path: Path) -> Dict[str, Any]:
@@ -858,6 +902,68 @@ def append_native_objective_definition_rows(rows: List[Dict[str, Any]]) -> List[
     return rows + defs
 
 
+def _safe_ratio(num: Any, den: Any) -> Optional[float]:
+    try:
+        n = float(num)
+        d = float(den)
+        if not np.isfinite(n) or not np.isfinite(d) or d == 0.0:
+            return None
+        return float(n / d)
+    except Exception:
+        return None
+
+
+def enrich_linkstats_with_baseline_jatten(sheets: Dict[str, List[Dict[str, Any]]]) -> None:
+    """
+    For each LinkStats_GTvs<ALG> (ALG not in {IDW, ILDW}), add baseline columns:
+      - J_atten_IDW
+      - J_atten_ILDW
+      - J_atten_ALG_over_IDW
+      - J_atten_ALG_over_ILDW
+    Matching is by patch_key.
+    """
+    idw_sheet = sheets.get("LinkStats_GTvsIDW", [])
+    ildw_sheet = sheets.get("LinkStats_GTvsILDW", [])
+
+    idw_by_patch: Dict[str, float] = {}
+    for r in idw_sheet:
+        pk = str(r.get("patch_key", ""))
+        if not pk:
+            continue
+        try:
+            idw_by_patch[pk] = float(r.get("J_atten_all"))
+        except Exception:
+            continue
+
+    ildw_by_patch: Dict[str, float] = {}
+    for r in ildw_sheet:
+        pk = str(r.get("patch_key", ""))
+        if not pk:
+            continue
+        try:
+            ildw_by_patch[pk] = float(r.get("J_atten_all"))
+        except Exception:
+            continue
+
+    for sheet_name, rows in sheets.items():
+        if not sheet_name.startswith("LinkStats_GTvs"):
+            continue
+        alg = sheet_name[len("LinkStats_GTvs") :]
+        if alg in {"IDW", "ILDW"}:
+            continue
+        for row in rows:
+            pk = str(row.get("patch_key", ""))
+            if not pk or pk == "DEFINITION":
+                continue
+            j_alg = row.get("J_atten_all", None)
+            j_idw = idw_by_patch.get(pk, None)
+            j_ildw = ildw_by_patch.get(pk, None)
+            row["J_atten_IDW"] = j_idw
+            row["J_atten_ILDW"] = j_ildw
+            row["J_atten_ALG_over_IDW"] = _safe_ratio(j_alg, j_idw)
+            row["J_atten_ALG_over_ILDW"] = _safe_ratio(j_alg, j_ildw)
+
+
 def compute_pixel_errors(gt: np.ndarray, pred: np.ndarray, mask_rainy: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Returns:
@@ -1128,6 +1234,7 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
             j_sol = evaluate_objective_values(prob, pred, lam=lam, mu=mu, eps=obj_eps, eta=eta)
             objective_pairs.append((float(lam), float(mu), float(eta), j_gt, j_sol))
     if native_params is not None and prob is not None:
+        w_atten = float(native_params.get("w_atten", 1.0))  # type: ignore[arg-type]
         lam = float(native_params["w_1d"])
         mu = float(native_params["w_total"])
         eta = float(native_params["w_2d"])
@@ -1142,12 +1249,14 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         )
         native_objective = dict(
             objective_scaling=str(native_params["objective_scaling"]),
+            w_atten=w_atten,
             w_1d=lam,
             w_total=mu,
             w_2d=eta,
-            eps=eps_native,
             **j_native,
         )
+        if eps_applicable_from_meta(native_meta):
+            native_objective["eps"] = eps_native
     if ref_eval_enabled and prob is not None:
         j_ref_pred = evaluate_objective_values(
             prob,
@@ -1159,10 +1268,10 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         )
         reference_objective_pred = dict(
             objective_scaling="NORMALIZED_REFERENCE",
+            w_atten=1.0,
             w_1d=ref_eval_lam,
             w_total=ref_eval_mu,
             w_2d=ref_eval_eta,
-            eps=ref_eval_eps,
             **j_ref_pred,
         )
         j_ref_gt = evaluate_objective_values(
@@ -1175,10 +1284,10 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         )
         reference_objective_gt = dict(
             objective_scaling="NORMALIZED_REFERENCE",
+            w_atten=1.0,
             w_1d=ref_eval_lam,
             w_total=ref_eval_mu,
             w_2d=ref_eval_eta,
-            eps=ref_eval_eps,
             **j_ref_gt,
         )
 
@@ -1545,6 +1654,10 @@ def write_workbook(
                     seen.add(c)
                     cols.append(c)
         if sheet_name == "Objective_NativeBySolver":
+            has_eps_value = any(
+                (("eps" in r) and (r.get("eps") is not None) and (str(r.get("eps")) != ""))
+                for r in rows
+            )
             preferred = [
                 "patch_key",
                 "definition",
@@ -1554,10 +1667,10 @@ def write_workbook(
                 "objective_unavailable_reason",
                 "objective_scaling",
                 "objective_formula",
+                "w_atten",
                 "w_1d",
                 "w_total",
                 "w_2d",
-                "eps",
                 "n_valid_links",
                 "n_pixels",
                 "solver",
@@ -1570,6 +1683,37 @@ def write_workbook(
                 "weighted_J_1d",
                 "weighted_J_total",
                 "weighted_J_2d",
+            ]
+            if has_eps_value:
+                preferred.insert(preferred.index("n_valid_links"), "eps")
+            rank = {name: i for i, name in enumerate(preferred)}
+            cols = [c for c in cols if (c != "eps" or has_eps_value)]
+            cols = sorted(cols, key=lambda c: (rank.get(c, 10_000), cols.index(c)))
+        if sheet_name == "StoppingInfo":
+            preferred = [
+                "patch_key",
+                "solver",
+                "solver_name",
+                "has_optinfo",
+                "stop_reason",
+                "reason_bucket",
+                "success",
+                "status",
+                "message",
+                "nit",
+                "nfev",
+                "njev",
+                "proj_grad_inf",
+                "rel_decrease",
+                "ftol",
+                "gtol",
+                "ftol_met",
+                "gtol_met",
+                "line_search_failed",
+                "maxiter_reached",
+                "optinfo_json",
+                "definition_term",
+                "definition",
             ]
             rank = {name: i for i, name in enumerate(preferred)}
             cols = sorted(cols, key=lambda c: (rank.get(c, 10_000), cols.index(c)))
@@ -2438,10 +2582,12 @@ def main() -> int:
                 )
             else:
                 native_row["objective_scaling"] = str(native.get("objective_scaling", native_row["objective_scaling"]))
+                native_row["w_atten"] = float(native.get("w_atten", 1.0))
                 native_row["w_1d"] = float(native.get("w_1d", native.get("w_smooth", 0.0)))
                 native_row["w_total"] = float(native.get("w_total", native.get("w_shrinkage", 0.0)))
                 native_row["w_2d"] = float(native.get("w_2d", native.get("w_second_der", 0.0)))
-                native_row["eps"] = float(native.get("eps", obj_eps))
+                if "eps" in native:
+                    native_row["eps"] = float(native["eps"])
                 n_valid = native.get("n_valid_links", None)
                 n_pix = native.get("n_pixels", None)
                 if n_valid is not None:
@@ -2454,6 +2600,7 @@ def main() -> int:
                 j2 = float(native.get("J2", 0.0))
                 j3 = float(native.get("J3", 0.0))
                 j4 = float(native.get("J4", 0.0))
+                wa = float(native_row["w_atten"])
                 ws = float(native_row["w_1d"])
                 wk = float(native_row["w_total"])
                 wd = float(native_row["w_2d"])
@@ -2467,17 +2614,25 @@ def main() -> int:
                 native_row["J_1d"] = j_1d
                 native_row["J_total"] = j_total
                 native_row["J_2d"] = j_2d
-                native_row["weighted_J_atten"] = j_atten
+                native_row["weighted_J_atten"] = wa * j_atten
                 native_row["weighted_J_1d"] = ws * j_1d
                 native_row["weighted_J_total"] = wk * j_total
                 native_row["weighted_J_2d"] = wd * j_2d
 
                 if str(native_row.get("objective_scaling", "")) == "CONSTRAINED_NORMALIZED":
-                    native_row["J_native_total"] = (
-                        float(native_row["weighted_J_1d"])
-                        + float(native_row["weighted_J_total"])
-                        + float(native_row["weighted_J_2d"])
-                    )
+                    if "w_atten" in native_row:
+                        native_row["J_native_total"] = (
+                            float(native_row["weighted_J_atten"])
+                            + float(native_row["weighted_J_1d"])
+                            + float(native_row["weighted_J_total"])
+                            + float(native_row["weighted_J_2d"])
+                        )
+                    else:
+                        native_row["J_native_total"] = (
+                            float(native_row["weighted_J_1d"])
+                            + float(native_row["weighted_J_total"])
+                            + float(native_row["weighted_J_2d"])
+                        )
                 else:
                     native_row["J_native_total"] = (
                         float(native_row["weighted_J_atten"])
@@ -2492,10 +2647,12 @@ def main() -> int:
                 j2_ref = float(ref_obj_pred.get("J2", 0.0))
                 j3_ref = float(ref_obj_pred.get("J3", 0.0))
                 j4_ref = float(ref_obj_pred.get("J4", 0.0))
+                native_row["w_atten"] = 1.0
                 native_row["w_1d"] = 1.0
                 native_row["w_total"] = 1.0
                 native_row["w_2d"] = 1.0
-                native_row["eps"] = float(ref_obj_pred.get("eps", ref_eval_eps))
+                if "eps" in ref_obj_pred:
+                    native_row["eps"] = float(ref_obj_pred["eps"])
                 native_row["n_valid_links"] = int(n_valid_ref) if n_valid_ref > 0.0 else int(ref_obj_pred.get("n_valid_links", 0))
                 native_row["n_pixels"] = int(n_pix_ref) if n_pix_ref > 0.0 else int(ref_obj_pred.get("n_pixels", 0))
                 if n_valid_ref > 0.0 and n_pix_ref > 0.0:
@@ -2531,13 +2688,15 @@ def main() -> int:
                     objective_scaling="N/A_BASELINE",
                     objective_available=False,
                     objective_unavailable_reason="GT is not produced by optimization; native objective is not applicable.",
+                    w_atten=1.0,
                     w_1d=1.0,
                     w_total=1.0,
                     w_2d=1.0,
-                    eps=float(ref_obj_gt.get("eps", ref_eval_eps)),
                     n_valid_links=int(n_valid_ref) if n_valid_ref > 0.0 else int(ref_obj_gt.get("n_valid_links", 0)),
                     n_pixels=int(n_pix_ref) if n_pix_ref > 0.0 else int(ref_obj_gt.get("n_pixels", 0)),
                 )
+                if "eps" in ref_obj_gt:
+                    gt_row["eps"] = float(ref_obj_gt["eps"])
                 if n_valid_ref > 0.0 and n_pix_ref > 0.0:
                     gt_row["J_atten"] = j1_ref / n_valid_ref
                     gt_row["J_1d"] = j2_ref / n_pix_ref
@@ -2664,7 +2823,42 @@ def main() -> int:
 
     # stopping diagnostics sheets
     if stop_rows:
-        sheets["StoppingInfo"] = stop_rows
+        stop_defs: List[Dict[str, Any]] = [
+            dict(
+                patch_key="DEFINITION",
+                definition_term="nfev",
+                definition="Number of objective function evaluations f(x) during optimization.",
+            ),
+            dict(
+                patch_key="DEFINITION",
+                definition_term="njev",
+                definition="Number of gradient/Jacobian evaluations (for scalar objectives: gradient evaluations).",
+            ),
+            dict(
+                patch_key="DEFINITION",
+                definition_term="proj_grad_inf",
+                definition=(
+                    "Infinity norm of the projected gradient at the final iterate "
+                    "(first-order stationarity under bounds R>=0). Smaller is better."
+                ),
+            ),
+            dict(
+                patch_key="DEFINITION",
+                definition_term="rel_decrease",
+                definition=(
+                    "Relative objective decrease between the previous and final iterate: "
+                    "|f_prev-f_final| / max(1, |f_prev|, |f_final|). Smaller means progress stalled."
+                ),
+            ),
+            dict(
+                patch_key="DEFINITION",
+                definition_term="gtol_vs_proj_grad_inf",
+                definition=(
+                    "Gradient-based stopping test uses gtol_met := (proj_grad_inf <= gtol)."
+                ),
+            ),
+        ]
+        sheets["StoppingInfo"] = list(stop_rows) + stop_defs
         sheet_order.append("StoppingInfo")
 
         by_solver: Dict[str, List[Dict[str, Any]]] = {}
@@ -2742,6 +2936,9 @@ def main() -> int:
         iter_feas_rows = append_average_rows(iter_feas_rows, group_keys=["solver", "solver_name"])
         sheets["IterationFeasibility"] = iter_feas_rows
         sheet_order.append("IterationFeasibility")
+
+    # Enrich LinkStats sheets (non-baseline solvers) with J_atten comparisons vs IDW/ILDW.
+    enrich_linkstats_with_baseline_jatten(sheets)
 
     # write excel (ordered)
     ordered_sheets: Dict[str, List[Dict[str, Any]]] = {}
