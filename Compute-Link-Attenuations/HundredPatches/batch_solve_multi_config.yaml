@@ -9,7 +9,7 @@ solvers:
     name: "opt_idw_newobj_log"
     label: "OPT_IDW_NEWOBJ_LOG"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_normalized_obj_log"
+    module: "solve_rain_lbfgsb_normalized_ildw_multipliers"
     out_dir: "sol_dir_opt_idw_newobj_log"
 
     optimization:
@@ -36,7 +36,7 @@ solvers:
     name: "opt_idw_newobj_lin"
     label: "OPT_IDW_NEWOBJ_LIN"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_normalized_obj_lin"
+    module: "solve_rain_lbfgsb_normalized_ildw_multipliers"
     out_dir: "sol_dir_opt_idw_newobj_lin"
 
     optimization:
@@ -63,7 +63,7 @@ solvers:
     name: "opt_ildw_newobj_log"
     label: "OPT_ILDW_NEWOBJ_LOG"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_normalized_obj_log"
+    module: "solve_rain_lbfgsb_normalized_ildw_multipliers"
     out_dir: "sol_dir_opt_ildw_newobj_log"
 
     optimization:
@@ -91,7 +91,7 @@ solvers:
     name: "opt_ildw_newobj_lin"
     label: "OPT_ILDW_NEWOBJ_LIN"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_normalized_obj_lin"
+    module: "solve_rain_lbfgsb_normalized_ildw_multipliers"
     out_dir: "sol_dir_opt_ildw_newobj_lin"
 
     optimization:

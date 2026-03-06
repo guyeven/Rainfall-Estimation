@@ -1,0 +1,87 @@
+# ============================================================
+# analyze_multi.yaml (DICT-style solvers; paths relative to this YAML)
+# ============================================================
+
+input:
+  # Ground truth directory
+  gt_dir: "../gt_dir"
+  gt_prefix: "gt"
+
+  # Directory containing est_input_*.json (needed for link geometry & distances)
+  est_input_dir: "../est_dir"
+
+  # Multiple solver output folders (each should contain est_input_*_solution.npz)
+  solvers:
+    idw:
+      name: "idw"
+      label: "IDW"
+      sol_dir: "sol_dir_idw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    ildw:
+      name: "ildw"
+      label: "ILDW"
+      sol_dir: "sol_dir_ildw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_idw:
+      name: "opt_idw"
+      label: "OPT_IDW"
+      sol_dir: "sol_dir_opt_idw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_ildw:
+      name: "opt_ildw"
+      label: "OPT_ILDW"
+      sol_dir: "sol_dir_opt_ildw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+data:
+  gt_key_preference: ["R_gt", "rain", "gt"]
+  allow_shape_mismatch: false
+
+rain:
+  threshold_mmph: 0.6
+
+coverage:
+  enabled: true
+  bins: [0, 1, 2, 3, 4, "5+"]
+
+distance:
+  # Distance-to-kth-closest-link bins (meters)
+  bin_edges_m: [125, 375, 750, 1500, 3125, 6000, 9000]
+  k_values: [2, 3]
+  # max_candidates: 64
+  method: sampled_points
+  sample_spacing_m: 250.0
+  k_query_samples: 100
+  chunk_size: 8000
+  max_samples_per_link: 200
+
+plots:
+  # Only final aggregate plots (IQR-of-medians), no per-patch plots
+  skip_patch_plots: true
+  
+  bin_spacing: 1.35
+
+  # Vertical scaling behavior
+  automatic_vertical_scaling: true
+  # If you set automatic_vertical_scaling: false, you must set:
+  # vertical_scale: 0.35
+  prune_bins_enabled: true
+  prune_bins_zero_frac: 0.5
+
+output:
+  out_dir: "batch_analyze_output_multi"
+  images_subdir: "images"
+  excel_filename: "stats_multi_old_solvers.xlsx"
+
+rae_hist:
+  enabled: true
+  bins: 50
+  # max_patches: 10   # optional limit; uses lexicographic patch order
+  out_dir: "images/RAE_histograms"
