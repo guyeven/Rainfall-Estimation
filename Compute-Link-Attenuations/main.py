@@ -26,6 +26,41 @@ def load_jsonl(path: Path) -> Iterable[Dict]:
                 raise RuntimeError(f"Invalid JSON in {path} at line {lineno}: {e}") from e
 
 
+def _undirected_edge_key_from_rec(rec: Dict, *, ndigits: int = 6):
+    a = (round(float(rec["xs_m"]), ndigits), round(float(rec["ys_m"]), ndigits))
+    b = (round(float(rec["xe_m"]), ndigits), round(float(rec["ye_m"]), ndigits))
+    return tuple(sorted((a, b)))
+
+
+def dedup_patch_links_keep_min_atten(
+    link_recs: List[Dict],
+    segments_by_link: Dict[str, List[Dict]],
+) -> tuple[List[Dict], Dict[str, List[Dict]], int]:
+    """
+    Deduplicate undirected parallel/reversed links and keep the one with the
+    smallest observed attenuation_db. Reindexes links/segments consistently.
+    """
+    best: Dict[tuple, tuple[Dict, int]] = {}
+    for old_idx, rec in enumerate(link_recs):
+        key = _undirected_edge_key_from_rec(rec)
+        att = float(rec.get("attenuation_db", 0.0))
+        prev = best.get(key)
+        if prev is None or att < float(prev[0].get("attenuation_db", 0.0)):
+            best[key] = (rec, old_idx)
+
+    kept = sorted(best.values(), key=lambda t: t[1])
+    new_recs: List[Dict] = []
+    new_segments: Dict[str, List[Dict]] = {}
+    for new_idx, (rec, old_idx) in enumerate(kept):
+        rec2 = dict(rec)
+        rec2["link_index"] = int(new_idx)
+        new_recs.append(rec2)
+        new_segments[str(new_idx)] = list(segments_by_link.get(str(old_idx), []))
+
+    removed = max(0, len(link_recs) - len(new_recs))
+    return new_recs, new_segments, removed
+
+
 def _choose_path_dialog(msg: str, *, must_exist: bool, must_be_dir: bool) -> Optional[Path]:
     try:
         import tkinter as tk
@@ -138,6 +173,22 @@ def prompt_yes_default_no(msg: str) -> bool:
         print("Invalid input. Allowed: (y/N)")
 
 
+def prompt_patch_ids_exact_k(k: int) -> List[str]:
+    while True:
+        raw = input(f"Enter exactly {k} patch IDs, comma-separated: ").strip()
+        if not raw:
+            print("Empty input. Try again.")
+            continue
+        ids = [p.strip() for p in raw.split(",") if p.strip()]
+        if len(ids) != k:
+            print(f"You entered {len(ids)} IDs, but k={k}. Try again.")
+            continue
+        if len(set(ids)) != len(ids):
+            print("Duplicate patch IDs found. Please provide unique IDs.")
+            continue
+        return ids
+
+
 def main() -> None:
     print("=== Patch-based link attenuation + estimator export ===")
     ap = argparse.ArgumentParser(add_help=True)
@@ -152,11 +203,19 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     k = prompt_int("Number of patches to process (k): ")
-    start_patch_1based = prompt_int_default(
-        f"Start patch index in patch-list JSONL "
-        f"(press Enter for 1; input 1 means patches [1,{k}] are considered): ",
-        default=1,
+    use_named_patches = prompt_yes_default_no(
+        "Do you want to specify exact patch IDs to process? (y/N): "
     )
+    named_patch_ids: List[str] = []
+    start_patch_1based = 1
+    if use_named_patches:
+        named_patch_ids = prompt_patch_ids_exact_k(k)
+    else:
+        start_patch_1based = prompt_int_default(
+            f"Start patch index after attr filtering "
+            f"(press Enter for 1; input 1 means filtered patches [1,{k}] are considered): ",
+            default=1,
+        )
     default_pol = prompt_choice("Default polarization if missing", ["H", "V"])
     export_gt = prompt_yes_default_yes("Export ground truth as gt_<patch_id>.npz? (Y/n): ")
     if args.gaussian_gt and args.no_gaussian_gt:
@@ -167,6 +226,9 @@ def main() -> None:
         use_gaussian_gt = False
     else:
         use_gaussian_gt = prompt_yes_default_no("Use Gaussian GT instead of H5 rainfall? (y/N): ")
+    dedup_parallel_links = prompt_yes_default_no(
+        "Deduplicate parallel/reversed links in est_input (keep link with smallest A_db)? (y/N): "
+    )
     debug_mode = prompt_choice("Debug mode?", ["Y", "N"]) == "Y"
 
     debug_patch_id = ""
@@ -185,16 +247,39 @@ def main() -> None:
     attr_ids: Set[str] = {_pid(r) for r in load_jsonl(patch_attr_path) if _pid(r)}
     links = list(load_jsonl(links_path))
 
-    start0 = max(0, int(start_patch_1based) - 1)
-    end0 = start0 + int(k)
-    window = patches[start0:end0]
-    selected = [p for p in window if _pid(p) in attr_ids]
-    n_skipped = len(window) - len(selected)
-    print(
-        f"Requested patch-list window [{start0 + 1},{min(len(patches), end0)}] "
-        f"({len(window)} records); processing {len(selected)} after attr-id filter"
-        + (f" (skipped {n_skipped} without matching attrs)." if n_skipped > 0 else ".")
-    )
+    if use_named_patches:
+        by_id = {_pid(p): p for p in patches if _pid(p)}
+        missing = [pid for pid in named_patch_ids if pid not in by_id]
+        if missing:
+            print("These requested patch IDs were not found in patch-list JSONL:")
+            for pid in missing:
+                print(f"  - {pid}")
+            print("Aborting. Please check spelling/case.")
+            return
+        selected = [by_id[pid] for pid in named_patch_ids]
+        print(
+            f"Found {len(patches)} total patch(es); "
+            f"processing {len(selected)} explicitly requested patch(es) "
+            f"(attr filter bypassed)."
+        )
+    else:
+        filtered = [p for p in patches if _pid(p) in attr_ids]
+        skipped_ids = [_pid(p) for p in patches if _pid(p) not in attr_ids]
+        start0 = max(0, int(start_patch_1based) - 1)
+        end0 = start0 + int(k)
+        selected = filtered[start0:end0]
+        print(
+            f"Found {len(filtered)} patch(es) with attrs out of {len(patches)} total; "
+            f"processing filtered window [{start0 + 1},{min(len(filtered), end0)}] "
+            f"({len(selected)} patches selected)."
+        )
+        if skipped_ids:
+            preview_max = 30
+            if len(skipped_ids) <= preview_max:
+                print(f"Skipped patch IDs (no attrs): {', '.join(skipped_ids)}")
+            else:
+                head = ", ".join(skipped_ids[:preview_max])
+                print(f"Skipped patch IDs (no attrs, first {preview_max}/{len(skipped_ids)}): {head}")
     if not selected:
         print("No selected patches found. Check that patch ids match between files.")
         return
@@ -249,6 +334,10 @@ def main() -> None:
             out_jsonl_path=patch_out,
             debug=dbg,
         )
+        if dedup_parallel_links:
+            link_recs, segments_by_link, removed = dedup_patch_links_keep_min_atten(link_recs, segments_by_link)
+            if removed > 0:
+                print(f"[PATCH {pid}] dedup removed {removed} parallel/reversed link(s)")
 
         H, W = gt.shape
         est_out = out_dir / f"est_input_{pid}.json"

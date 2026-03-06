@@ -788,7 +788,7 @@ def stats_row(
             n_pixels=0,
             mean_signed=0.0, median_signed=0.0,
             mean_abs=0.0, std_abs=0.0,
-            median_abs=0.0, p90_abs=0.0, p99_abs=0.0, linf_abs=0.0,
+            median_abs=0.0, p90_abs=0.0, p95_abs=0.0, p99_abs=0.0, linf_abs=0.0,
             l1_rae_sum=0.0,
             l1_abs_mmph_sum=0.0,
         )
@@ -798,6 +798,7 @@ def stats_row(
     std_abs = float(np.std(err_abs, ddof=0))
     median_abs = float(np.median(err_abs))
     p90 = float(np.percentile(err_abs, 90))
+    p95 = float(np.percentile(err_abs, 95))
     p99 = float(np.percentile(err_abs, 99))
     linf = float(np.max(err_abs))
     return dict(
@@ -808,6 +809,7 @@ def stats_row(
         std_abs=std_abs,
         median_abs=median_abs,
         p90_abs=p90,
+        p95_abs=p95,
         p99_abs=p99,
         linf_abs=linf,
         l1_rae_sum=float(l1_rae_sum),
@@ -962,6 +964,88 @@ def enrich_linkstats_with_baseline_jatten(sheets: Dict[str, List[Dict[str, Any]]
             row["J_atten_ILDW"] = j_ildw
             row["J_atten_ALG_over_IDW"] = _safe_ratio(j_alg, j_idw)
             row["J_atten_ALG_over_ILDW"] = _safe_ratio(j_alg, j_ildw)
+
+
+def enrich_binned_stats_with_baseline_ratios(sheets: Dict[str, List[Dict[str, Any]]]) -> None:
+    """
+    For Coverage/Distance/Overall per-solver tabs, add ALG-vs-baseline ratios (ALG!=IDW,ILDW)
+    for key metrics: mae, median_error, p90_error, p99_error.
+    """
+    metric_cols = ("mean_abs", "std_abs", "median_abs", "p90_abs", "p95_abs", "p99_abs")
+    for sheet_name, rows in sheets.items():
+        if "GTvs" not in sheet_name:
+            continue
+        if not (
+            sheet_name.startswith("CoverageStats_")
+            or sheet_name.startswith("DistanceStats")
+            or sheet_name.startswith("OverallStats_")
+        ):
+            continue
+
+        base, alg = sheet_name.split("GTvs", 1)
+        if alg in {"IDW", "ILDW"}:
+            continue
+
+        idw_rows = sheets.get(f"{base}GTvsIDW", None)
+        ildw_rows = sheets.get(f"{base}GTvsILDW", None)
+        if idw_rows is None or ildw_rows is None:
+            continue
+
+        def row_key(r: Dict[str, Any]) -> Tuple[Any, ...]:
+            return (
+                r.get("patch_key", None),
+                r.get("mask_type", None),
+                r.get("coverage_bin", None),
+                r.get("distance_bin_m", None),
+            )
+
+        idw_map = {row_key(r): r for r in idw_rows}
+        ildw_map = {row_key(r): r for r in ildw_rows}
+        for r in rows:
+            if str(r.get("patch_key", "")) == "DEFINITION":
+                continue
+            k = row_key(r)
+            r_idw = idw_map.get(k, {})
+            r_ildw = ildw_map.get(k, {})
+            for m in metric_cols:
+                v_alg = r.get(m, None)
+                v_idw = r_idw.get(m, None)
+                v_ildw = r_ildw.get(m, None)
+                r[f"{m}_IDW"] = v_idw
+                r[f"{m}_ILDW"] = v_ildw
+                r[f"{m}_over_IDW"] = _safe_ratio(v_alg, v_idw)
+                r[f"{m}_over_ILDW"] = _safe_ratio(v_alg, v_ildw)
+
+
+def enrich_overall_by_solver_ratios(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    metric_cols = ("mean_abs", "std_abs", "median_abs", "p90_abs", "p95_abs", "p99_abs")
+    out: List[Dict[str, Any]] = [dict(r) for r in rows]
+    key_fields = ("patch_key", "mask_type", "distance_bin_m")
+    idw_map: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    ildw_map: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    for r in out:
+        k = tuple(r.get(f, None) for f in key_fields)
+        solver = str(r.get("solver", ""))
+        if solver == "IDW":
+            idw_map[k] = r
+        elif solver == "ILDW":
+            ildw_map[k] = r
+    for r in out:
+        solver = str(r.get("solver", ""))
+        if solver in {"IDW", "ILDW"}:
+            continue
+        k = tuple(r.get(f, None) for f in key_fields)
+        rb_idw = idw_map.get(k, {})
+        rb_ildw = ildw_map.get(k, {})
+        for m in metric_cols:
+            v_alg = r.get(m, None)
+            v_idw = rb_idw.get(m, None)
+            v_ildw = rb_ildw.get(m, None)
+            r[f"{m}_IDW"] = v_idw
+            r[f"{m}_ILDW"] = v_ildw
+            r[f"{m}_over_IDW"] = _safe_ratio(v_alg, v_idw)
+            r[f"{m}_over_ILDW"] = _safe_ratio(v_alg, v_ildw)
+    return out
 
 
 def compute_pixel_errors(gt: np.ndarray, pred: np.ndarray, mask_rainy: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -1307,7 +1391,7 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
                     n_pixels=0,
                     mean_signed=0.0, median_signed=0.0,
                     mean_abs=0.0, std_abs=0.0,
-                    median_abs=0.0, p90_abs=0.0, p99_abs=0.0, linf_abs=0.0,
+                    median_abs=0.0, p90_abs=0.0, p95_abs=0.0, p99_abs=0.0, linf_abs=0.0,
                     l1_rae_sum=0.0,
                     l1_abs_mmph_sum=0.0,
                     l1_abs_mmph_sum_norm_hw=0.0,
@@ -2393,6 +2477,7 @@ def main() -> int:
     objective_vals: Dict[Tuple[float, float, float], Dict[str, Dict[str, float]]] = {}
     native_objective_rows: List[Dict[str, Any]] = []
     iter_feas_rows: List[Dict[str, Any]] = []
+    overall_by_solver_rows: List[Dict[str, Any]] = []
     gt_rows_done: set = set()
     link_metrics: Dict[str, Dict[str, Dict[str, Any]]] = {}
     stop_rows: List[Dict[str, Any]] = []
@@ -2788,6 +2873,12 @@ def main() -> int:
             overall_rows,
             group_keys=["mask_type", "distance_bin_m"],
         )
+        for r in overall_rows:
+            rr = dict(r)
+            rr["solver"] = label
+            rr["solver_name"] = name
+            rr["module"] = module_name
+            overall_by_solver_rows.append(rr)
 
         sheet_name = f"LinkStats_GTvs{label}"
         sheets[sheet_name] = link_rows
@@ -2937,8 +3028,19 @@ def main() -> int:
         sheets["IterationFeasibility"] = iter_feas_rows
         sheet_order.append("IterationFeasibility")
 
+    if overall_by_solver_rows:
+        overall_by_solver_rows = append_average_rows(
+            overall_by_solver_rows,
+            group_keys=["solver", "solver_name", "module", "mask_type", "distance_bin_m"],
+        )
+        overall_by_solver_rows = enrich_overall_by_solver_ratios(overall_by_solver_rows)
+        sheets["OverallStats_BySolver"] = overall_by_solver_rows
+        sheet_order.append("OverallStats_BySolver")
+
     # Enrich LinkStats sheets (non-baseline solvers) with J_atten comparisons vs IDW/ILDW.
     enrich_linkstats_with_baseline_jatten(sheets)
+    # Enrich Coverage/Distance/Overall per-solver tabs with ALG-vs-baseline ratios.
+    enrich_binned_stats_with_baseline_ratios(sheets)
 
     # write excel (ordered)
     ordered_sheets: Dict[str, List[Dict[str, Any]]] = {}
