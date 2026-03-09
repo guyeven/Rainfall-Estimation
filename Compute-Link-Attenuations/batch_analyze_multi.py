@@ -764,6 +764,43 @@ def parse_coverage_bins(cfg_bins: Sequence[Any]) -> Tuple[List[int], Optional[in
     return exact, ge
 
 
+def parse_fp_fn_thresholds(cfg: dict, *, default_threshold_mmph: float) -> List[float]:
+    """
+    Build sorted unique thresholds for FP/FN reporting.
+    Supported config:
+      rain.fp_fn_thresholds_mmph: [0.5, 1.0, 2.0]
+      rain.fp_fn_threshold_sweep_mmph: {start: 0.5, stop: 5.0, step: 0.5}
+    If neither is provided, falls back to [rain.threshold_mmph].
+    """
+    vals = deep_get(cfg, "rain.fp_fn_thresholds_mmph", None)
+    if vals is not None:
+        if not isinstance(vals, (list, tuple)):
+            raise SystemExit("rain.fp_fn_thresholds_mmph must be a list of numbers.")
+        out = sorted({float(v) for v in vals if float(v) >= 0.0})
+        if not out:
+            raise SystemExit("rain.fp_fn_thresholds_mmph must include at least one non-negative value.")
+        return out
+
+    sweep = deep_get(cfg, "rain.fp_fn_threshold_sweep_mmph", None)
+    if isinstance(sweep, dict):
+        start = float(sweep.get("start", default_threshold_mmph))
+        stop = float(sweep.get("stop", start))
+        step = float(sweep.get("step", 0.0))
+        if start < 0.0 or stop < 0.0 or step <= 0.0:
+            raise SystemExit("rain.fp_fn_threshold_sweep_mmph requires start>=0, stop>=0, step>0.")
+        if stop < start:
+            raise SystemExit("rain.fp_fn_threshold_sweep_mmph requires stop >= start.")
+        n = int(math.floor((stop - start) / step)) + 1
+        out = [round(start + i * step, 10) for i in range(max(0, n))]
+        if not out:
+            out = [start]
+        if out[-1] < stop - 1e-10:
+            out.append(round(stop, 10))
+        return sorted({float(v) for v in out if float(v) >= 0.0})
+
+    return [float(default_threshold_mmph)]
+
+
 def coverage_bin_label(v: int, exact: List[int], ge: Optional[int]) -> Optional[str]:
     if v in exact:
         return str(v)
@@ -1158,6 +1195,7 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     gt_key_pref = list(task["gt_key_pref"])
     sol_key_pref = list(task["sol_key_pref"])
     thr = float(task["thr"])
+    fp_fn_thresholds = [float(v) for v in task.get("fp_fn_thresholds", [thr])]
     cov_exact = list(task["cov_exact"])
     cov_ge = task["cov_ge"]
     k_values = [int(k) for k in task["k_values"]]
@@ -1244,6 +1282,31 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     total_pixels = gt.size
     dry_fp_rate = (float(np.sum(fp)) / float(total_pixels)) if total_pixels > 0 else None
     dry_fn_rate = (float(np.sum(fn)) / float(total_pixels)) if total_pixels > 0 else None
+    fp_fn_by_threshold: List[Dict[str, Any]] = []
+    for thr_i in fp_fn_thresholds:
+        gt_wet_i = gt >= float(thr_i)
+        pred_wet_i = pred >= float(thr_i)
+        fp_i = np.logical_and(pred_wet_i, ~gt_wet_i)
+        fn_i = np.logical_and(~pred_wet_i, gt_wet_i)
+        n_all_i = int(gt.size)
+        n_wet_i = int(np.sum(gt_wet_i))
+        n_dry_i = int(n_all_i - n_wet_i)
+        fp_count_i = int(np.sum(fp_i))
+        fn_count_i = int(np.sum(fn_i))
+        fp_fn_by_threshold.append(
+            dict(
+                threshold_mmph=float(thr_i),
+                fp_count=fp_count_i,
+                fn_count=fn_count_i,
+                n_pixels=n_all_i,
+                n_wet=n_wet_i,
+                n_dry=n_dry_i,
+                fp_rate_all=(float(fp_count_i) / float(n_all_i)) if n_all_i > 0 else None,
+                fn_rate_all=(float(fn_count_i) / float(n_all_i)) if n_all_i > 0 else None,
+                fp_rate_dry=(float(fp_count_i) / float(n_dry_i)) if n_dry_i > 0 else None,
+                fn_rate_wet=(float(fn_count_i) / float(n_wet_i)) if n_wet_i > 0 else None,
+            )
+        )
 
     # coverage map + bins
     est = load_est_payload(est_path)
@@ -1577,6 +1640,7 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         stop_row=stop_row,
         dry_fp_rate=dry_fp_rate,
         dry_fn_rate=dry_fn_rate,
+        fp_fn_by_threshold=fp_fn_by_threshold,
         gtbin_counts=gtbin_counts_by_lab,
         gtbin_rel_means=gtbin_rel_means_by_lab,
         gtbin_abs_means=gtbin_abs_means_by_lab,
@@ -2201,6 +2265,60 @@ def plot_fp_fn_summary(
     plt.close(fig)
 
 
+def plot_fp_fn_vs_threshold(
+    out_png: Path,
+    *,
+    title: str,
+    rows: List[Dict[str, Any]],
+    dpi: int = 150,
+) -> None:
+    import matplotlib.pyplot as plt  # type: ignore
+
+    if not rows:
+        return
+
+    by_solver: Dict[str, List[Dict[str, Any]]] = {}
+    for r in rows:
+        by_solver.setdefault(str(r["solver"]), []).append(r)
+
+    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.5), dpi=dpi, sharex=True)
+    ax_fp, ax_fn = axes
+
+    for solver, vals in sorted(by_solver.items()):
+        vals_sorted = sorted(vals, key=lambda x: float(x.get("threshold_mmph", 0.0)))
+        xs = np.array([float(v["threshold_mmph"]) for v in vals_sorted], dtype=np.float64)
+        fp = np.array([float(v.get("fp_rate_dry_mean", 0.0)) for v in vals_sorted], dtype=np.float64)
+        fn = np.array([float(v.get("fn_rate_wet_mean", 0.0)) for v in vals_sorted], dtype=np.float64)
+        ax_fp.plot(xs, fp, marker="o", linewidth=1.4, label=solver)
+        ax_fn.plot(xs, fn, marker="o", linewidth=1.4, label=solver)
+
+    ax_fp.set_title("False Positive Rate on dry GT pixels")
+    ax_fn.set_title("False Negative Rate on wet GT pixels")
+    ax_fp.set_ylabel("Rate")
+    ax_fn.set_ylabel("Rate")
+    for ax in (ax_fp, ax_fn):
+        ax.set_xlabel("Threshold (mm/h)")
+        ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
+        ax.set_ylim(bottom=0.0)
+
+    handles, labels = ax_fp.get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="upper center", ncol=min(5, len(labels)))
+    fig.suptitle(title)
+    fig.text(
+        0.5,
+        0.01,
+        "Wet is the positive class. FPR=FP/GT_dry_count, FNR=FN/GT_wet_count.",
+        ha="center",
+        fontsize=8,
+    )
+
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout(rect=(0, 0.04, 1, 0.92))
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
 def plot_j_behavior(
     out_png: Path,
     *,
@@ -2479,6 +2597,7 @@ def main() -> int:
 
     # params
     thr = float(deep_get(cfg, "rain.threshold_mmph", 1.0))
+    fp_fn_thresholds = parse_fp_fn_thresholds(cfg, default_threshold_mmph=thr)
     cov_bins_cfg = list(deep_get(cfg, "coverage.bins", [0,1,2,3,4,"5+"]))
     cov_exact, cov_ge = parse_coverage_bins(cov_bins_cfg)
 
@@ -2585,6 +2704,7 @@ def main() -> int:
     }
     bin_counts_seen: set = set()
     dry_metrics: Dict[str, Dict[str, List[float]]] = {}
+    fp_fn_threshold_metrics: Dict[str, Dict[float, Dict[str, List[float]]]] = {}
 
     objective_gt_done: set = set()
     objective_vals: Dict[Tuple[float, float, float], Dict[str, Dict[str, float]]] = {}
@@ -2641,6 +2761,15 @@ def main() -> int:
         link_rows: List[Dict[str, Any]] = []
         link_metrics[label] = {}
         dry_metrics[label] = {"fp_rates": [], "fn_rates": []}
+        fp_fn_threshold_metrics[label] = {
+            float(t): {
+                "fp_rate_all": [],
+                "fn_rate_all": [],
+                "fp_rate_dry": [],
+                "fn_rate_wet": [],
+            }
+            for t in fp_fn_thresholds
+        }
         gtbin_rel_patch_means[label] = {lab: [] for _, _, lab in rainy_intervals}
         gtbin_abs_patch_means[label] = {lab: [] for _, _, lab in rainy_intervals}
 
@@ -2689,6 +2818,7 @@ def main() -> int:
                 gt_key_pref=list(gt_key_pref),
                 sol_key_pref=list(sol_key_pref),
                 thr=thr,
+                fp_fn_thresholds=list(fp_fn_thresholds),
                 cov_exact=list(cov_exact),
                 cov_ge=cov_ge,
                 k_values=list(k_values),
@@ -2749,6 +2879,16 @@ def main() -> int:
                 dry_metrics[label]["fp_rates"].append(float(fp_rate))
             if fn_rate is not None:
                 dry_metrics[label]["fn_rates"].append(float(fn_rate))
+            for row_thr in (res.get("fp_fn_by_threshold", []) or []):
+                t = float(row_thr.get("threshold_mmph", thr))
+                bucket = fp_fn_threshold_metrics[label].setdefault(
+                    t,
+                    {"fp_rate_all": [], "fn_rate_all": [], "fp_rate_dry": [], "fn_rate_wet": []},
+                )
+                for k_metric in ("fp_rate_all", "fn_rate_all", "fp_rate_dry", "fn_rate_wet"):
+                    v_metric = row_thr.get(k_metric, None)
+                    if v_metric is not None:
+                        bucket[k_metric].append(float(v_metric))
 
             if rainy_bins_enabled:
                 gt_counts = res.get("gtbin_counts", {}) or {}
@@ -3144,6 +3284,42 @@ def main() -> int:
             img_dir / "dry_fp_fn_summary.png",
             title="Dry-classification FP/FN rates (mean ± std across patches)",
             rows=dry_rows,
+            dpi=dpi,
+        )
+
+    if fp_fn_threshold_metrics:
+        fpfn_rows: List[Dict[str, Any]] = []
+        for label in sorted(fp_fn_threshold_metrics.keys()):
+            by_thr = fp_fn_threshold_metrics[label]
+            for thr_i in sorted(by_thr.keys()):
+                vals = by_thr[thr_i]
+                fp_all = np.array(vals.get("fp_rate_all", []), dtype=np.float64)
+                fn_all = np.array(vals.get("fn_rate_all", []), dtype=np.float64)
+                fp_dry = np.array(vals.get("fp_rate_dry", []), dtype=np.float64)
+                fn_wet = np.array(vals.get("fn_rate_wet", []), dtype=np.float64)
+                fpfn_rows.append(
+                    dict(
+                        solver=label,
+                        threshold_mmph=float(thr_i),
+                        positive_definition="wet (gt >= threshold)",
+                        fp_definition="pred wet & GT dry",
+                        fn_definition="pred dry & GT wet",
+                        fp_rate_all_mean=(float(np.mean(fp_all)) if fp_all.size else 0.0),
+                        fp_rate_all_std=(float(np.std(fp_all, ddof=0)) if fp_all.size else 0.0),
+                        fn_rate_all_mean=(float(np.mean(fn_all)) if fn_all.size else 0.0),
+                        fn_rate_all_std=(float(np.std(fn_all, ddof=0)) if fn_all.size else 0.0),
+                        fp_rate_dry_mean=(float(np.mean(fp_dry)) if fp_dry.size else 0.0),
+                        fp_rate_dry_std=(float(np.std(fp_dry, ddof=0)) if fp_dry.size else 0.0),
+                        fn_rate_wet_mean=(float(np.mean(fn_wet)) if fn_wet.size else 0.0),
+                        fn_rate_wet_std=(float(np.std(fn_wet, ddof=0)) if fn_wet.size else 0.0),
+                    )
+                )
+        sheets["FPFN_ByThreshold"] = fpfn_rows
+        sheet_order.append("FPFN_ByThreshold")
+        plot_fp_fn_vs_threshold(
+            img_dir / "fp_fn_vs_threshold.png",
+            title="Wet-class FP/FN rates vs threshold",
+            rows=fpfn_rows,
             dpi=dpi,
         )
 
