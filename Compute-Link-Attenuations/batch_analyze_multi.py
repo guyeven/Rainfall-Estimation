@@ -764,43 +764,6 @@ def parse_coverage_bins(cfg_bins: Sequence[Any]) -> Tuple[List[int], Optional[in
     return exact, ge
 
 
-def parse_fp_fn_thresholds(cfg: dict, *, default_threshold_mmph: float) -> List[float]:
-    """
-    Build sorted unique thresholds for FP/FN reporting.
-    Supported config:
-      rain.fp_fn_thresholds_mmph: [0.5, 1.0, 2.0]
-      rain.fp_fn_threshold_sweep_mmph: {start: 0.5, stop: 5.0, step: 0.5}
-    If neither is provided, falls back to [rain.threshold_mmph].
-    """
-    vals = deep_get(cfg, "rain.fp_fn_thresholds_mmph", None)
-    if vals is not None:
-        if not isinstance(vals, (list, tuple)):
-            raise SystemExit("rain.fp_fn_thresholds_mmph must be a list of numbers.")
-        out = sorted({float(v) for v in vals if float(v) >= 0.0})
-        if not out:
-            raise SystemExit("rain.fp_fn_thresholds_mmph must include at least one non-negative value.")
-        return out
-
-    sweep = deep_get(cfg, "rain.fp_fn_threshold_sweep_mmph", None)
-    if isinstance(sweep, dict):
-        start = float(sweep.get("start", default_threshold_mmph))
-        stop = float(sweep.get("stop", start))
-        step = float(sweep.get("step", 0.0))
-        if start < 0.0 or stop < 0.0 or step <= 0.0:
-            raise SystemExit("rain.fp_fn_threshold_sweep_mmph requires start>=0, stop>=0, step>0.")
-        if stop < start:
-            raise SystemExit("rain.fp_fn_threshold_sweep_mmph requires stop >= start.")
-        n = int(math.floor((stop - start) / step)) + 1
-        out = [round(start + i * step, 10) for i in range(max(0, n))]
-        if not out:
-            out = [start]
-        if out[-1] < stop - 1e-10:
-            out.append(round(stop, 10))
-        return sorted({float(v) for v in out if float(v) >= 0.0})
-
-    return [float(default_threshold_mmph)]
-
-
 def coverage_bin_label(v: int, exact: List[int], ge: Optional[int]) -> Optional[str]:
     if v in exact:
         return str(v)
@@ -1195,7 +1158,6 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     gt_key_pref = list(task["gt_key_pref"])
     sol_key_pref = list(task["sol_key_pref"])
     thr = float(task["thr"])
-    fp_fn_thresholds = [float(v) for v in task.get("fp_fn_thresholds", [thr])]
     cov_exact = list(task["cov_exact"])
     cov_ge = task["cov_ge"]
     k_values = [int(k) for k in task["k_values"]]
@@ -1218,6 +1180,16 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     ref_eval_eta = float(task.get("ref_eval_eta", DEFAULT_REFERENCE_W_SECOND_DER))
     ref_eval_eps = float(task.get("ref_eval_eps", DEFAULT_REFERENCE_EPS))
     include_rae_hist = bool(task["include_rae_hist"])
+    patch_plots_enabled = bool(task.get("patch_plots_enabled", False))
+    patch_plot_dir = Path(str(task.get("patch_plot_dir", ""))) if task.get("patch_plot_dir") else None
+    plot_show = bool(task.get("plot_show", False))
+    plot_dpi = int(task.get("plot_dpi", 150))
+    cmap_gt = str(task.get("cmap_gt", "viridis"))
+    cmap_sol = str(task.get("cmap_sol", "viridis"))
+    cmap_diff = str(task.get("cmap_diff", "seismic"))
+    cmap_abs = str(task.get("cmap_abs_diff", "magma"))
+    cmap_rel = str(task.get("cmap_rel", "seismic"))
+    cmap_abs_rel = str(task.get("cmap_abs_rel", "magma"))
 
     # Per-patch stopping diagnostics from solver optinfo JSON.
     optinfo_path = sol_path.with_name(f"{sol_path.stem}_optinfo.json")
@@ -1272,31 +1244,6 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     total_pixels = gt.size
     dry_fp_rate = (float(np.sum(fp)) / float(total_pixels)) if total_pixels > 0 else None
     dry_fn_rate = (float(np.sum(fn)) / float(total_pixels)) if total_pixels > 0 else None
-    fp_fn_by_threshold: List[Dict[str, Any]] = []
-    for thr_i in fp_fn_thresholds:
-        gt_wet_i = gt >= float(thr_i)
-        pred_wet_i = pred >= float(thr_i)
-        fp_i = np.logical_and(pred_wet_i, ~gt_wet_i)
-        fn_i = np.logical_and(~pred_wet_i, gt_wet_i)
-        n_all_i = int(gt.size)
-        n_wet_i = int(np.sum(gt_wet_i))
-        n_dry_i = int(n_all_i - n_wet_i)
-        fp_count_i = int(np.sum(fp_i))
-        fn_count_i = int(np.sum(fn_i))
-        fp_fn_by_threshold.append(
-            dict(
-                threshold_mmph=float(thr_i),
-                fp_count=fp_count_i,
-                fn_count=fn_count_i,
-                n_pixels=n_all_i,
-                n_wet=n_wet_i,
-                n_dry=n_dry_i,
-                fp_rate_all=(float(fp_count_i) / float(n_all_i)) if n_all_i > 0 else None,
-                fn_rate_all=(float(fn_count_i) / float(n_all_i)) if n_all_i > 0 else None,
-                fp_rate_dry=(float(fp_count_i) / float(n_dry_i)) if n_dry_i > 0 else None,
-                fn_rate_wet=(float(fn_count_i) / float(n_wet_i)) if n_wet_i > 0 else None,
-            )
-        )
 
     # coverage map + bins
     est = load_est_payload(est_path)
@@ -1335,6 +1282,55 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     signed_full[~rainy] = pred[~rainy] - gt[~rainy]
     abs_full[~rainy] = np.abs(signed_full[~rainy])
     abs_rae_full[~rainy] = abs_mmph_full[~rainy] / denom[~rainy]
+
+    if patch_plots_enabled and patch_plot_dir is not None:
+        rel_full = np.full_like(gt, np.nan, dtype=np.float64)
+        if np.any(rainy):
+            rel_full[rainy] = (gt[rainy] - pred[rainy]) / np.where(gt[rainy] == 0.0, 1.0, gt[rainy])
+        abs_rel_full = np.abs(rel_full)
+        diff_full = pred - gt
+        abs_diff_full = np.abs(diff_full)
+
+        # Per-patch visualization scales.
+        finite_gt_sol = np.concatenate([gt[np.isfinite(gt)], pred[np.isfinite(pred)]])
+        rmax = float(np.max(finite_gt_sol)) if finite_gt_sol.size > 0 else 1.0
+        rmax = max(rmax, 1e-9)
+        rel_max = float(np.nanmax(np.abs(rel_full))) if np.any(np.isfinite(rel_full)) else 1.0
+        rel_abs_max = float(np.nanmax(abs_rel_full)) if np.any(np.isfinite(abs_rel_full)) else 1.0
+        dmax = float(np.nanmax(np.abs(diff_full[~rainy]))) if np.any(~rainy) else 1.0
+        rel_max = max(rel_max, 1e-9)
+        rel_abs_max = max(rel_abs_max, 1e-9)
+        dmax = max(dmax, 1e-9)
+
+        rainy_png = patch_plot_dir / f"{safe_path_token(key)}_rainy.png"
+        save_png_2x2(
+            rainy_png,
+            mask_to_nan(gt, rainy),
+            mask_to_nan(pred, rainy),
+            mask_to_nan(rel_full, rainy),
+            mask_to_nan(abs_rel_full, rainy),
+            titles=("GT (rainy)", "SOL (rainy)", "(GT-SOL)/GT", "|GT-SOL|/GT"),
+            suptitle=f"{key} | rainy: GT>= {thr} mm/h",
+            cmaps=(cmap_gt, cmap_sol, cmap_rel, cmap_abs_rel),
+            vlims=((0.0, rmax), (0.0, rmax), (-rel_max, rel_max), (0.0, rel_abs_max)),
+            dpi=plot_dpi,
+            show=plot_show,
+        )
+
+        nonrainy_png = patch_plot_dir / f"{safe_path_token(key)}_nonrainy.png"
+        save_png_2x2(
+            nonrainy_png,
+            mask_to_nan(gt, ~rainy),
+            mask_to_nan(pred, ~rainy),
+            mask_to_nan(diff_full, ~rainy),
+            mask_to_nan(abs_diff_full, ~rainy),
+            titles=("GT (non-rainy)", "SOL (non-rainy)", "SOL-GT", "|SOL-GT|"),
+            suptitle=f"{key} | non-rainy: GT< {thr} mm/h",
+            cmaps=(cmap_gt, cmap_sol, cmap_diff, cmap_abs),
+            vlims=((0.0, rmax), (0.0, rmax), (-dmax, dmax), (0.0, rmax)),
+            dpi=plot_dpi,
+            show=plot_show,
+        )
 
     gtbin_counts_by_lab: Dict[str, int] = {}
     gtbin_rel_means_by_lab: Dict[str, Optional[float]] = {}
@@ -1581,7 +1577,6 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         stop_row=stop_row,
         dry_fp_rate=dry_fp_rate,
         dry_fn_rate=dry_fn_rate,
-        fp_fn_by_threshold=fp_fn_by_threshold,
         gtbin_counts=gtbin_counts_by_lab,
         gtbin_rel_means=gtbin_rel_means_by_lab,
         gtbin_abs_means=gtbin_abs_means_by_lab,
@@ -2037,6 +2032,52 @@ def plot_iqr_bars(out_png: Path, title: str,
     plt.close(fig)
 
 
+def mask_to_nan(arr: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    out = arr.astype(np.float32).copy()
+    out[~mask] = np.nan
+    return out
+
+
+def save_png_2x2(
+    out_png: Path,
+    a: np.ndarray,
+    b: np.ndarray,
+    c: np.ndarray,
+    d: np.ndarray,
+    *,
+    titles: Tuple[str, str, str, str],
+    suptitle: str,
+    cmaps: Tuple[str, str, str, str],
+    vlims: Tuple[
+        Tuple[float, float],
+        Tuple[float, float],
+        Tuple[float, float],
+        Tuple[float, float],
+    ],
+    dpi: int = 150,
+    show: bool = False,
+) -> None:
+    import matplotlib.pyplot as plt  # type: ignore
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10), dpi=dpi)
+    axs = axes.ravel()
+    arrays = [a, b, c, d]
+    for ax, arr, t, cmap, (vmin, vmax) in zip(axs, arrays, titles, cmaps, vlims):
+        im = ax.imshow(arr, cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.set_title(t)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    fig.suptitle(suptitle, fontsize=12)
+    fig.tight_layout(rect=(0, 0.02, 1, 0.96))
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png)
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
 def plot_ratio_iqr(
     out_png: Path,
     *,
@@ -2156,60 +2197,6 @@ def plot_fp_fn_summary(
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout(rect=(0, 0.04, 1, 1))
-    fig.savefig(out_png)
-    plt.close(fig)
-
-
-def plot_fp_fn_vs_threshold(
-    out_png: Path,
-    *,
-    title: str,
-    rows: List[Dict[str, Any]],
-    dpi: int = 150,
-) -> None:
-    import matplotlib.pyplot as plt  # type: ignore
-
-    if not rows:
-        return
-
-    by_solver: Dict[str, List[Dict[str, Any]]] = {}
-    for r in rows:
-        by_solver.setdefault(str(r["solver"]), []).append(r)
-
-    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.5), dpi=dpi, sharex=True)
-    ax_fp, ax_fn = axes
-
-    for solver, vals in sorted(by_solver.items()):
-        vals_sorted = sorted(vals, key=lambda x: float(x.get("threshold_mmph", 0.0)))
-        xs = np.array([float(v["threshold_mmph"]) for v in vals_sorted], dtype=np.float64)
-        fp = np.array([float(v.get("fp_rate_dry_mean", 0.0)) for v in vals_sorted], dtype=np.float64)
-        fn = np.array([float(v.get("fn_rate_wet_mean", 0.0)) for v in vals_sorted], dtype=np.float64)
-        ax_fp.plot(xs, fp, marker="o", linewidth=1.4, label=solver)
-        ax_fn.plot(xs, fn, marker="o", linewidth=1.4, label=solver)
-
-    ax_fp.set_title("False Positive Rate on dry GT pixels")
-    ax_fn.set_title("False Negative Rate on wet GT pixels")
-    ax_fp.set_ylabel("Rate")
-    ax_fn.set_ylabel("Rate")
-    for ax in (ax_fp, ax_fn):
-        ax.set_xlabel("Threshold (mm/h)")
-        ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
-        ax.set_ylim(bottom=0.0)
-
-    handles, labels = ax_fp.get_legend_handles_labels()
-    if handles:
-        fig.legend(handles, labels, loc="upper center", ncol=min(5, len(labels)))
-    fig.suptitle(title)
-    fig.text(
-        0.5,
-        0.01,
-        "Wet is the positive class. FPR=FP/GT_dry_count, FNR=FN/GT_wet_count.",
-        ha="center",
-        fontsize=8,
-    )
-
-    out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0, 0.04, 1, 0.92))
     fig.savefig(out_png)
     plt.close(fig)
 
@@ -2492,7 +2479,6 @@ def main() -> int:
 
     # params
     thr = float(deep_get(cfg, "rain.threshold_mmph", 1.0))
-    fp_fn_thresholds = parse_fp_fn_thresholds(cfg, default_threshold_mmph=thr)
     cov_bins_cfg = list(deep_get(cfg, "coverage.bins", [0,1,2,3,4,"5+"]))
     cov_exact, cov_ge = parse_coverage_bins(cov_bins_cfg)
 
@@ -2548,6 +2534,8 @@ def main() -> int:
         rainy_intervals.append((lo, hi, format_interval_label(lo, hi)))
 
     # plot scaling
+    show = bool(deep_get(cfg, "plots.show", False))
+    skip_patch_plots = bool(deep_get(cfg, "plots.skip_patch_plots", False))
     auto_y = bool(deep_get(cfg, "plots.automatic_vertical_scaling", True))
     y_scale = deep_get(cfg, "plots.vertical_scale", None)
     if not auto_y:
@@ -2560,6 +2548,12 @@ def main() -> int:
     else:
         y_max = None
     dpi = int(deep_get(cfg, "plots.dpi", 150))
+    cmap_gt = str(deep_get(cfg, "plots.cmap_gt", "viridis"))
+    cmap_sol = str(deep_get(cfg, "plots.cmap_sol", "viridis"))
+    cmap_diff = str(deep_get(cfg, "plots.cmap_diff", "seismic"))
+    cmap_abs = str(deep_get(cfg, "plots.cmap_abs_diff", "magma"))
+    cmap_rel = str(deep_get(cfg, "plots.cmap_rel", "seismic"))
+    cmap_abs_rel = str(deep_get(cfg, "plots.cmap_abs_rel", "magma"))
     bin_spacing = float(deep_get(cfg, "plots.bin_spacing", 1.35))
     prune_bins_enabled = bool(deep_get(cfg, "plots.prune_bins_enabled", False))
     prune_bins_zero_frac = float(deep_get(cfg, "plots.prune_bins_zero_frac", 0.5))
@@ -2591,7 +2585,6 @@ def main() -> int:
     }
     bin_counts_seen: set = set()
     dry_metrics: Dict[str, Dict[str, List[float]]] = {}
-    fp_fn_threshold_metrics: Dict[str, Dict[float, Dict[str, List[float]]]] = {}
 
     objective_gt_done: set = set()
     objective_vals: Dict[Tuple[float, float, float], Dict[str, Dict[str, float]]] = {}
@@ -2648,15 +2641,6 @@ def main() -> int:
         link_rows: List[Dict[str, Any]] = []
         link_metrics[label] = {}
         dry_metrics[label] = {"fp_rates": [], "fn_rates": []}
-        fp_fn_threshold_metrics[label] = {
-            float(t): {
-                "fp_rate_all": [],
-                "fn_rate_all": [],
-                "fp_rate_dry": [],
-                "fn_rate_wet": [],
-            }
-            for t in fp_fn_thresholds
-        }
         gtbin_rel_patch_means[label] = {lab: [] for _, _, lab in rainy_intervals}
         gtbin_abs_patch_means[label] = {lab: [] for _, _, lab in rainy_intervals}
 
@@ -2670,6 +2654,7 @@ def main() -> int:
         if rae_enabled:
             rae_hist_data = {k: {lab: [] for lab in dist_labels} for k in k_values}
         solver_j_behavior_dir = img_dir / "j_behavior" / safe_path_token(name)
+        solver_patch_map_dir = img_dir / "patch_error_maps" / safe_path_token(label)
 
         # match patches by keys present in both GT and solver
         keys = sorted(set(gt_by_key.keys()) & set(sol_by_key.keys()))
@@ -2704,7 +2689,6 @@ def main() -> int:
                 gt_key_pref=list(gt_key_pref),
                 sol_key_pref=list(sol_key_pref),
                 thr=thr,
-                fp_fn_thresholds=list(fp_fn_thresholds),
                 cov_exact=list(cov_exact),
                 cov_ge=cov_ge,
                 k_values=list(k_values),
@@ -2727,6 +2711,16 @@ def main() -> int:
                 ref_eval_eta=float(ref_eval_eta),
                 ref_eval_eps=float(ref_eval_eps),
                 include_rae_hist=(rae_hist_data is not None and key in hist_key_set),
+                patch_plots_enabled=(not skip_patch_plots),
+                patch_plot_dir=str(solver_patch_map_dir),
+                plot_show=show,
+                plot_dpi=dpi,
+                cmap_gt=cmap_gt,
+                cmap_sol=cmap_sol,
+                cmap_diff=cmap_diff,
+                cmap_abs_diff=cmap_abs,
+                cmap_rel=cmap_rel,
+                cmap_abs_rel=cmap_abs_rel,
             ))
 
         patch_results: List[Dict[str, Any]] = []
@@ -2755,16 +2749,6 @@ def main() -> int:
                 dry_metrics[label]["fp_rates"].append(float(fp_rate))
             if fn_rate is not None:
                 dry_metrics[label]["fn_rates"].append(float(fn_rate))
-            for row_thr in (res.get("fp_fn_by_threshold", []) or []):
-                t = float(row_thr.get("threshold_mmph", thr))
-                bucket = fp_fn_threshold_metrics[label].setdefault(
-                    t,
-                    {"fp_rate_all": [], "fn_rate_all": [], "fp_rate_dry": [], "fn_rate_wet": []},
-                )
-                for k_metric in ("fp_rate_all", "fn_rate_all", "fp_rate_dry", "fn_rate_wet"):
-                    v_metric = row_thr.get(k_metric, None)
-                    if v_metric is not None:
-                        bucket[k_metric].append(float(v_metric))
 
             if rainy_bins_enabled:
                 gt_counts = res.get("gtbin_counts", {}) or {}
@@ -3160,42 +3144,6 @@ def main() -> int:
             img_dir / "dry_fp_fn_summary.png",
             title="Dry-classification FP/FN rates (mean ± std across patches)",
             rows=dry_rows,
-            dpi=dpi,
-        )
-
-    if fp_fn_threshold_metrics:
-        fpfn_rows: List[Dict[str, Any]] = []
-        for label in sorted(fp_fn_threshold_metrics.keys()):
-            by_thr = fp_fn_threshold_metrics[label]
-            for thr_i in sorted(by_thr.keys()):
-                vals = by_thr[thr_i]
-                fp_all = np.array(vals.get("fp_rate_all", []), dtype=np.float64)
-                fn_all = np.array(vals.get("fn_rate_all", []), dtype=np.float64)
-                fp_dry = np.array(vals.get("fp_rate_dry", []), dtype=np.float64)
-                fn_wet = np.array(vals.get("fn_rate_wet", []), dtype=np.float64)
-                fpfn_rows.append(
-                    dict(
-                        solver=label,
-                        threshold_mmph=float(thr_i),
-                        positive_definition="wet (gt >= threshold)",
-                        fp_definition="pred wet & GT dry",
-                        fn_definition="pred dry & GT wet",
-                        fp_rate_all_mean=(float(np.mean(fp_all)) if fp_all.size else 0.0),
-                        fp_rate_all_std=(float(np.std(fp_all, ddof=0)) if fp_all.size else 0.0),
-                        fn_rate_all_mean=(float(np.mean(fn_all)) if fn_all.size else 0.0),
-                        fn_rate_all_std=(float(np.std(fn_all, ddof=0)) if fn_all.size else 0.0),
-                        fp_rate_dry_mean=(float(np.mean(fp_dry)) if fp_dry.size else 0.0),
-                        fp_rate_dry_std=(float(np.std(fp_dry, ddof=0)) if fp_dry.size else 0.0),
-                        fn_rate_wet_mean=(float(np.mean(fn_wet)) if fn_wet.size else 0.0),
-                        fn_rate_wet_std=(float(np.std(fn_wet, ddof=0)) if fn_wet.size else 0.0),
-                    )
-                )
-        sheets["FPFN_ByThreshold"] = fpfn_rows
-        sheet_order.append("FPFN_ByThreshold")
-        plot_fp_fn_vs_threshold(
-            img_dir / "fp_fn_vs_threshold.png",
-            title="Wet-class FP/FN rates vs threshold",
-            rows=fpfn_rows,
             dpi=dpi,
         )
 
