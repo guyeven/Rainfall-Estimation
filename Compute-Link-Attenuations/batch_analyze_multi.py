@@ -132,6 +132,22 @@ def objective_scaling_from_meta(meta: Dict[str, float]) -> str:
     return "N/A_BASELINE" if len(meta) == 0 else "UNKNOWN"
 
 
+def objective_importance_from_solver_cfg(solver_cfg: Dict[str, Any]) -> Dict[str, float]:
+    """
+    Read optional per-solver objective importance coefficients from analyze config.
+    Missing values default to 1.0.
+    """
+    oi = solver_cfg.get("objective_importance", {}) if isinstance(solver_cfg, dict) else {}
+    if not isinstance(oi, dict):
+        oi = {}
+    return {
+        "atten": float(oi.get("atten", 1.0)),
+        "j_1d": float(oi.get("j_1d", 1.0)),
+        "j_2d": float(oi.get("j_2d", 1.0)),
+        "total": float(oi.get("total", 1.0)),
+    }
+
+
 def solver_objective_formula_text(*, scaling: str, meta: Dict[str, float]) -> str:
     if scaling == "N/A_BASELINE":
         return "N/A (baseline interpolation; no optimization objective)."
@@ -513,6 +529,52 @@ def point_to_segment_dist(px: np.ndarray, py: np.ndarray,
     dy = py - projy
     return np.sqrt(dx * dx + dy * dy)
 
+
+
+def compute_link_kth_neighbor_distances(
+    est: dict,
+    k_values: Sequence[int],
+) -> Dict[int, np.ndarray]:
+    """
+    For each link, compute distance (meters) to its k-th closest other link
+    using exact segment-to-segment distance.
+    """
+    links = est.get("links", []) or []
+    n_links = int(len(links))
+    ks = sorted({int(k) for k in k_values if int(k) >= 1})
+    if not ks:
+        return {}
+    if n_links == 0:
+        return {k: np.zeros((0,), dtype=np.float64) for k in ks}
+
+    x0 = np.asarray([float(L["x0_m"]) for L in links], dtype=np.float64)
+    y0 = np.asarray([float(L["y0_m"]) for L in links], dtype=np.float64)
+    x1 = np.asarray([float(L["x1_m"]) for L in links], dtype=np.float64)
+    y1 = np.asarray([float(L["y1_m"]) for L in links], dtype=np.float64)
+
+    out = {k: np.full((n_links,), np.inf, dtype=np.float64) for k in ks}
+
+    for i in range(n_links):
+        ax0 = float(x0[i]); ay0 = float(y0[i]); ax1 = float(x1[i]); ay1 = float(y1[i])
+        ax0v = np.full_like(x0, ax0)
+        ay0v = np.full_like(y0, ay0)
+        ax1v = np.full_like(x1, ax1)
+        ay1v = np.full_like(y1, ay1)
+
+        d1 = point_to_segment_dist(ax0, ay0, x0, y0, x1, y1)
+        d2 = point_to_segment_dist(ax1, ay1, x0, y0, x1, y1)
+        d3 = point_to_segment_dist(x0, y0, ax0v, ay0v, ax1v, ay1v)
+        d4 = point_to_segment_dist(x1, y1, ax0v, ay0v, ax1v, ay1v)
+        d = np.minimum(np.minimum(d1, d2), np.minimum(d3, d4))
+        d[i] = np.inf
+
+        for k in ks:
+            if (n_links - 1) < k:
+                out[k][i] = np.inf
+            else:
+                out[k][i] = float(np.partition(d, k - 1)[k - 1])
+
+    return out
 
 
 def compute_dk_maps_sampled_points(
@@ -1200,6 +1262,8 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     cov_ge = task["cov_ge"]
     k_values = [int(k) for k in task["k_values"]]
     dist_bins = list(task["dist_bins"])
+    jatten_k_values = [int(k) for k in task.get("jatten_k_values", k_values)]
+    jatten_dist_bins = list(task.get("jatten_dist_bins", dist_bins))
     dist_method = str(task["dist_method"])
     sample_spacing_m = float(task["sample_spacing_m"])
     k_query_samples = int(task["k_query_samples"])
@@ -1539,16 +1603,47 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     dist_rows_by_k: Dict[int, List[Dict[str, Any]]] = {k: [] for k in k_values}
     overall_rows: List[Dict[str, Any]] = []
     bin_counts_entries: List[Tuple[int, str, str, int]] = []
+    bin_counts_all_entries: List[Tuple[int, str, int]] = []
     medians_r_entries: List[Tuple[int, str, float]] = []
     medians_n_entries: List[Tuple[int, str, float]] = []
+    jatten_medians_entries: List[Tuple[int, str, float]] = []
+    jatten_link_bin_counts_entries: List[Tuple[int, str, int]] = []
     p90s_r_entries: List[Tuple[int, str, float]] = []
     p90s_n_entries: List[Tuple[int, str, float]] = []
     rae_hist_entries: List[Tuple[int, str, List[float]]] = []
+
+    # Link-based terms used for LinkStats and J_atten-by-link-distance plots.
+    try:
+        A_obs, A_hat, L_km, valid, ge10 = compute_link_terms(est, pred)
+        link_dists_by_k = compute_link_kth_neighbor_distances(est, jatten_k_values)
+    except Exception as e:
+        raise RuntimeError(f"Failed to compute link stats for {key} ({label}): {e}") from e
+
+    n_valid_links = int(np.sum(valid)) if valid.size > 0 else 0
+    den_valid_links = float(max(1, n_valid_links))
+    jatten_link_contrib = np.zeros_like(L_km, dtype=np.float64)
+    valid_jatten = valid & np.isfinite(L_km) & (L_km > 0.0)
+    if np.any(valid_jatten):
+        diff = A_hat[valid_jatten] - A_obs[valid_jatten]
+        jatten_link_contrib[valid_jatten] = ((diff * diff) / L_km[valid_jatten]) / den_valid_links
+
+    for k in jatten_k_values:
+        link_d = np.asarray(link_dists_by_k.get(k, np.full((len(L_km),), np.inf, dtype=np.float64)), dtype=np.float64)
+        link_labels = assign_bin_labels(link_d, jatten_dist_bins)
+        for _, _, bin_lab in jatten_dist_bins:
+            m = valid_jatten & (link_labels == bin_lab)
+            cnt = int(np.sum(m))
+            jatten_link_bin_counts_entries.append((k, bin_lab, cnt))
+            if cnt > 0:
+                jatten_medians_entries.append((k, bin_lab, float(np.median(jatten_link_contrib[m]))))
 
     for k in k_values:
         d_map = dk_maps[k]
         d_vals = d_map.ravel()
         d_labels = assign_bin_labels(d_vals, dist_bins).reshape(gt.shape)
+        for _, _, bin_lab in dist_bins:
+            gmask_all = (d_labels == bin_lab)
+            bin_counts_all_entries.append((k, bin_lab, int(np.sum(gmask_all))))
         for mask_name, mask in (("rainy", rainy), ("nonrainy", ~rainy)):
             for _, _, bin_lab in dist_bins:
                 gmask = mask & (d_labels == bin_lab)
@@ -1589,24 +1684,20 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
             **s,
         ))
 
-    try:
-        A_obs, A_hat, L_km, valid, ge10 = compute_link_terms(est, pred)
-        attn_all, J1_all, n_valid = attn_l1_and_J1(A_obs, A_hat, L_km, valid)
-        attn_10, J1_10, n_10 = attn_l1_and_J1(A_obs, A_hat, L_km, ge10)
-        max_abs_diff, p95_abs_diff, p99_abs_diff = abs_diff_summary(A_obs, A_hat, valid)
-        J1_len1_all = j1_len1(A_obs, A_hat, L_km, valid)
-        J1_len1_10 = j1_len1(A_obs, A_hat, L_km, ge10)
-        J_atten_all = float(J1_len1_all / float(n_valid)) if n_valid > 0 else 0.0
-        J_atten_10 = float(J1_len1_10 / float(n_10)) if n_10 > 0 else 0.0
-        denom_L = float(np.sum(np.abs(L_km[valid])))
-        if denom_L > 0:
-            E_all = float(np.sum(A_obs[valid] - A_hat[valid]) / denom_L)
-            E2_all = float(np.sum((A_obs[valid] - A_hat[valid]) ** 2) / denom_L)
-        else:
-            E_all = 0.0
-            E2_all = 0.0
-    except Exception as e:
-        raise RuntimeError(f"Failed to compute link stats for {key} ({label}): {e}") from e
+    attn_all, J1_all, n_valid = attn_l1_and_J1(A_obs, A_hat, L_km, valid)
+    attn_10, J1_10, n_10 = attn_l1_and_J1(A_obs, A_hat, L_km, ge10)
+    max_abs_diff, p95_abs_diff, p99_abs_diff = abs_diff_summary(A_obs, A_hat, valid)
+    J1_len1_all = j1_len1(A_obs, A_hat, L_km, valid)
+    J1_len1_10 = j1_len1(A_obs, A_hat, L_km, ge10)
+    J_atten_all = float(J1_len1_all / float(n_valid)) if n_valid > 0 else 0.0
+    J_atten_10 = float(J1_len1_10 / float(n_10)) if n_10 > 0 else 0.0
+    denom_L = float(np.sum(np.abs(L_km[valid])))
+    if denom_L > 0:
+        E_all = float(np.sum(A_obs[valid] - A_hat[valid]) / denom_L)
+        E2_all = float(np.sum((A_obs[valid] - A_hat[valid]) ** 2) / denom_L)
+    else:
+        E_all = 0.0
+        E2_all = 0.0
 
     link_row = dict(
         patch_key=key,
@@ -1652,8 +1743,11 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         dist_rows_by_k=dist_rows_by_k,
         overall_rows=overall_rows,
         bin_counts_entries=bin_counts_entries,
+        bin_counts_all_entries=bin_counts_all_entries,
         medians_r_entries=medians_r_entries,
         medians_n_entries=medians_n_entries,
+        jatten_medians_entries=jatten_medians_entries,
+        jatten_link_bin_counts_entries=jatten_link_bin_counts_entries,
         p90s_r_entries=p90s_r_entries,
         p90s_n_entries=p90s_n_entries,
         rae_hist_entries=rae_hist_entries,
@@ -1764,6 +1858,54 @@ def abs_diff_summary(A_obs: np.ndarray, A_hat: np.ndarray, mask: np.ndarray) -> 
         float(np.percentile(abs_diff, 95)),
         float(np.percentile(abs_diff, 99)),
     )
+
+
+def jatten_attributed_pixel_map(
+    est: dict,
+    A_obs: np.ndarray,
+    A_hat: np.ndarray,
+    L_km: np.ndarray,
+    valid: np.ndarray,
+) -> np.ndarray:
+    """
+    Build per-pixel attributed J_atten contribution map.
+
+    Link contribution (normalized J_atten convention):
+      c_l = ((A_hat_l - A_obs_l)^2 / L_l) / #valid_links
+    Pixel attribution (for each segment s on link l):
+      c_l * (ds_s / L_l)
+    Summed over links crossing that pixel.
+    """
+    header = est["header"]
+    H = int(header["H"])
+    W = int(header["W"])
+    out = np.zeros((H, W), dtype=np.float64)
+    segs_by_link = est.get("segments_by_link", {}) or {}
+
+    n_links = int(min(len(A_obs), len(A_hat), len(L_km), len(valid)))
+    n_valid = int(np.sum(valid[:n_links])) if n_links > 0 else 0
+    den_valid = float(max(1, n_valid))
+    for li in range(n_links):
+        if not bool(valid[li]):
+            continue
+        L = float(L_km[li])
+        if L <= 0.0 or (not np.isfinite(L)):
+            continue
+        diff = float(A_hat[li] - A_obs[li])
+        c_link = ((diff * diff) / L) / den_valid
+        segs = segs_by_link.get(str(li), [])
+        if not segs:
+            continue
+        for s in segs:
+            i = int(s.get("i", -1))
+            j = int(s.get("j", -1))
+            if i < 0 or i >= H or j < 0 or j >= W:
+                continue
+            ds_km = float(s.get("ds_m", 0.0)) / 1000.0
+            if ds_km <= 0.0 or (not np.isfinite(ds_km)):
+                continue
+            out[i, j] += c_link * (ds_km / L)
+    return out
 
 
 def j1_len1(A_obs: np.ndarray, A_hat: np.ndarray, L_km: np.ndarray, mask: np.ndarray) -> float:
@@ -1993,7 +2135,7 @@ def compute_p90_profile(per_patch_p90s: Dict[str, Dict[str, List[float]]],
                         dist_labels: List[str]) -> Dict[str, Dict[str, Tuple[float,float,float]]]:
     """
     per_patch_p90s[method][bin_label] = list of p90s (one per patch that had pixels in that bin)
-    returns summary[method][bin_label] = (p25, p50, p90)
+    returns summary[method][bin_label] = (p25, p50, p75)
     """
     out: Dict[str, Dict[str, Tuple[float,float,float]]] = {}
     for method, by_bin in per_patch_p90s.items():
@@ -2006,7 +2148,7 @@ def compute_p90_profile(per_patch_p90s: Dict[str, Dict[str, List[float]]],
                 out[method][lab] = (
                     float(np.percentile(vals, 25)),
                     float(np.percentile(vals, 50)),
-                    float(np.percentile(vals, 90)),
+                    float(np.percentile(vals, 75)),
                 )
     return out
 
@@ -2041,7 +2183,10 @@ def plot_iqr_bars(out_png: Path, title: str,
                   method_order: List[str],
                   *, y_max: Optional[float] = None, dpi: int = 150, bin_spacing: float = 1.0,
                   tick_labels: Optional[List[str]] = None,
-                  y_label: Optional[str] = None):
+                  x_label: Optional[str] = None,
+                  y_label: Optional[str] = None,
+                  footnote: Optional[str] = None,
+                  show_iqr: bool = True):
     import matplotlib.pyplot as plt  # type: ignore
 
     n_bins = len(dist_labels)
@@ -2061,12 +2206,11 @@ def plot_iqr_bars(out_png: Path, title: str,
         p50 = [summary[m][lab][1] for lab in dist_labels]
         p75 = [summary[m][lab][2] for lab in dist_labels]
 
-        # vertical IQR bars
-        for bi in range(n_bins):
-            ax.vlines(x[bi] + off, p25[bi], p75[bi], linewidth=2)
-            # dotted caps
-            ax.hlines(p25[bi], x[bi] + off - width*0.25, x[bi] + off + width*0.25, linestyles="dotted", linewidth=1)
-            ax.hlines(p75[bi], x[bi] + off - width*0.25, x[bi] + off + width*0.25, linestyles="dotted", linewidth=1)
+        if show_iqr:
+            for bi in range(n_bins):
+                ax.vlines(x[bi] + off, p25[bi], p75[bi], linewidth=2)
+                ax.hlines(p25[bi], x[bi] + off - width*0.25, x[bi] + off + width*0.25, linestyles="dotted", linewidth=1)
+                ax.hlines(p75[bi], x[bi] + off - width*0.25, x[bi] + off + width*0.25, linestyles="dotted", linewidth=1)
         # medians as points (no connecting line)
         ax.plot(x + off, p50, marker="o", linestyle="None", label=m)
 
@@ -2077,7 +2221,7 @@ def plot_iqr_bars(out_png: Path, title: str,
     if has_multiline:
         ax.set_xticklabels(tick_labels, rotation=20, ha="right", fontsize=8)
         fig.subplots_adjust(bottom=0.28)
-        ax.set_xlabel("Distance bin (m)\nSecond line: avg pixels [avg-std, avg+std]")
+        ax.set_xlabel(x_label or "Distance bin (m)\nSecond line: avg pixels [avg-std, avg+std]")
     else:
         ax.set_xticklabels(tick_labels, rotation=0)
     ax.set_ylabel(y_label or "IQR of per-patch median error")
@@ -2090,8 +2234,12 @@ def plot_iqr_bars(out_png: Path, title: str,
     else:
         ax.set_ylim(bottom=0)
 
+    if footnote:
+        fig.text(0.5, 0.01, str(footnote), ha="center", fontsize=8)
+        fig.tight_layout(rect=(0, 0.05, 1, 1))
+    else:
+        fig.tight_layout()
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
     fig.savefig(out_png)
     plt.close(fig)
 
@@ -2140,6 +2288,146 @@ def save_png_2x2(
     if show:
         plt.show()
     plt.close(fig)
+
+
+def pick_biggest_est_patch(est_by_key: Dict[str, Path]) -> Tuple[Optional[str], Optional[Path], float]:
+    """
+    Return (patch_key, est_path, area_km2) for the largest est patch by physical area.
+    Area = H * W * pixel_size_m^2.
+    """
+    best_key: Optional[str] = None
+    best_path: Optional[Path] = None
+    best_area_km2 = -1.0
+    for key, path in est_by_key.items():
+        try:
+            est = load_est_payload(path)
+            hdr = est.get("header", {})
+            H = int(hdr["H"])
+            W = int(hdr["W"])
+            pix = float(hdr.get("pixel_size_m", 125.0))
+            area_km2 = float(H) * float(W) * float(pix) * float(pix) / 1_000_000.0
+        except Exception:
+            continue
+        if area_km2 > best_area_km2:
+            best_area_km2 = area_km2
+            best_key = key
+            best_path = path
+    if best_key is None or best_path is None:
+        return None, None, 0.0
+    return best_key, best_path, float(best_area_km2)
+
+
+def save_biggest_patch_distance_bin_maps(
+    *,
+    est_path: Path,
+    patch_key: str,
+    out_dir: Path,
+    bin_edges_m: Sequence[float],
+    dist_method: str,
+    sample_spacing_m: float,
+    k_query_samples: int,
+    chunk_size: int,
+    max_samples_per_link: int,
+    max_candidates: int,
+    dpi: int = 150,
+    show: bool = False,
+) -> None:
+    """
+    Produce 2 images for the largest patch:
+      - k=2 distance-to-kth-closest-link bins + link overlay
+      - k=3 distance-to-kth-closest-link bins + link overlay
+    """
+    import matplotlib.pyplot as plt  # type: ignore
+    from matplotlib.colors import ListedColormap  # type: ignore
+
+    est = load_est_payload(est_path)
+    hdr = est["header"]
+    H = int(hdr["H"])
+    W = int(hdr["W"])
+    pix = float(hdr.get("pixel_size_m", 125.0))
+    area_km2 = float(H) * float(W) * float(pix) * float(pix) / 1_000_000.0
+
+    k_targets = [2, 3]
+    if dist_method == "sampled_points":
+        dk_maps, _ = compute_dk_maps_sampled_points(
+            est,
+            k_targets,
+            sample_spacing_m=sample_spacing_m,
+            k_query_samples=k_query_samples,
+            chunk_size=chunk_size,
+            max_samples_per_link=max_samples_per_link,
+            debug_label=patch_key,
+        )
+    else:
+        dk_maps, _ = compute_dk_maps(est, k_targets, max_candidates=max_candidates)
+
+    bins = parse_bins(list(bin_edges_m))
+    labels = [b[2] for b in bins]
+    edges = np.asarray(list(bin_edges_m), dtype=np.float64)
+    if edges.size > 0:
+        edges = np.unique(edges[np.isfinite(edges)])
+    n_bins = len(labels)
+
+    # Discrete colormap (plus masked gray for inf/invalid).
+    cmap_vals = plt.cm.plasma(np.linspace(0.08, 0.95, max(1, n_bins)))
+    cmap = ListedColormap(cmap_vals)
+    cmap.set_bad(color="#d9d9d9")
+
+    # Link segments in local patch frame.
+    links = est.get("links", []) or []
+    x0 = np.asarray([float(L["x0_m"]) for L in links], dtype=np.float64) if links else np.zeros(0, dtype=np.float64)
+    y0 = np.asarray([float(L["y0_m"]) for L in links], dtype=np.float64) if links else np.zeros(0, dtype=np.float64)
+    x1 = np.asarray([float(L["x1_m"]) for L in links], dtype=np.float64) if links else np.zeros(0, dtype=np.float64)
+    y1 = np.asarray([float(L["y1_m"]) for L in links], dtype=np.float64) if links else np.zeros(0, dtype=np.float64)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    x_span_km = (float(W) * pix) / 1000.0
+    y_span_km = (float(H) * pix) / 1000.0
+
+    for k in k_targets:
+        d_map = np.asarray(dk_maps.get(k, np.full((H, W), np.inf, dtype=np.float64)), dtype=np.float64)
+        finite = np.isfinite(d_map)
+        if edges.size == 0:
+            bin_idx = np.zeros_like(d_map, dtype=np.int32)
+        else:
+            bin_idx = np.digitize(d_map, edges, right=True).astype(np.int32)
+        bin_plot = np.ma.masked_where(~finite, bin_idx)
+
+        fig, ax = plt.subplots(figsize=(9.0, 7.2), dpi=dpi)
+        im = ax.imshow(
+            bin_plot,
+            cmap=cmap,
+            vmin=-0.5,
+            vmax=max(0, n_bins - 1) + 0.5,
+            origin="upper",
+            extent=(0.0, float(W) * pix, float(H) * pix, 0.0),
+            interpolation="nearest",
+            aspect="equal",
+        )
+        if x0.size > 0:
+            for i in range(x0.size):
+                ax.plot([x0[i], x1[i]], [y0[i], y1[i]], color="black", linewidth=0.55, alpha=0.55)
+
+        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_ticks(np.arange(n_bins))
+        cbar.set_ticklabels(labels)
+        cbar.ax.set_ylabel(f"d{k} distance bin (m)")
+
+        ax.set_title(
+            f"Largest patch distance bins (k={k}) with links\n"
+            f"{patch_key} | size={x_span_km:.1f}x{y_span_km:.1f} km | area={area_km2:.1f} km^2 | links={x0.size}"
+        )
+        ax.set_xlabel("x_local (m)")
+        ax.set_ylabel("y_local (m)")
+        ax.grid(False)
+
+        out_png = out_dir / f"largest_patch_distance_bins_k{k}.png"
+        fig.tight_layout()
+        fig.savefig(out_png, dpi=dpi)
+        if show:
+            plt.show()
+        plt.close(fig)
+        print(f"[largest_patch_bins] wrote {out_png}")
 
 
 def plot_ratio_iqr(
@@ -2273,6 +2561,7 @@ def plot_fp_fn_vs_threshold(
     dpi: int = 150,
 ) -> None:
     import matplotlib.pyplot as plt  # type: ignore
+    from matplotlib.ticker import MultipleLocator, FormatStrFormatter  # type: ignore
 
     if not rows:
         return
@@ -2281,40 +2570,49 @@ def plot_fp_fn_vs_threshold(
     for r in rows:
         by_solver.setdefault(str(r["solver"]), []).append(r)
 
-    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.5), dpi=dpi, sharex=True)
-    ax_fp, ax_fn = axes
+    fig, ax = plt.subplots(figsize=(9.8, 5.2), dpi=dpi)
 
     for solver, vals in sorted(by_solver.items()):
         vals_sorted = sorted(vals, key=lambda x: float(x.get("threshold_mmph", 0.0)))
         xs = np.array([float(v["threshold_mmph"]) for v in vals_sorted], dtype=np.float64)
         fp = np.array([float(v.get("fp_rate_dry_mean", 0.0)) for v in vals_sorted], dtype=np.float64)
         fn = np.array([float(v.get("fn_rate_wet_mean", 0.0)) for v in vals_sorted], dtype=np.float64)
-        ax_fp.plot(xs, fp, marker="o", linewidth=1.4, label=solver)
-        ax_fn.plot(xs, fn, marker="o", linewidth=1.4, label=solver)
+        fp_std = np.array([float(v.get("fp_rate_dry_std", 0.0)) for v in vals_sorted], dtype=np.float64)
+        fn_std = np.array([float(v.get("fn_rate_wet_std", 0.0)) for v in vals_sorted], dtype=np.float64)
+        fp_lo = np.clip(fp - fp_std, 0.0, 1.0)
+        fp_hi = np.clip(fp + fp_std, 0.0, 1.0)
+        fn_lo = np.clip(fn - fn_std, 0.0, 1.0)
+        fn_hi = np.clip(fn + fn_std, 0.0, 1.0)
+        marker = "o" if xs.size == 1 else None
+        plot_kwargs = dict(linewidth=1.8, marker=marker, markersize=6, markeredgewidth=1.0, zorder=3, clip_on=False)
+        (l_fp,) = ax.plot(xs, fp, linestyle="-", label=f"{solver} FPR", **plot_kwargs)
+        (l_fn,) = ax.plot(xs, fn, linestyle="--", label=f"{solver} FNR", **plot_kwargs)
+        ax.fill_between(xs, fp_lo, fp_hi, color=l_fp.get_color(), alpha=0.12, linewidth=0.0)
+        ax.fill_between(xs, fn_lo, fn_hi, color=l_fn.get_color(), alpha=0.08, linewidth=0.0)
 
-    ax_fp.set_title("False Positive Rate on dry GT pixels")
-    ax_fn.set_title("False Negative Rate on wet GT pixels")
-    ax_fp.set_ylabel("Rate")
-    ax_fn.set_ylabel("Rate")
-    for ax in (ax_fp, ax_fn):
-        ax.set_xlabel("Threshold (mm/h)")
-        ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
-        ax.set_ylim(bottom=0.0)
+    ax.set_xlabel("Threshold (mm/h)")
+    ax.set_ylabel("Rate")
+    ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
+    ax.set_ylim(bottom=-0.02)
+    ax.xaxis.set_major_locator(MultipleLocator(0.1))
+    ax.xaxis.set_major_formatter(FormatStrFormatter("%.1f"))
+    ax.tick_params(axis="x", labelrotation=90, labelsize=7)
 
-    handles, labels = ax_fp.get_legend_handles_labels()
+    handles, labels = ax.get_legend_handles_labels()
     if handles:
-        fig.legend(handles, labels, loc="upper center", ncol=min(5, len(labels)))
+        ax.legend(loc="best", fontsize=8)
     fig.suptitle(title)
     fig.text(
         0.5,
         0.01,
-        "Wet is the positive class. FPR=FP/GT_dry_count, FNR=FN/GT_wet_count.",
+        "Wet is the positive class. Solid=FPR=FP/GT_dry_count; dashed=FNR=FN/GT_wet_count. "
+        "Shaded band shows mean±std across patches.",
         ha="center",
         fontsize=8,
     )
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0, 0.04, 1, 0.92))
+    fig.tight_layout(rect=(0, 0.04, 1, 0.95))
     fig.savefig(out_png)
     plt.close(fig)
 
@@ -2356,11 +2654,11 @@ def plot_j_behavior(
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(8.5, 4.8), dpi=dpi)
-    ax.plot(xs, y_total, marker="o", linewidth=1.8, label="J_native_total")
-    ax.plot(xs, y_atten, marker="o", linewidth=1.3, label="J_atten")
-    ax.plot(xs, y_1d, marker="o", linewidth=1.3, label="J_1d")
-    ax.plot(xs, y_total_term, marker="o", linewidth=1.3, label="J_total")
-    ax.plot(xs, y_2d, marker="o", linewidth=1.3, label="J_2d")
+    ax.plot(xs, y_total, marker="o", markersize=2.0, linewidth=1.0, label="J_weighted_sum (J_native_total)")
+    ax.plot(xs, y_atten, marker="o", markersize=2.0, linewidth=0.9, label="J_atten")
+    ax.plot(xs, y_1d, marker="o", markersize=2.0, linewidth=0.9, label="J_1d")
+    ax.plot(xs, y_total_term, marker="o", markersize=2.0, linewidth=0.9, label="J_total")
+    ax.plot(xs, y_2d, marker="o", markersize=2.0, linewidth=0.9, label="J_2d")
     ax.set_title(title)
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Value")
@@ -2371,18 +2669,23 @@ def plot_j_behavior(
     plt.close(fig)
 
 
-def build_bin_tick_labels(dist_labels: List[str], counts_by_bin: Dict[str, List[int]]) -> List[str]:
+def build_bin_tick_labels(
+    dist_labels: List[str],
+    counts_by_bin: Dict[str, List[int]],
+    *,
+    count_label: str = "px",
+) -> List[str]:
     out: List[str] = []
     for lab in dist_labels:
         vals = np.array(counts_by_bin.get(lab, []), dtype=np.float64)
         if vals.size == 0:
-            out.append(f"{lab}\npx avg=0 [0,0]")
+            out.append(f"{lab}\n{count_label} avg=0 [0,0]")
             continue
         avg = float(np.mean(vals))
         std = float(np.std(vals, ddof=0))
         lo = max(0.0, avg - std)
         hi = max(0.0, avg + std)
-        out.append(f"{lab}\npx avg={avg:.0f} [{lo:.0f},{hi:.0f}]")
+        out.append(f"{lab}\n{count_label} avg={avg:.0f} [{lo:.0f},{hi:.0f}]")
     return out
 
 
@@ -2609,6 +2912,13 @@ def main() -> int:
     bin_edges = list(deep_get(cfg, "distance.bin_edges_m", [125,375,750,1500,3125]))
     dist_bins = parse_bins(bin_edges)
     dist_labels = [b[2] for b in dist_bins]
+    jatten_k_values = list(deep_get(cfg, "jatten_link_distance.k_values", k_values))
+    jatten_k_values = sorted({int(k) for k in jatten_k_values if int(k) >= 1})
+    if not jatten_k_values:
+        jatten_k_values = list(k_values)
+    jatten_bin_edges = list(deep_get(cfg, "jatten_link_distance.bin_edges_m", bin_edges))
+    jatten_dist_bins = parse_bins(jatten_bin_edges)
+    jatten_dist_labels = [b[2] for b in jatten_dist_bins]
     max_candidates = int(deep_get(cfg, "distance.max_candidates", 64))
     dist_method = str(deep_get(cfg, "distance.method", "sampled_points")).strip().lower()
     sample_spacing_m = float(deep_get(cfg, "distance.sample_spacing_m", 250.0))
@@ -2636,7 +2946,7 @@ def main() -> int:
     ref_eval_eps = float(DEFAULT_REFERENCE_EPS)
 
     rae_cfg = deep_get(cfg, "rae_hist", {}) or {}
-    rae_enabled = bool(rae_cfg.get("enabled", False))
+    rae_enabled = bool(rae_cfg.get("enabled", False)) and bool(deep_get(cfg, "plots.enable_rae_histograms", True))
     rae_bins = int(rae_cfg.get("bins", 50))
     rae_max_patches = rae_cfg.get("max_patches", None)
     rae_out_subdir = str(rae_cfg.get("out_dir", "images/RAE_histograms"))
@@ -2689,6 +2999,30 @@ def main() -> int:
     est_jsons = list_json(est_input_dir, "est_input")
     est_by_key: Dict[str, Path] = {patch_key_from_filename(p.name): p for p in est_jsons}
 
+    # One-shot visualization for the largest patch in est_input_dir:
+    # links overlaid on d_k distance-bin map, for k=2 and k=3.
+    biggest_key, biggest_est_path, biggest_area_km2 = pick_biggest_est_patch(est_by_key)
+    if biggest_key is not None and biggest_est_path is not None:
+        largest_patch_dir = img_dir / "largest_patch_distance_bins"
+        save_biggest_patch_distance_bin_maps(
+            est_path=biggest_est_path,
+            patch_key=biggest_key,
+            out_dir=largest_patch_dir,
+            bin_edges_m=bin_edges,
+            dist_method=dist_method,
+            sample_spacing_m=sample_spacing_m,
+            k_query_samples=k_query_samples,
+            chunk_size=chunk_size,
+            max_samples_per_link=max_samples_per_link,
+            max_candidates=max_candidates,
+            dpi=dpi,
+            show=show,
+        )
+        print(
+            f"[largest_patch_bins] source patch={biggest_key} "
+            f"area_km2={biggest_area_km2:.2f} est={biggest_est_path}"
+        )
+
     # sheets data
     sheets: Dict[str, List[Dict[str, Any]]] = {}
     sheet_order: List[str] = []
@@ -2698,11 +3032,18 @@ def main() -> int:
     medians_nonrainy: Dict[int, Dict[str, Dict[str, List[float]]]] = {k: {} for k in k_values}
     p90s_rainy: Dict[int, Dict[str, Dict[str, List[float]]]] = {k: {} for k in k_values}
     p90s_nonrainy: Dict[int, Dict[str, Dict[str, List[float]]]] = {k: {} for k in k_values}
+    jatten_medians: Dict[int, Dict[str, Dict[str, List[float]]]] = {k: {} for k in jatten_k_values}
     bin_counts: Dict[int, Dict[str, Dict[str, List[int]]]] = {
         k: {"rainy": {lab: [] for lab in dist_labels}, "nonrainy": {lab: [] for lab in dist_labels}}
         for k in k_values
     }
+    bin_counts_all: Dict[int, Dict[str, List[int]]] = {k: {lab: [] for lab in dist_labels} for k in k_values}
+    jatten_link_bin_counts: Dict[int, Dict[str, List[int]]] = {
+        k: {lab: [] for lab in jatten_dist_labels} for k in jatten_k_values
+    }
     bin_counts_seen: set = set()
+    bin_counts_all_seen: set = set()
+    jatten_bin_counts_seen: set = set()
     dry_metrics: Dict[str, Dict[str, List[float]]] = {}
     fp_fn_threshold_metrics: Dict[str, Dict[float, Dict[str, List[float]]]] = {}
 
@@ -2739,6 +3080,7 @@ def main() -> int:
         scaling_meta = objective_scaling_from_meta(meta_sample)
         scaling = scaling_cfg if scaling_cfg != "UNKNOWN" else scaling_meta
         solver_effective_scaling_by_label[label] = scaling
+        oi_cfg = objective_importance_from_solver_cfg(solver_cfg_by_label.get(label, {}))
         module_name = solver_module_by_label.get(label, "")
         if not module_name:
             module_name = "(not provided in analyze config)"
@@ -2749,6 +3091,10 @@ def main() -> int:
             objective_scaling=scaling,
             objective_formula=solver_objective_formula_text(scaling=scaling, meta=meta_sample),
             settings_summary=summarize_solver_settings(meta_sample),
+            cfg_importance_atten=float(oi_cfg["atten"]),
+            cfg_importance_j_1d=float(oi_cfg["j_1d"]),
+            cfg_importance_j_2d=float(oi_cfg["j_2d"]),
+            cfg_importance_total=float(oi_cfg["total"]),
             sol_dir=str(sol_dir),
             sol_prefix=sol_prefix,
             sample_solution_npz=(str(sample_npz) if sample_npz is not None else None),
@@ -2778,6 +3124,8 @@ def main() -> int:
             medians_nonrainy[k][label] = {lab: [] for lab in dist_labels}
             p90s_rainy[k][label] = {lab: [] for lab in dist_labels}
             p90s_nonrainy[k][label] = {lab: [] for lab in dist_labels}
+        for k in jatten_k_values:
+            jatten_medians[k][label] = {lab: [] for lab in jatten_dist_labels}
 
         rae_hist_data: Optional[Dict[int, Dict[str, List[float]]]] = None
         if rae_enabled:
@@ -2823,6 +3171,8 @@ def main() -> int:
                 cov_ge=cov_ge,
                 k_values=list(k_values),
                 dist_bins=list(dist_bins),
+                jatten_k_values=list(jatten_k_values),
+                jatten_dist_bins=list(jatten_dist_bins),
                 dist_method=dist_method,
                 sample_spacing_m=sample_spacing_m,
                 k_query_samples=k_query_samples,
@@ -3075,11 +3425,23 @@ def main() -> int:
                 if count_key not in bin_counts_seen:
                     bin_counts[int(k)][str(mask_name)][str(bin_lab)].append(int(cnt))
                     bin_counts_seen.add(count_key)
+            for k, bin_lab, cnt in res.get("bin_counts_all_entries", []):
+                count_key_all = (int(k), str(bin_lab), key)
+                if count_key_all not in bin_counts_all_seen:
+                    bin_counts_all[int(k)][str(bin_lab)].append(int(cnt))
+                    bin_counts_all_seen.add(count_key_all)
+            for k, bin_lab, cnt in res.get("jatten_link_bin_counts_entries", []):
+                jcount_key = (int(k), str(bin_lab), key)
+                if jcount_key not in jatten_bin_counts_seen:
+                    jatten_link_bin_counts[int(k)][str(bin_lab)].append(int(cnt))
+                    jatten_bin_counts_seen.add(jcount_key)
 
             for k, bin_lab, v in res.get("medians_r_entries", []):
                 medians_rainy[int(k)][label][str(bin_lab)].append(float(v))
             for k, bin_lab, v in res.get("medians_n_entries", []):
                 medians_nonrainy[int(k)][label][str(bin_lab)].append(float(v))
+            for k, bin_lab, v in res.get("jatten_medians_entries", []):
+                jatten_medians[int(k)][label][str(bin_lab)].append(float(v))
             for k, bin_lab, v in res.get("p90s_r_entries", []):
                 p90s_rainy[int(k)][label][str(bin_lab)].append(float(v))
             for k, bin_lab, v in res.get("p90s_n_entries", []):
@@ -3578,8 +3940,8 @@ def main() -> int:
                 nonrainy_title = "Non-rainy pixels: IQR of per-patch median |GT-PRED| by distance bin"
                 rainy_p90_name = "distance_iqr_p90s_rainy_multi.png"
                 nonrainy_p90_name = "distance_iqr_p90s_nonrainy_multi.png"
-                rainy_p90_title = "Rainy pixels: per-patch p90 |(GT-PRED)/GT| by distance bin (median, p25-p90)"
-                nonrainy_p90_title = "Non-rainy pixels: per-patch p90 |GT-PRED| by distance bin (median, p25-p90)"
+                rainy_p90_title = "Rainy pixels: per-patch p90 |(GT-PRED)/GT| by distance bin (median, p25-p75)"
+                nonrainy_p90_title = "Non-rainy pixels: per-patch p90 |GT-PRED| by distance bin (median, p25-p75)"
             else:
                 rainy_name = f"distance_iqr_medians_rainy_multi_k{k}.png"
                 nonrainy_name = f"distance_iqr_medians_nonrainy_multi_k{k}.png"
@@ -3587,8 +3949,8 @@ def main() -> int:
                 nonrainy_title = f"Non-rainy pixels: IQR of per-patch median |GT-PRED| by distance bin (k={k})"
                 rainy_p90_name = f"distance_iqr_p90s_rainy_multi_k{k}.png"
                 nonrainy_p90_name = f"distance_iqr_p90s_nonrainy_multi_k{k}.png"
-                rainy_p90_title = f"Rainy pixels: per-patch p90 |(GT-PRED)/GT| by distance bin (median, p25-p90; k={k})"
-                nonrainy_p90_title = f"Non-rainy pixels: per-patch p90 |GT-PRED| by distance bin (median, p25-p90; k={k})"
+                rainy_p90_title = f"Rainy pixels: per-patch p90 |(GT-PRED)/GT| by distance bin (median, p25-p75; k={k})"
+                nonrainy_p90_title = f"Non-rainy pixels: per-patch p90 |GT-PRED| by distance bin (median, p25-p75; k={k})"
 
             plot_iqr_bars(
                 img_dir / rainy_name,
@@ -3612,7 +3974,7 @@ def main() -> int:
                 summary_p90_r, labels_r, method_order,
                 y_max=y_max, dpi=dpi, bin_spacing=bin_spacing,
                 tick_labels=tick_labels_r,
-                y_label="Per-patch p90 error (median, p25-p90)",
+                y_label="Per-patch p90 error (median, p25-p75)",
             )
             plot_iqr_bars(
                 img_dir / nonrainy_p90_name,
@@ -3620,7 +3982,7 @@ def main() -> int:
                 summary_p90_n, labels_n, method_order,
                 y_max=y_max, dpi=dpi, bin_spacing=bin_spacing,
                 tick_labels=tick_labels_n,
-                y_label="Per-patch p90 error (median, p25-p90)",
+                y_label="Per-patch p90 error (median, p25-p75)",
             )
 
             # relative plots vs IDW (median-of-medians)
@@ -3641,6 +4003,127 @@ def main() -> int:
                     summary_n_rel, labels_n, method_order,
                     y_max=None, dpi=dpi, bin_spacing=bin_spacing,
                     tick_labels=tick_labels_n,
+                )
+
+        # J_atten distance-binned profile:
+        # per patch and distance bin, compute median of per-pixel attributed J_atten value;
+        # plot median across patches with IQR (p25-p75), one series per solver.
+        for k in jatten_k_values:
+            summary_jatten = compute_iqr_profile(jatten_medians[k], jatten_dist_labels)
+            labels_jatten = jatten_dist_labels
+            if prune_bins_enabled:
+                labels_jatten = filter_bins_by_zero_fraction(
+                    jatten_dist_labels,
+                    jatten_link_bin_counts[k],
+                    zero_frac_threshold=prune_bins_zero_frac,
+                )
+            tick_labels_jatten = build_bin_tick_labels(
+                labels_jatten,
+                jatten_link_bin_counts[k],
+                count_label="links",
+            )
+            jatten_img_dir = img_dir / "jatten_iqr_plots"
+            if len(jatten_k_values) == 1 and k == 3:
+                jatten_name = "distance_iqr_medians_jatten_multi.png"
+                jatten_title = "Link-distance-binned J_atten: IQR of per-patch medians"
+            else:
+                jatten_name = f"distance_iqr_medians_jatten_multi_k{k}.png"
+                jatten_title = f"Link-distance-binned J_atten: IQR of per-patch medians (k={k})"
+            plot_iqr_bars(
+                jatten_img_dir / jatten_name,
+                jatten_title,
+                summary_jatten,
+                labels_jatten,
+                method_order,
+                y_max=None,
+                dpi=dpi,
+                bin_spacing=bin_spacing,
+                tick_labels=tick_labels_jatten,
+                x_label="Distance bin (m)\nSecond line: avg links [avg-std, avg+std]",
+                y_label="J_atten link contribution (per-patch median, IQR across patches)",
+                footnote=(
+                    "Per-link contribution: ((A_hat - A_obs)^2 / L_km) / #valid_links. "
+                    "Links are binned by segment-to-segment distance to the k-th closest other link."
+                ),
+            )
+            plot_iqr_bars(
+                jatten_img_dir / jatten_name.replace(".png", "_no_p25_p75.png"),
+                f"{jatten_title} (medians only)",
+                summary_jatten,
+                labels_jatten,
+                method_order,
+                y_max=None,
+                dpi=dpi,
+                bin_spacing=bin_spacing,
+                tick_labels=tick_labels_jatten,
+                x_label="Distance bin (m)\nSecond line: avg links [avg-std, avg+std]",
+                y_label="J_atten link contribution (per-patch median across patches)",
+                footnote=(
+                    "Per-link contribution: ((A_hat - A_obs)^2 / L_km) / #valid_links. "
+                    "Links are binned by segment-to-segment distance to the k-th closest other link."
+                ),
+                show_iqr=False,
+            )
+
+            # Relative J_atten profiles using baseline median-of-medians per bin.
+            for baseline_label, tag in (("IDW", "idw"), ("ILDW", "ildw")):
+                if baseline_label not in summary_jatten:
+                    continue
+                summary_jatten_rel = compute_relative_iqr_profile(
+                    summary_jatten,
+                    idw_label=baseline_label,
+                    dist_labels=dist_labels,
+                )
+                if len(jatten_k_values) == 1 and k == 3:
+                    jatten_rel_name = f"distance_iqr_medians_jatten_multi_rel_{tag}.png"
+                else:
+                    jatten_rel_name = f"distance_iqr_medians_jatten_multi_k{k}_rel_{tag}.png"
+                plot_iqr_bars(
+                    jatten_img_dir / jatten_rel_name,
+                    (
+                        "Link-distance-binned J_atten: IQR of per-patch medians "
+                        f"(relative to {baseline_label} median)"
+                    ),
+                    summary_jatten_rel,
+                    labels_jatten,
+                    method_order,
+                    y_max=None,
+                    dpi=dpi,
+                    bin_spacing=bin_spacing,
+                    tick_labels=tick_labels_jatten,
+                    x_label="Distance bin (m)\nSecond line: avg links [avg-std, avg+std]",
+                    y_label=(
+                        "J_atten link-contribution ratio "
+                        f"(per-patch median, IQR; baseline={baseline_label} p50)"
+                    ),
+                    footnote=(
+                        "For each distance bin, p25/p50/p75 are divided by "
+                        f"{baseline_label}'s p50 in that bin."
+                    ),
+                )
+                plot_iqr_bars(
+                    jatten_img_dir / jatten_rel_name.replace(".png", "_no_p25_p75.png"),
+                    (
+                        "Link-distance-binned J_atten: per-patch medians "
+                        f"(relative to {baseline_label} median, medians only)"
+                    ),
+                    summary_jatten_rel,
+                    labels_jatten,
+                    method_order,
+                    y_max=None,
+                    dpi=dpi,
+                    bin_spacing=bin_spacing,
+                    tick_labels=tick_labels_jatten,
+                    x_label="Distance bin (m)\nSecond line: avg links [avg-std, avg+std]",
+                    y_label=(
+                        "J_atten link-contribution ratio "
+                        f"(per-patch median; baseline={baseline_label} p50)"
+                    ),
+                    footnote=(
+                        "For each distance bin, medians are divided by "
+                        f"{baseline_label}'s p50 in that bin."
+                    ),
+                    show_iqr=False,
                 )
         print(f"Wrote plots under: {img_dir}")
 

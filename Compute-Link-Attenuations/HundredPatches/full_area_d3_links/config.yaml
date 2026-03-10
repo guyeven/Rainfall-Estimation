@@ -1,0 +1,24 @@
+input:
+  est_input_dir: ../est_dir
+  est_input_prefix: est_input
+  # or est_input_glob: "/path/to/est_dir/est_input_*.json"
+
+distance:
+  bins_m: [125, 375, 750, 1500, 3125]
+  sample_spacing_m: 250
+  k_query_samples: 48
+  chunk_size: 8000
+  max_samples_per_link: 200
+
+merge:
+  overlap_mode: min          # min | first
+  link_dedup_tol_m: 1.0
+
+output:
+  out_dir: image
+  # images_subdir: images
+  filename: fullarea_d3_bins_with_links.png
+
+plots:
+  dpi: 150
+  show: false

@@ -1,0 +1,96 @@
+# ============================================================
+# analyze_multi.yaml (DICT-style solvers; paths relative to this YAML)
+# ============================================================
+
+input:
+  # Ground truth directory
+  gt_dir: "../gt_dir"
+  gt_prefix: "gt"
+
+  # Directory containing est_input_*.json (needed for link geometry & distances)
+  est_input_dir: "../est_dir"
+
+  # Multiple solver output folders (each should contain est_input_*_solution.npz)
+  solvers:
+    idw:
+      name: "idw"
+      label: "IDW"
+      sol_dir: "sol_dir_idw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    ildw:
+      name: "ildw"
+      label: "ILDW"
+      sol_dir: "sol_dir_ildw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_norm_ildw_mult_ildw_init:
+      name: "opt_norm_ildw_mult_ildw_init"
+      label: "OPT_NORM_ILDW_MULT_ILDW_INIT"
+      sol_dir: "sol_dir_opt_norm_ildw_mult_ildw_init"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+      objective_importance:
+        # Relative importance coefficients; any missing value defaults to 1.0.
+        atten: 1.0
+        j_1d: 1.5
+        j_2d: 0.5
+        total: 1.0
+
+data:
+  gt_key_preference: ["R_gt", "rain", "gt"]
+  allow_shape_mismatch: false
+
+rain:
+  threshold_mmph: 0.6
+  fp_fn_threshold_sweep_mmph:
+    start: 0.2
+    stop: 5.0
+    step: 0.1
+
+coverage:
+  enabled: true
+  bins: [0, 1, 2, 3, 4, "5+"]
+
+distance:
+  # Distance-to-kth-closest-link bins (meters)
+  bin_edges_m: [125, 375, 750, 1500, 3125, 6000, 9000]
+  k_values: [2, 3]
+  # max_candidates: 64
+  method: sampled_points
+  sample_spacing_m: 250.0
+  k_query_samples: 100
+  chunk_size: 8000
+  max_samples_per_link: 200
+
+jatten_link_distance:
+  # Link-to-link (segment-to-segment) distance bins for J_atten profiles
+  bin_edges_m: [125, 375, 750, 1500, 3125, 6000, 9000]
+  k_values: [2, 3]
+
+plots:
+  # Only final aggregate plots (IQR-of-medians), no per-patch plots
+  skip_patch_plots: false
+  enable_rae_histograms: false
+  
+  bin_spacing: 1.35
+
+  # Vertical scaling behavior
+  automatic_vertical_scaling: true
+  # If you set automatic_vertical_scaling: false, you must set:
+  # vertical_scale: 0.35
+  prune_bins_enabled: true
+  prune_bins_zero_frac: 0.5
+
+output:
+  out_dir: "batch_analyze_output_multi"
+  images_subdir: "images"
+  excel_filename: "stats_multi_new_solver.xlsx"
+
+rae_hist:
+  enabled: false
+  bins: 50
+  # max_patches: 10   # optional limit; uses lexicographic patch order
+  out_dir: "images/RAE_histograms"

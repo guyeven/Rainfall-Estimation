@@ -80,6 +80,7 @@ distance:
 plots:
   # Only final aggregate plots (IQR-of-medians), no per-patch plots
   skip_patch_plots: true
+  enable_rae_histograms: false
   
   bin_spacing: 1.35
 
@@ -99,7 +100,7 @@ analysis:
   n_jobs: 4
 
 rae_hist:
-  enabled: true
+  enabled: false
   bins: 50
   # max_patches: 10   # optional limit; uses lexicographic patch order
   out_dir: "images/RAE_histograms"
