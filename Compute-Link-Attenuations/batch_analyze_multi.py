@@ -3644,7 +3644,7 @@ def main() -> int:
 
         plot_fp_fn_summary(
             img_dir / "dry_fp_fn_summary.png",
-            title="Dry-classification FP/FN rates (mean ± std across patches)",
+            title="Wet-classification FP/FN rates (mean ± std across patches)",
             rows=dry_rows,
             dpi=dpi,
         )
