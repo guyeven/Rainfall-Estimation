@@ -42,6 +42,8 @@ import concurrent.futures
 import json
 import math
 import os
+import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -832,7 +834,7 @@ def parse_fp_fn_thresholds(cfg: dict, *, default_threshold_mmph: float) -> List[
     Supported config:
       rain.fp_fn_thresholds_mmph: [0.5, 1.0, 2.0]
       rain.fp_fn_threshold_sweep_mmph: {start: 0.5, stop: 5.0, step: 0.5}
-    If neither is provided, falls back to [rain.threshold_mmph].
+    If neither is provided, falls back to a default sweep [0.2, 5.0] in 0.1 mm/h steps.
     """
     vals = deep_get(cfg, "rain.fp_fn_thresholds_mmph", None)
     if vals is not None:
@@ -860,7 +862,14 @@ def parse_fp_fn_thresholds(cfg: dict, *, default_threshold_mmph: float) -> List[
             out.append(round(stop, 10))
         return sorted({float(v) for v in out if float(v) >= 0.0})
 
-    return [float(default_threshold_mmph)]
+    start = min(0.2, float(default_threshold_mmph))
+    stop = max(5.0, float(default_threshold_mmph))
+    step = 0.1
+    n = int(math.floor((stop - start) / step)) + 1
+    out = [round(start + i * step, 10) for i in range(max(0, n))]
+    if out[-1] < stop - 1e-10:
+        out.append(round(stop, 10))
+    return sorted({float(v) for v in out if float(v) >= 0.0})
 
 
 def coverage_bin_label(v: int, exact: List[int], ge: Optional[int]) -> Optional[str]:
@@ -1282,17 +1291,6 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     ref_eval_eta = float(task.get("ref_eval_eta", DEFAULT_REFERENCE_W_SECOND_DER))
     ref_eval_eps = float(task.get("ref_eval_eps", DEFAULT_REFERENCE_EPS))
     include_rae_hist = bool(task["include_rae_hist"])
-    patch_plots_enabled = bool(task.get("patch_plots_enabled", False))
-    patch_plot_dir = Path(str(task.get("patch_plot_dir", ""))) if task.get("patch_plot_dir") else None
-    plot_show = bool(task.get("plot_show", False))
-    plot_dpi = int(task.get("plot_dpi", 150))
-    cmap_gt = str(task.get("cmap_gt", "viridis"))
-    cmap_sol = str(task.get("cmap_sol", "viridis"))
-    cmap_diff = str(task.get("cmap_diff", "seismic"))
-    cmap_abs = str(task.get("cmap_abs_diff", "magma"))
-    cmap_rel = str(task.get("cmap_rel", "seismic"))
-    cmap_abs_rel = str(task.get("cmap_abs_rel", "magma"))
-
     # Per-patch stopping diagnostics from solver optinfo JSON.
     optinfo_path = sol_path.with_name(f"{sol_path.stem}_optinfo.json")
     has_optinfo = optinfo_path.exists()
@@ -1409,55 +1407,6 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     signed_full[~rainy] = pred[~rainy] - gt[~rainy]
     abs_full[~rainy] = np.abs(signed_full[~rainy])
     abs_rae_full[~rainy] = abs_mmph_full[~rainy] / denom[~rainy]
-
-    if patch_plots_enabled and patch_plot_dir is not None:
-        rel_full = np.full_like(gt, np.nan, dtype=np.float64)
-        if np.any(rainy):
-            rel_full[rainy] = (gt[rainy] - pred[rainy]) / np.where(gt[rainy] == 0.0, 1.0, gt[rainy])
-        abs_rel_full = np.abs(rel_full)
-        diff_full = pred - gt
-        abs_diff_full = np.abs(diff_full)
-
-        # Per-patch visualization scales.
-        finite_gt_sol = np.concatenate([gt[np.isfinite(gt)], pred[np.isfinite(pred)]])
-        rmax = float(np.max(finite_gt_sol)) if finite_gt_sol.size > 0 else 1.0
-        rmax = max(rmax, 1e-9)
-        rel_max = float(np.nanmax(np.abs(rel_full))) if np.any(np.isfinite(rel_full)) else 1.0
-        rel_abs_max = float(np.nanmax(abs_rel_full)) if np.any(np.isfinite(abs_rel_full)) else 1.0
-        dmax = float(np.nanmax(np.abs(diff_full[~rainy]))) if np.any(~rainy) else 1.0
-        rel_max = max(rel_max, 1e-9)
-        rel_abs_max = max(rel_abs_max, 1e-9)
-        dmax = max(dmax, 1e-9)
-
-        rainy_png = patch_plot_dir / f"{safe_path_token(key)}_rainy.png"
-        save_png_2x2(
-            rainy_png,
-            mask_to_nan(gt, rainy),
-            mask_to_nan(pred, rainy),
-            mask_to_nan(rel_full, rainy),
-            mask_to_nan(abs_rel_full, rainy),
-            titles=("GT (rainy)", "SOL (rainy)", "(GT-SOL)/GT", "|GT-SOL|/GT"),
-            suptitle=f"{key} | rainy: GT>= {thr} mm/h",
-            cmaps=(cmap_gt, cmap_sol, cmap_rel, cmap_abs_rel),
-            vlims=((0.0, rmax), (0.0, rmax), (-rel_max, rel_max), (0.0, rel_abs_max)),
-            dpi=plot_dpi,
-            show=plot_show,
-        )
-
-        nonrainy_png = patch_plot_dir / f"{safe_path_token(key)}_nonrainy.png"
-        save_png_2x2(
-            nonrainy_png,
-            mask_to_nan(gt, ~rainy),
-            mask_to_nan(pred, ~rainy),
-            mask_to_nan(diff_full, ~rainy),
-            mask_to_nan(abs_diff_full, ~rainy),
-            titles=("GT (non-rainy)", "SOL (non-rainy)", "SOL-GT", "|SOL-GT|"),
-            suptitle=f"{key} | non-rainy: GT< {thr} mm/h",
-            cmaps=(cmap_gt, cmap_sol, cmap_diff, cmap_abs),
-            vlims=((0.0, rmax), (0.0, rmax), (-dmax, dmax), (0.0, rmax)),
-            dpi=plot_dpi,
-            show=plot_show,
-        )
 
     gtbin_counts_by_lab: Dict[str, int] = {}
     gtbin_rel_means_by_lab: Dict[str, Optional[float]] = {}
@@ -1990,6 +1939,131 @@ def write_workbook(
     thin_side = Side(border_style="thin", color="000000")
     thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
 
+    def ordered_columns_for_sheet(sheet_name: str, cols: List[str]) -> List[str]:
+        def _ordered(preferred: List[str]) -> List[str]:
+            rank = {name: i for i, name in enumerate(preferred)}
+            return sorted(cols, key=lambda c: (rank.get(c, 10_000), cols.index(c)))
+
+        if sheet_name.startswith("LinkStats_"):
+            return _ordered([
+                "patch_key",
+                "n_links_valid",
+                "attn_l1_all",
+                "J_atten_all",
+                "n_links_ge10km",
+                "attn_l1_ge10km",
+                "J_atten_ge10km",
+                "max_abs_diff",
+                "p95_abs_diff",
+                "p99_abs_diff",
+                "J_atten_x_num_links_all",
+                "J_atten_x_num_links_ge10km",
+                "E_all",
+                "E2_all",
+                "J_atten_IDW",
+                "J_atten_ILDW",
+                "J_atten_ALG_over_IDW",
+                "J_atten_ALG_over_ILDW",
+            ])
+
+        if (
+            sheet_name.startswith("CoverageStats_")
+            or sheet_name.startswith("DistanceStats")
+            or sheet_name.startswith("OverallStats_GTvs")
+        ):
+            return _ordered([
+                "patch_key",
+                "mask_type",
+                "coverage_bin",
+                "distance_bin_m",
+                "n_pixels",
+                "mean_signed",
+                "median_signed",
+                "mean_abs",
+                "std_abs",
+                "median_abs",
+                "p90_abs",
+                "p95_abs",
+                "p99_abs",
+                "linf_abs",
+                "l1_rae_sum",
+                "l1_abs_mmph_sum",
+                "l1_abs_mmph_sum_norm_hw",
+                "mean_abs_IDW",
+                "mean_abs_ILDW",
+                "mean_abs_over_IDW",
+                "mean_abs_over_ILDW",
+                "std_abs_IDW",
+                "std_abs_ILDW",
+                "std_abs_over_IDW",
+                "std_abs_over_ILDW",
+                "median_abs_IDW",
+                "median_abs_ILDW",
+                "median_abs_over_IDW",
+                "median_abs_over_ILDW",
+                "p90_abs_IDW",
+                "p90_abs_ILDW",
+                "p90_abs_over_IDW",
+                "p90_abs_over_ILDW",
+                "p95_abs_IDW",
+                "p95_abs_ILDW",
+                "p95_abs_over_IDW",
+                "p95_abs_over_ILDW",
+                "p99_abs_IDW",
+                "p99_abs_ILDW",
+                "p99_abs_over_IDW",
+                "p99_abs_over_ILDW",
+            ])
+
+        if sheet_name == "OverallStats_BySolver":
+            return _ordered([
+                "patch_key",
+                "solver",
+                "solver_name",
+                "module",
+                "mask_type",
+                "distance_bin_m",
+                "n_pixels",
+                "mean_signed",
+                "median_signed",
+                "mean_abs",
+                "std_abs",
+                "median_abs",
+                "p90_abs",
+                "p95_abs",
+                "p99_abs",
+                "linf_abs",
+                "l1_rae_sum",
+                "l1_abs_mmph_sum",
+                "l1_abs_mmph_sum_norm_hw",
+                "mean_abs_IDW",
+                "mean_abs_ILDW",
+                "mean_abs_over_IDW",
+                "mean_abs_over_ILDW",
+                "std_abs_IDW",
+                "std_abs_ILDW",
+                "std_abs_over_IDW",
+                "std_abs_over_ILDW",
+                "median_abs_IDW",
+                "median_abs_ILDW",
+                "median_abs_over_IDW",
+                "median_abs_over_ILDW",
+                "p90_abs_IDW",
+                "p90_abs_ILDW",
+                "p90_abs_over_IDW",
+                "p90_abs_over_ILDW",
+                "p95_abs_IDW",
+                "p95_abs_ILDW",
+                "p95_abs_over_IDW",
+                "p95_abs_over_ILDW",
+                "p99_abs_IDW",
+                "p99_abs_ILDW",
+                "p99_abs_over_IDW",
+                "p99_abs_over_ILDW",
+            ])
+
+        return cols
+
     for sheet_name, rows in sheets.items():
         ws = wb.create_sheet(title=unique_sheet_name(sheet_name, used_titles))
         if not rows:
@@ -2002,6 +2076,7 @@ def write_workbook(
                 if c not in seen:
                     seen.add(c)
                     cols.append(c)
+        cols = ordered_columns_for_sheet(sheet_name, cols)
         if sheet_name == "Objective_NativeBySolver":
             has_eps_value = any(
                 (("eps" in r) and (r.get("eps") is not None) and (str(r.get("eps")) != ""))
@@ -2177,8 +2252,41 @@ def compute_relative_iqr_profile(
     return out
 
 
+def compute_relative_distribution_profile(
+    per_patch_values: Dict[str, Dict[str, List[float]]],
+    *,
+    baseline_label: str,
+    dist_labels: List[str],
+) -> Dict[str, Dict[str, List[float]]]:
+    """
+    Divide each method's per-patch values by the baseline method's p50 in the same bin.
+    """
+    if baseline_label not in per_patch_values:
+        return {}
+    out: Dict[str, Dict[str, List[float]]] = {}
+    baseline_bins = per_patch_values[baseline_label]
+    for method, by_bin in per_patch_values.items():
+        out[method] = {}
+        for lab in dist_labels:
+            baseline_vals = np.asarray(baseline_bins.get(lab, []), dtype=np.float64)
+            if baseline_vals.size == 0:
+                out[method][lab] = []
+                continue
+            baseline_med = float(np.percentile(baseline_vals, 50))
+            if baseline_med == 0.0:
+                out[method][lab] = []
+                continue
+            vals = np.asarray(by_bin.get(lab, []), dtype=np.float64)
+            if vals.size == 0:
+                out[method][lab] = []
+                continue
+            good = np.isfinite(vals)
+            out[method][lab] = [float(v / baseline_med) for v in vals[good]]
+    return out
+
+
 def plot_iqr_bars(out_png: Path, title: str,
-                  summary: Dict[str, Dict[str, Tuple[float,float,float]]],
+                  per_patch_values: Dict[str, Dict[str, List[float]]],
                   dist_labels: List[str],
                   method_order: List[str],
                   *, y_max: Optional[float] = None, dpi: int = 150, bin_spacing: float = 1.0,
@@ -2199,20 +2307,39 @@ def plot_iqr_bars(out_png: Path, title: str,
 
     fig_w = max(6, n_bins * 1.2 * float(bin_spacing))
     fig, ax = plt.subplots(figsize=(fig_w, 4.5), dpi=dpi)
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    colors = {
+        m: color_cycle[i % max(1, len(color_cycle))]
+        for i, m in enumerate(method_order)
+    }
 
     for mi, m in enumerate(method_order):
         off = offsets[mi]
-        p25 = [summary[m][lab][0] for lab in dist_labels]
-        p50 = [summary[m][lab][1] for lab in dist_labels]
-        p75 = [summary[m][lab][2] for lab in dist_labels]
+        color = colors.get(m, None)
+        p50: List[float] = []
+        for bi, lab in enumerate(dist_labels):
+            vals = np.asarray(per_patch_values.get(m, {}).get(lab, []), dtype=np.float64)
+            vals = vals[np.isfinite(vals)]
+            if vals.size == 0:
+                p50.append(0.0)
+                continue
+            p50.append(float(np.percentile(vals, 50)))
+            if show_iqr:
+                ax.boxplot(
+                    [vals],
+                    positions=[x[bi] + off],
+                    widths=width * 0.8,
+                    patch_artist=True,
+                    showfliers=False,
+                    manage_ticks=False,
+                    boxprops={"facecolor": color, "alpha": 0.25, "edgecolor": color, "linewidth": 1.2},
+                    whiskerprops={"color": color, "linewidth": 1.2},
+                    capprops={"color": color, "linewidth": 1.2},
+                    medianprops={"color": color, "linewidth": 1.4},
+                )
 
-        if show_iqr:
-            for bi in range(n_bins):
-                ax.vlines(x[bi] + off, p25[bi], p75[bi], linewidth=2)
-                ax.hlines(p25[bi], x[bi] + off - width*0.25, x[bi] + off + width*0.25, linestyles="dotted", linewidth=1)
-                ax.hlines(p75[bi], x[bi] + off - width*0.25, x[bi] + off + width*0.25, linestyles="dotted", linewidth=1)
         # medians as points (no connecting line)
-        ax.plot(x + off, p50, marker="o", linestyle="None", label=m)
+        ax.plot(x + off, p50, marker="o", linestyle="None", color=color, label=m)
 
     ax.set_xticks(x)
     if tick_labels is None:
@@ -2224,7 +2351,7 @@ def plot_iqr_bars(out_png: Path, title: str,
         ax.set_xlabel(x_label or "Distance bin (m)\nSecond line: avg pixels [avg-std, avg+std]")
     else:
         ax.set_xticklabels(tick_labels, rotation=0)
-    ax.set_ylabel(y_label or "IQR of per-patch median error")
+    ax.set_ylabel(y_label or "Per-patch median error")
     ax.set_title(title)
     ax.legend(loc="best")
     ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
@@ -2288,6 +2415,78 @@ def save_png_2x2(
     if show:
         plt.show()
     plt.close(fig)
+
+
+def render_patch_error_maps_from_job(
+    job: Dict[str, Any],
+    *,
+    img_dir: Path,
+    render_cfg: Dict[str, Any],
+) -> None:
+    gt = load_npz_first_key(Path(str(job["gt_path"])), list(job["gt_key_pref"])).astype(np.float64)
+    pred = load_npz_first_key(Path(str(job["sol_path"])), list(job["sol_key_pref"])).astype(np.float64)
+    if gt.shape != pred.shape:
+        raise ValueError(f"Shape mismatch for patch plot {job['patch_key']}: GT {gt.shape} vs SOL {pred.shape}")
+
+    key = str(job["patch_key"])
+    solver_label = str(job["solver_label"])
+    thr = float(render_cfg["threshold_mmph"])
+    plot_dpi = int(render_cfg["dpi"])
+    cmap_gt = str(render_cfg["cmap_gt"])
+    cmap_sol = str(render_cfg["cmap_sol"])
+    cmap_diff = str(render_cfg["cmap_diff"])
+    cmap_abs = str(render_cfg["cmap_abs_diff"])
+    cmap_rel = str(render_cfg["cmap_rel"])
+    cmap_abs_rel = str(render_cfg["cmap_abs_rel"])
+
+    rainy = gt >= thr
+    rel_full = np.full_like(gt, np.nan, dtype=np.float64)
+    if np.any(rainy):
+        rel_full[rainy] = (gt[rainy] - pred[rainy]) / np.where(gt[rainy] == 0.0, 1.0, gt[rainy])
+    abs_rel_full = np.abs(rel_full)
+    diff_full = pred - gt
+    abs_diff_full = np.abs(diff_full)
+
+    finite_gt_sol = np.concatenate([gt[np.isfinite(gt)], pred[np.isfinite(pred)]])
+    rmax = float(np.max(finite_gt_sol)) if finite_gt_sol.size > 0 else 1.0
+    rmax = max(rmax, 1e-9)
+    rel_max = float(np.nanmax(np.abs(rel_full))) if np.any(np.isfinite(rel_full)) else 1.0
+    rel_abs_max = float(np.nanmax(abs_rel_full)) if np.any(np.isfinite(abs_rel_full)) else 1.0
+    dmax = float(np.nanmax(np.abs(diff_full[~rainy]))) if np.any(~rainy) else 1.0
+    rel_max = max(rel_max, 1e-9)
+    rel_abs_max = max(rel_abs_max, 1e-9)
+    dmax = max(dmax, 1e-9)
+
+    patch_plot_dir = img_dir / "patch_error_maps" / safe_path_token(solver_label)
+    rainy_png = patch_plot_dir / f"{safe_path_token(key)}_rainy.png"
+    save_png_2x2(
+        rainy_png,
+        mask_to_nan(gt, rainy),
+        mask_to_nan(pred, rainy),
+        mask_to_nan(rel_full, rainy),
+        mask_to_nan(abs_rel_full, rainy),
+        titles=("GT (rainy)", "SOL (rainy)", "(GT-SOL)/GT", "|GT-SOL|/GT"),
+        suptitle=f"{key} | rainy: GT>= {thr} mm/h",
+        cmaps=(cmap_gt, cmap_sol, cmap_rel, cmap_abs_rel),
+        vlims=((0.0, rmax), (0.0, rmax), (-rel_max, rel_max), (0.0, rel_abs_max)),
+        dpi=plot_dpi,
+        show=False,
+    )
+
+    nonrainy_png = patch_plot_dir / f"{safe_path_token(key)}_nonrainy.png"
+    save_png_2x2(
+        nonrainy_png,
+        mask_to_nan(gt, ~rainy),
+        mask_to_nan(pred, ~rainy),
+        mask_to_nan(diff_full, ~rainy),
+        mask_to_nan(abs_diff_full, ~rainy),
+        titles=("GT (non-rainy)", "SOL (non-rainy)", "SOL-GT", "|SOL-GT|"),
+        suptitle=f"{key} | non-rainy: GT< {thr} mm/h",
+        cmaps=(cmap_gt, cmap_sol, cmap_diff, cmap_abs),
+        vlims=((0.0, rmax), (0.0, rmax), (-dmax, dmax), (0.0, rmax)),
+        dpi=plot_dpi,
+        show=False,
+    )
 
 
 def pick_biggest_est_patch(est_by_key: Dict[str, Path]) -> Tuple[Optional[str], Optional[Path], float]:
@@ -2457,31 +2656,37 @@ def plot_ratio_iqr(
     color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     colors = {s: color_cycle[i % max(1, len(color_cycle))] for i, s in enumerate(solver_labels)}
 
-    p25s = []
     p50s = []
-    p75s = []
     for _, _, vals in entries:
         if vals:
             arr = np.array(vals, dtype=np.float64)
-            p25s.append(float(np.percentile(arr, 25)))
             p50s.append(float(np.percentile(arr, 50)))
-            p75s.append(float(np.percentile(arr, 75)))
         else:
-            p25s.append(0.0)
             p50s.append(0.0)
-            p75s.append(0.0)
 
     # plot
-    for i, (solver, _, _) in enumerate(entries):
+    for i, (solver, _, vals) in enumerate(entries):
         c = colors.get(solver, None)
-        ax.vlines(x[i], p25s[i], p75s[i], linewidth=2, color=c)
-        ax.hlines(p25s[i], x[i] - 0.15, x[i] + 0.15, linestyles="dotted", linewidth=1, color=c)
-        ax.hlines(p75s[i], x[i] - 0.15, x[i] + 0.15, linestyles="dotted", linewidth=1, color=c)
+        arr = np.asarray(vals, dtype=np.float64)
+        arr = arr[np.isfinite(arr)]
+        if arr.size > 0:
+            ax.boxplot(
+                [arr],
+                positions=[x[i]],
+                widths=0.5,
+                patch_artist=True,
+                showfliers=False,
+                manage_ticks=False,
+                boxprops={"facecolor": c, "alpha": 0.25, "edgecolor": c, "linewidth": 1.2},
+                whiskerprops={"color": c, "linewidth": 1.2},
+                capprops={"color": c, "linewidth": 1.2},
+                medianprops={"color": c, "linewidth": 1.4},
+            )
         ax.plot(x[i], p50s[i], marker="o", linestyle="None", color=c)
 
     ax.set_xticks(x)
     ax.set_xticklabels([lab for _, lab, _ in entries], rotation=30, ha="right", fontsize=8)
-    ax.set_ylabel("Median of per-patch ratios (IQR)")
+    ax.set_ylabel("Per-patch ratio")
     ax.set_title(title)
     ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
 
@@ -2495,54 +2700,6 @@ def plot_ratio_iqr(
         "L1 = sum(|A_hat-A_obs|); J1 ratio uses J1_len1 = sum((A_hat-A_obs)^2/L_km); "
         "E = sum(A_obs-A_hat)/sum(|L_km|); "
         "E2 = sum((A_obs-A_hat)^2)/sum(|L_km|) over all links",
-        ha="center",
-        fontsize=8,
-    )
-
-    out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
-    fig.savefig(out_png)
-    plt.close(fig)
-
-
-def plot_fp_fn_summary(
-    out_png: Path,
-    *,
-    title: str,
-    rows: List[Dict[str, Any]],
-    dpi: int = 150,
-) -> None:
-    import matplotlib.pyplot as plt  # type: ignore
-
-    if not rows:
-        return
-
-    solvers = [r["solver"] for r in rows]
-    fp_mean = [float(r["fp_rate_mean"]) for r in rows]
-    fp_std = [float(r["fp_rate_std"]) for r in rows]
-    fn_mean = [float(r["fn_rate_mean"]) for r in rows]
-    fn_std = [float(r["fn_rate_std"]) for r in rows]
-
-    x = np.arange(len(solvers))
-    width = 0.35
-
-    fig_w = max(8, len(solvers) * 0.8)
-    fig, ax = plt.subplots(figsize=(fig_w, 4.5), dpi=dpi)
-
-    ax.errorbar(x - width/2, fp_mean, yerr=fp_std, fmt="o", capsize=4, label="Wet FP rate")
-    ax.errorbar(x + width/2, fn_mean, yerr=fn_std, fmt="o", capsize=4, label="Wet FN rate")
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(solvers, rotation=30, ha="right", fontsize=8)
-    ax.set_ylabel("Mean rate across patches (±1 std)")
-    ax.set_title(title)
-    ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
-    ax.legend(loc="best")
-
-    fig.text(
-        0.5,
-        0.01,
-        "Positive = wet (gt >= threshold). FP: pred wet & GT dry. FN: pred dry & GT wet.",
         ha="center",
         fontsize=8,
     )
@@ -2847,6 +3004,228 @@ def plot_gt_binned_patchavg_error(
     plt.close(fig)
 
 
+def build_largest_patch_plot_payload(
+    *,
+    est_path: Path,
+    patch_key: str,
+    bin_edges_m: Sequence[float],
+    dist_method: str,
+    sample_spacing_m: float,
+    k_query_samples: int,
+    chunk_size: int,
+    max_samples_per_link: int,
+    max_candidates: int,
+) -> Dict[str, Any]:
+    est = load_est_payload(est_path)
+    hdr = est["header"]
+    H = int(hdr["H"])
+    W = int(hdr["W"])
+    pix = float(hdr.get("pixel_size_m", 125.0))
+    area_km2 = float(H) * float(W) * float(pix) * float(pix) / 1_000_000.0
+
+    k_targets = [2, 3]
+    if dist_method == "sampled_points":
+        dk_maps, _ = compute_dk_maps_sampled_points(
+            est,
+            k_targets,
+            sample_spacing_m=sample_spacing_m,
+            k_query_samples=k_query_samples,
+            chunk_size=chunk_size,
+            max_samples_per_link=max_samples_per_link,
+            debug_label=patch_key,
+        )
+    else:
+        dk_maps, _ = compute_dk_maps(est, k_targets, max_candidates=max_candidates)
+
+    links = est.get("links", []) or []
+    return {
+        "patch_key": patch_key,
+        "H": H,
+        "W": W,
+        "pixel_size_m": pix,
+        "area_km2": area_km2,
+        "bin_edges_m": [float(v) for v in bin_edges_m],
+        "k_targets": k_targets,
+        "dk_maps": {str(k): np.asarray(dk_maps[k], dtype=np.float64).tolist() for k in k_targets},
+        "links": [
+            {
+                "x0_m": float(L["x0_m"]),
+                "y0_m": float(L["y0_m"]),
+                "x1_m": float(L["x1_m"]),
+                "y1_m": float(L["y1_m"]),
+            }
+            for L in links
+        ],
+    }
+
+
+def render_largest_patch_distance_bin_maps(
+    payload: Dict[str, Any],
+    *,
+    out_dir: Path,
+    dpi: int = 150,
+) -> None:
+    import matplotlib.pyplot as plt  # type: ignore
+    from matplotlib.colors import ListedColormap  # type: ignore
+
+    if not payload:
+        return
+
+    patch_key = str(payload["patch_key"])
+    H = int(payload["H"])
+    W = int(payload["W"])
+    pix = float(payload["pixel_size_m"])
+    area_km2 = float(payload["area_km2"])
+    bins = parse_bins([float(v) for v in payload.get("bin_edges_m", [])])
+    labels = [b[2] for b in bins]
+    n_bins = len(labels)
+
+    cmap_vals = plt.cm.plasma(np.linspace(0.08, 0.95, max(1, n_bins)))
+    cmap = ListedColormap(cmap_vals)
+    cmap.set_bad(color="#d9d9d9")
+
+    links = payload.get("links", []) or []
+    x0 = np.asarray([float(L["x0_m"]) for L in links], dtype=np.float64) if links else np.zeros(0, dtype=np.float64)
+    y0 = np.asarray([float(L["y0_m"]) for L in links], dtype=np.float64) if links else np.zeros(0, dtype=np.float64)
+    x1 = np.asarray([float(L["x1_m"]) for L in links], dtype=np.float64) if links else np.zeros(0, dtype=np.float64)
+    y1 = np.asarray([float(L["y1_m"]) for L in links], dtype=np.float64) if links else np.zeros(0, dtype=np.float64)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    x_span_km = (float(W) * pix) / 1000.0
+    y_span_km = (float(H) * pix) / 1000.0
+    edges = np.asarray([float(v) for v in payload.get("bin_edges_m", [])], dtype=np.float64)
+    if edges.size > 0:
+        edges = np.unique(edges[np.isfinite(edges)])
+
+    for k in [int(v) for v in payload.get("k_targets", [2, 3])]:
+        d_map = np.asarray(payload.get("dk_maps", {}).get(str(k), []), dtype=np.float64).reshape(H, W)
+        finite = np.isfinite(d_map)
+        if edges.size == 0:
+            bin_idx = np.zeros_like(d_map, dtype=np.int32)
+        else:
+            bin_idx = np.digitize(d_map, edges, right=True).astype(np.int32)
+        bin_plot = np.ma.masked_where(~finite, bin_idx)
+
+        fig, ax = plt.subplots(figsize=(9.0, 7.2), dpi=dpi)
+        im = ax.imshow(
+            bin_plot,
+            cmap=cmap,
+            vmin=-0.5,
+            vmax=max(0, n_bins - 1) + 0.5,
+            origin="upper",
+            extent=(0.0, float(W) * pix, float(H) * pix, 0.0),
+            interpolation="nearest",
+            aspect="equal",
+        )
+        if x0.size > 0:
+            for i in range(x0.size):
+                ax.plot([x0[i], x1[i]], [y0[i], y1[i]], color="black", linewidth=0.55, alpha=0.55)
+
+        cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        cbar.set_ticks(np.arange(n_bins))
+        cbar.set_ticklabels(labels)
+        cbar.ax.set_ylabel(f"d{k} distance bin (m)")
+
+        ax.set_title(
+            f"Largest patch distance bins (k={k}) with links\n"
+            f"{patch_key} | size={x_span_km:.1f}x{y_span_km:.1f} km | area={area_km2:.1f} km^2 | links={x0.size}"
+        )
+        ax.set_xlabel("x_local (m)")
+        ax.set_ylabel("y_local (m)")
+        ax.grid(False)
+
+        out_png = out_dir / f"largest_patch_distance_bins_k{k}.png"
+        fig.tight_layout()
+        fig.savefig(out_png, dpi=dpi)
+        plt.close(fig)
+        print(f"[largest_patch_bins] wrote {out_png}")
+
+
+def default_cache_path(*, out_dir: Path, excel_name: str) -> Path:
+    stem = Path(excel_name).stem
+    return out_dir / f"{stem}_report_cache.json"
+
+
+def write_report_cache(path: Path, cache: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(cache, f, indent=2, sort_keys=True)
+
+
+def read_report_cache(path: Path) -> Dict[str, Any]:
+    with path.open("r", encoding="utf-8") as f:
+        obj = json.load(f)
+    if not isinstance(obj, dict):
+        raise ValueError(f"Cache at {path} is not a JSON object.")
+    return obj
+
+
+def objective_header_comments_map() -> Dict[str, str]:
+    return {
+        "patch_key": (
+            "Objective_J terms are evaluated with one common legacy objective evaluator for all solvers, "
+            "for apples-to-apples comparison. Solver-native objective normalization status is listed in "
+            "sheet Objective_J_Conventions."
+        ),
+        "solver": (
+            "Solver label for this row (GT is included as a reference row). "
+            "Each row is one patch-solver-parameter triple."
+        ),
+        "objective_scaling": (
+            "Objective convention inferred per solver (NORMALIZED, UNNORMALIZED, N/A_BASELINE, or UNKNOWN)."
+        ),
+        "unnormalized_data_fit_term": (
+            "Unnormalized data-fit term J1 = sum_valid_links ((A_hat - A_obs) / L_km)^2."
+        ),
+        "unnormalized_objective": (
+            "Unnormalized weighted objective: J1 + w_1d*J2 + w_total*J3 + w_2d*J4."
+        ),
+        "unnormalized_smoothness_term": (
+            "Unnormalized smoothness term J2 = sum_neighbor_pairs (log(R + eps)_u - log(R + eps)_v)^2."
+        ),
+        "unnormalized_shrinkage_term": (
+            "Unnormalized shrinkage term J3 = sum_pixels R^2."
+        ),
+        "unnormalized_second_derivative_term": (
+            "Unnormalized second-derivative term J4 = sum_triplets (((R_b-R_a)-(R_c-R_b))^2)."
+        ),
+        "normalized_data_fit_term": (
+            "Normalized data-fit term: J1 / #valid_links (for NORMALIZED-objective solvers)."
+        ),
+        "normalized_smoothness_term": (
+            "Normalized smoothness term: J2 / #pixels (for NORMALIZED-objective solvers)."
+        ),
+        "normalized_shrinkage_term": (
+            "Normalized shrinkage term: J3 / #pixels (for NORMALIZED-objective solvers)."
+        ),
+        "normalized_second_der_term": (
+            "Normalized second-derivative term: J4 / #pixels (for NORMALIZED-objective solvers)."
+        ),
+    }
+
+
+def reorder_report_sheets(sheets: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+    ordered: Dict[str, List[Dict[str, Any]]] = {}
+    sheet_names = list(sheets.keys())
+
+    for prefix in ("LinkStats_", "DistanceStats_GTvs", "DistanceStatsK2_", "CoverageStats_"):
+        for name in sheet_names:
+            if name.startswith(prefix) and name not in ordered:
+                ordered[name] = sheets[name]
+
+    for name in sheet_names:
+        if name.startswith("OverallStats_"):
+            continue
+        if name not in ordered:
+            ordered[name] = sheets[name]
+
+    for name in sheet_names:
+        if name.startswith("OverallStats_") and name not in ordered:
+            ordered[name] = sheets[name]
+
+    return ordered
+
+
 # ----------------------------
 # Main
 # ----------------------------
@@ -2854,6 +3233,9 @@ def plot_gt_binned_patchavg_error(
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
+    ap.add_argument("--analyze-only", "--analyze_only", dest="analyze_only", action="store_true")
+    ap.add_argument("--output-dir", default=None)
+    ap.add_argument("--cache-path", default=None)
     args = ap.parse_args()
 
     cfg_path = Path(args.config)
@@ -2893,10 +3275,13 @@ def main() -> int:
 
     # outputs
     out_dir = resolve_path(deep_get(cfg, "output.out_dir", "batch_analyze_output_multi"), base_dir=base_dir) or (base_dir / "batch_analyze_output_multi").resolve()
+    if args.output_dir:
+        out_dir = resolve_path(args.output_dir, base_dir=base_dir) or out_dir
     images_subdir = str(deep_get(cfg, "output.images_subdir", "images"))
     excel_name = str(deep_get(cfg, "output.excel_filename", "coverage_stats_long_multi.xlsx"))
     img_dir = (out_dir / images_subdir)
     excel_path = out_dir / excel_name
+    cache_path = resolve_path(args.cache_path, base_dir=base_dir) if args.cache_path else default_cache_path(out_dir=out_dir, excel_name=excel_name)
 
     # params
     thr = float(deep_get(cfg, "rain.threshold_mmph", 1.0))
@@ -2999,15 +3384,13 @@ def main() -> int:
     est_jsons = list_json(est_input_dir, "est_input")
     est_by_key: Dict[str, Path] = {patch_key_from_filename(p.name): p for p in est_jsons}
 
-    # One-shot visualization for the largest patch in est_input_dir:
-    # links overlaid on d_k distance-bin map, for k=2 and k=3.
+    # Largest patch distance-bin overlay payload for the render stage.
     biggest_key, biggest_est_path, biggest_area_km2 = pick_biggest_est_patch(est_by_key)
+    largest_patch_plot_payload: Optional[Dict[str, Any]] = None
     if biggest_key is not None and biggest_est_path is not None:
-        largest_patch_dir = img_dir / "largest_patch_distance_bins"
-        save_biggest_patch_distance_bin_maps(
+        largest_patch_plot_payload = build_largest_patch_plot_payload(
             est_path=biggest_est_path,
             patch_key=biggest_key,
-            out_dir=largest_patch_dir,
             bin_edges_m=bin_edges,
             dist_method=dist_method,
             sample_spacing_m=sample_spacing_m,
@@ -3015,8 +3398,6 @@ def main() -> int:
             chunk_size=chunk_size,
             max_samples_per_link=max_samples_per_link,
             max_candidates=max_candidates,
-            dpi=dpi,
-            show=show,
         )
         print(
             f"[largest_patch_bins] source patch={biggest_key} "
@@ -3057,6 +3438,9 @@ def main() -> int:
     stop_rows: List[Dict[str, Any]] = []
     solver_info_rows: List[Dict[str, Any]] = []
     solver_formula_by_label: Dict[str, str] = {}
+    j_behavior_plots: List[Dict[str, Any]] = []
+    rae_hist_plots: List[Dict[str, Any]] = []
+    patch_plot_jobs: List[Dict[str, Any]] = []
     gtbin_counts_global: Dict[str, Dict[str, int]] = {lab: {} for _, _, lab in rainy_intervals}
     gtbin_rel_patch_means: Dict[str, Dict[str, List[float]]] = {}
     gtbin_abs_patch_means: Dict[str, Dict[str, List[float]]] = {}
@@ -3130,9 +3514,6 @@ def main() -> int:
         rae_hist_data: Optional[Dict[int, Dict[str, List[float]]]] = None
         if rae_enabled:
             rae_hist_data = {k: {lab: [] for lab in dist_labels} for k in k_values}
-        solver_j_behavior_dir = img_dir / "j_behavior" / safe_path_token(name)
-        solver_patch_map_dir = img_dir / "patch_error_maps" / safe_path_token(label)
-
         # match patches by keys present in both GT and solver
         keys = sorted(set(gt_by_key.keys()) & set(sol_by_key.keys()))
         if not keys:
@@ -3191,17 +3572,17 @@ def main() -> int:
                 ref_eval_eta=float(ref_eval_eta),
                 ref_eval_eps=float(ref_eval_eps),
                 include_rae_hist=(rae_hist_data is not None and key in hist_key_set),
-                patch_plots_enabled=(not skip_patch_plots),
-                patch_plot_dir=str(solver_patch_map_dir),
-                plot_show=show,
-                plot_dpi=dpi,
-                cmap_gt=cmap_gt,
-                cmap_sol=cmap_sol,
-                cmap_diff=cmap_diff,
-                cmap_abs_diff=cmap_abs,
-                cmap_rel=cmap_rel,
-                cmap_abs_rel=cmap_abs_rel,
             ))
+            if not skip_patch_plots:
+                patch_plot_jobs.append(dict(
+                    patch_key=key,
+                    solver_label=label,
+                    solver_name=name,
+                    gt_path=str(gt_path),
+                    sol_path=str(sol_path),
+                    gt_key_pref=list(gt_key_pref),
+                    sol_key_pref=list(sol_key_pref),
+                ))
 
         patch_results: List[Dict[str, Any]] = []
         if n_jobs <= 1:
@@ -3480,11 +3861,13 @@ def main() -> int:
                         itertrace_json=itertrace_path,
                     )
                 )
-                plot_j_behavior(
-                    solver_j_behavior_dir / f"{safe_path_token(key)}.png",
-                    title=f"J behavior: {label} | {key}",
-                    iterations=iter_entries,
-                    dpi=dpi,
+                j_behavior_plots.append(
+                    dict(
+                        solver_label=label,
+                        solver_name=name,
+                        patch_key=key,
+                        iterations=iter_entries,
+                    )
                 )
 
         # store sheets (order: LinkStats, DistanceStats, CoverageStats)
@@ -3526,16 +3909,14 @@ def main() -> int:
 
         # RAE histograms (rainy only)
         if rae_hist_data is not None:
-            rae_dir = out_dir / rae_out_subdir
             for k in k_values:
-                out_png = rae_dir / f"rae_hist_k{k}_{label}.png"
-                plot_rae_histograms(
-                    out_png,
-                    title=f"RAE histograms (rainy) | k={k} | {label}",
-                    dist_labels=dist_labels,
-                    data_by_bin=rae_hist_data[k],
-                    bins=rae_bins,
-                    dpi=dpi,
+                rae_hist_plots.append(
+                    dict(
+                        out_relpath=str(Path(rae_out_subdir) / f"rae_hist_k{k}_{label}.png"),
+                        title=f"RAE histograms (rainy) | k={k} | {label}",
+                        dist_labels=list(dist_labels),
+                        data_by_bin=rae_hist_data[k],
+                    )
                 )
 
     # stopping diagnostics sheets
@@ -3616,39 +3997,6 @@ def main() -> int:
         sheets["Objective_NativeBySolver"] = native_objective_rows
         sheet_order.append("Objective_NativeBySolver")
 
-    # dry classification summary
-    if dry_metrics:
-        dry_rows: List[Dict[str, Any]] = []
-        for label, vals in dry_metrics.items():
-            fp = np.array(vals.get("fp_rates", []), dtype=np.float64)
-            fn = np.array(vals.get("fn_rates", []), dtype=np.float64)
-            fp_mean = float(np.mean(fp)) if fp.size else 0.0
-            fp_std = float(np.std(fp, ddof=0)) if fp.size else 0.0
-            fn_mean = float(np.mean(fn)) if fn.size else 0.0
-            fn_std = float(np.std(fn, ddof=0)) if fn.size else 0.0
-            dry_rows.append(dict(
-                solver=label,
-                dry_threshold_mmph=float(thr),
-                positive_definition="wet (gt >= threshold)",
-                fp_definition="pred wet & GT dry",
-                fn_definition="pred dry & GT wet",
-                fp_rate_mean=fp_mean,
-                fp_rate_std=fp_std,
-                fp_rate_range=f"[{fp_mean - fp_std:.6f},{fp_mean + fp_std:.6f}]",
-                fn_rate_mean=fn_mean,
-                fn_rate_std=fn_std,
-                fn_rate_range=f"[{fn_mean - fn_std:.6f},{fn_mean + fn_std:.6f}]",
-            ))
-        sheets["DryConfusionSummary"] = dry_rows
-        sheet_order.append("DryConfusionSummary")
-
-        plot_fp_fn_summary(
-            img_dir / "dry_fp_fn_summary.png",
-            title="Wet-classification FP/FN rates (mean ± std across patches)",
-            rows=dry_rows,
-            dpi=dpi,
-        )
-
     if fp_fn_threshold_metrics:
         fpfn_rows: List[Dict[str, Any]] = []
         for label in sorted(fp_fn_threshold_metrics.keys()):
@@ -3678,12 +4026,6 @@ def main() -> int:
                 )
         sheets["FPFN_ByThreshold"] = fpfn_rows
         sheet_order.append("FPFN_ByThreshold")
-        plot_fp_fn_vs_threshold(
-            img_dir / "fp_fn_vs_threshold.png",
-            title="Wet-class FP/FN rates vs threshold",
-            rows=fpfn_rows,
-            dpi=dpi,
-        )
 
     if iter_feas_rows:
         iter_feas_rows = append_average_rows(iter_feas_rows, group_keys=["solver", "solver_name"])
@@ -3705,26 +4047,186 @@ def main() -> int:
     enrich_binned_stats_with_baseline_ratios(sheets)
 
     # write excel (ordered)
-    ordered_sheets: Dict[str, List[Dict[str, Any]]] = {}
-    # enforce global ordering: all LinkStats, then DistanceStats, then CoverageStats
-    for prefix in ("LinkStats_", "DistanceStats", "CoverageStats"):
-        for name in sheet_order:
-            if name.startswith(prefix) and name not in ordered_sheets:
-                ordered_sheets[name] = sheets[name]
-    # add remaining sheets in original order, except OverallStats (placed last)
+    ordered_from_sheet_order: Dict[str, List[Dict[str, Any]]] = {}
     for name in sheet_order:
-        if name.startswith("OverallStats_"):
-            continue
-        if name not in ordered_sheets:
-            ordered_sheets[name] = sheets[name]
-    # place all OverallStats tabs at the end
-    for name in sheet_order:
-        if name.startswith("OverallStats_") and name not in ordered_sheets:
-            ordered_sheets[name] = sheets[name]
-    # add any leftover (shouldn't happen)
+        if name in sheets and name not in ordered_from_sheet_order:
+            ordered_from_sheet_order[name] = sheets[name]
     for name in sheets:
-        if name not in ordered_sheets:
-            ordered_sheets[name] = sheets[name]
+        if name not in ordered_from_sheet_order:
+            ordered_from_sheet_order[name] = sheets[name]
+    ordered_sheets = reorder_report_sheets(ordered_from_sheet_order)
+
+    link_ratio_entries: List[Dict[str, Any]] = []
+    if "IDW" in link_metrics:
+        metrics = ["L1", "J1", "E", "E2", "AVG_ABS_NORM_LINK_RATIO"]
+        for solver_label in [label for _, label, _, _, _ in solvers if label in link_metrics]:
+            per_patch = link_metrics.get(solver_label, {})
+            per_patch_idw = link_metrics.get("IDW", {})
+            keys = sorted(set(per_patch.keys()) & set(per_patch_idw.keys()))
+            if not keys:
+                continue
+            ratio_vals: Dict[str, List[float]] = {m: [] for m in metrics}
+            for k_patch in keys:
+                v = per_patch[k_patch]
+                v_idw = per_patch_idw[k_patch]
+                if v_idw["L1"] != 0:
+                    ratio_vals["L1"].append(v["L1"] / v_idw["L1"])
+                j1_num = float(v.get("J1_len1", v["J1"]))
+                j1_den = float(v_idw.get("J1_len1", v_idw["J1"]))
+                if j1_den != 0:
+                    ratio_vals["J1"].append(j1_num / j1_den)
+                if v_idw["E"] != 0:
+                    ratio_vals["E"].append(v["E"] / v_idw["E"])
+                if v_idw["E2"] != 0:
+                    ratio_vals["E2"].append(v["E2"] / v_idw["E2"])
+                arr_alg = np.asarray(v.get("abs_norm_resid_valid", []), dtype=np.float64)
+                arr_idw = np.asarray(v_idw.get("abs_norm_resid_valid", []), dtype=np.float64)
+                n_common = min(arr_alg.size, arr_idw.size)
+                if n_common > 0:
+                    den = arr_idw[:n_common]
+                    num = arr_alg[:n_common]
+                    good = np.isfinite(num) & np.isfinite(den)
+                    if np.any(good):
+                        mean_num = float(np.mean(num[good]))
+                        mean_den = float(np.mean(den[good]))
+                        if mean_den > 0.0:
+                            ratio_vals["AVG_ABS_NORM_LINK_RATIO"].append(mean_num / mean_den)
+            link_ratio_entries.extend([
+                dict(solver=solver_label, label=f"L1({solver_label})/L1(IDW)", values=ratio_vals["L1"]),
+                dict(solver=solver_label, label=f"J1_len1({solver_label})/J1_len1(IDW)", values=ratio_vals["J1"]),
+                dict(solver=solver_label, label=f"E({solver_label})/E(IDW)", values=ratio_vals["E"]),
+                dict(solver=solver_label, label=f"E2({solver_label})/E2(IDW)", values=ratio_vals["E2"]),
+                dict(
+                    solver=solver_label,
+                    label=f"AvgLinkRatio(|A-Ahat|/L): {solver_label}/IDW",
+                    values=ratio_vals["AVG_ABS_NORM_LINK_RATIO"],
+                ),
+            ])
+
+    gtbin_plot_data: Optional[Dict[str, Any]] = None
+    if rainy_bins_enabled and gtbin_rel_patch_means and gtbin_abs_patch_means:
+        ordered_labels = [lab for _, _, lab in rainy_intervals]
+        labels_to_plot = list(ordered_labels)
+        while labels_to_plot:
+            tail = labels_to_plot[-1]
+            counts = list(gtbin_counts_global.get(tail, {}).values())
+            if not counts:
+                labels_to_plot.pop()
+                continue
+            zfrac = float(sum(1 for c in counts if c == 0)) / float(len(counts))
+            if zfrac >= rainy_bins_zero_frac:
+                labels_to_plot.pop()
+            else:
+                break
+
+        solver_order = [label for _, label, _, _, _ in solvers if label in gtbin_rel_patch_means]
+        if labels_to_plot and solver_order:
+            bin_count_stats: Dict[str, Tuple[float, float]] = {}
+            for bin_lab in labels_to_plot:
+                counts = np.array(list(gtbin_counts_global.get(bin_lab, {}).values()), dtype=np.float64)
+                if counts.size > 0:
+                    bin_count_stats[bin_lab] = (float(np.mean(counts)), float(np.std(counts, ddof=0)))
+
+            rel_mean: Dict[str, List[float]] = {}
+            rel_std: Dict[str, List[float]] = {}
+            abs_mean: Dict[str, List[float]] = {}
+            abs_std: Dict[str, List[float]] = {}
+            for solver_label in solver_order:
+                rel_mean[solver_label] = []
+                rel_std[solver_label] = []
+                abs_mean[solver_label] = []
+                abs_std[solver_label] = []
+                for bin_lab in labels_to_plot:
+                    rv = np.array(gtbin_rel_patch_means.get(solver_label, {}).get(bin_lab, []), dtype=np.float64)
+                    av = np.array(gtbin_abs_patch_means.get(solver_label, {}).get(bin_lab, []), dtype=np.float64)
+                    rel_mean[solver_label].append(float(np.mean(rv)) if rv.size else 0.0)
+                    rel_std[solver_label].append(float(np.std(rv, ddof=0)) if rv.size else 0.0)
+                    abs_mean[solver_label].append(float(np.mean(av)) if av.size else 0.0)
+                    abs_std[solver_label].append(float(np.std(av, ddof=0)) if av.size else 0.0)
+
+            gtbin_plot_data = dict(
+                labels_to_plot=labels_to_plot,
+                bin_count_stats=bin_count_stats,
+                rel_mean=rel_mean,
+                rel_std=rel_std,
+                abs_mean=abs_mean,
+                abs_std=abs_std,
+            )
+
+    cache: Dict[str, Any] = {
+        "cache_version": 1,
+        "config_path": str(cfg_path.resolve()),
+        "output": {
+            "out_dir": str(out_dir),
+            "images_subdir": images_subdir,
+            "excel_filename": excel_name,
+        },
+        "render": {
+            "dpi": dpi,
+            "bin_spacing": bin_spacing,
+            "y_max": y_max,
+            "prune_bins_enabled": prune_bins_enabled,
+            "prune_bins_zero_frac": prune_bins_zero_frac,
+            "rae_bins": rae_bins,
+            "threshold_mmph": thr,
+            "cmap_gt": cmap_gt,
+            "cmap_sol": cmap_sol,
+            "cmap_diff": cmap_diff,
+            "cmap_abs_diff": cmap_abs,
+            "cmap_rel": cmap_rel,
+            "cmap_abs_rel": cmap_abs_rel,
+        },
+        "solvers": {
+            "order": [label for _, label, _, _, _ in solvers],
+            "names": {label: name for name, label, _, _, _ in solvers},
+        },
+        "labels": {
+            "k_values": list(k_values),
+            "dist_labels": list(dist_labels),
+            "jatten_k_values": list(jatten_k_values),
+            "jatten_dist_labels": list(jatten_dist_labels),
+            "rainy_intervals": [list(x) for x in rainy_intervals],
+        },
+        "ordered_sheets": ordered_sheets,
+        "plot_data": {
+            "medians_rainy": {str(k): medians_rainy[k] for k in k_values},
+            "medians_nonrainy": {str(k): medians_nonrainy[k] for k in k_values},
+            "p90s_rainy": {str(k): p90s_rainy[k] for k in k_values},
+            "p90s_nonrainy": {str(k): p90s_nonrainy[k] for k in k_values},
+            "jatten_medians": {str(k): jatten_medians[k] for k in jatten_k_values},
+            "bin_counts": {str(k): bin_counts[k] for k in k_values},
+            "jatten_link_bin_counts": {str(k): jatten_link_bin_counts[k] for k in jatten_k_values},
+        },
+        "j_behavior_plots": j_behavior_plots,
+        "rae_hist_plots": rae_hist_plots,
+        "patch_plot_jobs": patch_plot_jobs,
+        "largest_patch_plot_payload": largest_patch_plot_payload,
+        "link_ratio_entries": link_ratio_entries,
+        "gtbin_plot_data": gtbin_plot_data,
+    }
+    write_report_cache(cache_path, cache)
+    print(f"Wrote cache: {cache_path}")
+    if args.analyze_only:
+        for stale_png in (img_dir / "fp_fn_vs_threshold.png",):
+            if stale_png.exists():
+                stale_png.unlink()
+        patch_error_maps_dir = img_dir / "patch_error_maps"
+        if patch_error_maps_dir.exists():
+            shutil.rmtree(patch_error_maps_dir)
+        return 0
+    render_script = Path(__file__).resolve().with_name("render_analysis_report.py")
+    subprocess.run(
+        [
+            sys.executable,
+            str(render_script),
+            "--cache",
+            str(cache_path),
+            "--output-dir",
+            str(out_dir),
+        ],
+        check=True,
+    )
+    return 0
 
     objective_header_comments = {
         "patch_key": (
