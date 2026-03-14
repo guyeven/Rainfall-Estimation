@@ -628,7 +628,28 @@ def render_report_from_cache(
     output_dir: Optional[Path] = None,
     render_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Path]:
+    def log_progress(message: str) -> None:
+        print(f"[render] {message}")
+
+    def progress_interval(total: int) -> int:
+        if total <= 10:
+            return 1
+        if total <= 50:
+            return 5
+        return 25
+
+    def start_major(name: str) -> None:
+        log_progress(f"[{major_state['completed']}/{major_state['total']}] Starting {name}")
+
+    def finish_major(name: str) -> None:
+        major_state["completed"] += 1
+        log_progress(f"[{major_state['completed']}/{major_state['total']}] Finished {name}")
+
     render_config = render_config or {}
+    analysis_config: Dict[str, Any] = {}
+    cfg_path = cache.get("config_path", None)
+    if cfg_path:
+        analysis_config = load_config_file(Path(str(cfg_path)).resolve())
     out_dir = output_dir or Path(str(render_value(render_config, "output.out_dir", cache["output"]["out_dir"])))
     images_subdir = str(render_value(render_config, "output.images_subdir", cache["output"]["images_subdir"]))
     excel_name = str(render_value(render_config, "output.excel_filename", cache["output"]["excel_filename"]))
@@ -649,6 +670,7 @@ def render_report_from_cache(
                 objective_sheet_comments[col_name] = header_comments[col_name]
 
     if render_bool(render_config, "excel.enabled", True):
+        log_progress("Writing Excel workbook")
         write_workbook(excel_path, ordered_sheets, header_comments={"Objective_J": objective_sheet_comments})
         print(f"Wrote Excel: {excel_path}")
 
@@ -659,6 +681,16 @@ def render_report_from_cache(
     prune_bins_enabled = bool(render_value(render_config, "style.prune_bins_enabled", cache["render"]["prune_bins_enabled"]))
     prune_bins_zero_frac = float(render_value(render_config, "style.prune_bins_zero_frac", cache["render"]["prune_bins_zero_frac"]))
     rae_bins = int(render_value(render_config, "style.rae_bins", cache["render"]["rae_bins"]))
+    patch_map_render_cfg = {
+        "threshold_mmph": float(render_value(render_config, "patch_error_maps.threshold_mmph", render_value(analysis_config, "rain.threshold_mmph", 1.0))),
+        "dpi": int(render_value(render_config, "patch_error_maps.dpi", dpi)),
+        "cmap_gt": str(render_value(render_config, "patch_error_maps.cmap_gt", render_value(analysis_config, "plots.cmap_gt", "viridis"))),
+        "cmap_sol": str(render_value(render_config, "patch_error_maps.cmap_sol", render_value(analysis_config, "plots.cmap_sol", "viridis"))),
+        "cmap_diff": str(render_value(render_config, "patch_error_maps.cmap_diff", render_value(analysis_config, "plots.cmap_diff", "seismic"))),
+        "cmap_abs_diff": str(render_value(render_config, "patch_error_maps.cmap_abs_diff", render_value(analysis_config, "plots.cmap_abs_diff", "magma"))),
+        "cmap_rel": str(render_value(render_config, "patch_error_maps.cmap_rel", render_value(analysis_config, "plots.cmap_rel", "seismic"))),
+        "cmap_abs_rel": str(render_value(render_config, "patch_error_maps.cmap_abs_rel", render_value(analysis_config, "plots.cmap_abs_rel", "magma"))),
+    }
 
     labels = cache["labels"]
     k_values = [int(v) for v in labels["k_values"]]
@@ -667,30 +699,70 @@ def render_report_from_cache(
     jatten_dist_labels = [str(v) for v in labels["jatten_dist_labels"]]
 
     solver_order = [str(v) for v in cache["solvers"]["order"]]
-
     largest_patch_payload = cache.get("largest_patch_plot_payload", None)
+    j_behavior_plots = cache.get("j_behavior_plots", []) or []
+    patch_plot_jobs = cache.get("patch_plot_jobs", []) or []
+    rae_hist_plots = cache.get("rae_hist_plots", []) or []
+    fpfn_rows = ordered_sheets.get("FPFN_ByThreshold", [])
+    link_ratio_entries = cache.get("link_ratio_entries", []) or []
+    gtbin = cache.get("gtbin_plot_data", None)
+
+    major_steps: List[Tuple[str, bool]] = [
+        ("Excel workbook", render_bool(render_config, "excel.enabled", True)),
+        ("Largest-patch distance-bin maps", bool(largest_patch_payload) and render_bool(render_config, "plots.largest_patch_distance_bins", True)),
+        ("J-behavior plots", bool(j_behavior_plots) and render_bool(render_config, "plots.j_behavior", True)),
+        ("Patch error maps", bool(patch_plot_jobs) and render_bool(render_config, "plots.patch_error_maps", True)),
+        ("RAE histograms", bool(rae_hist_plots) and render_bool(render_config, "plots.rae_histograms", True)),
+        ("FP/FN vs threshold plot", bool(fpfn_rows) and render_bool(render_config, "plots.fp_fn_vs_threshold", True)),
+        ("Distance-profile plots", render_bool(render_config, "plots.distance_profiles", True) or render_bool(render_config, "plots.p90_profiles", True) or render_bool(render_config, "plots.distance_profiles_relative", True)),
+        ("J_atten plots", render_bool(render_config, "plots.jatten_profiles", True) or render_bool(render_config, "plots.jatten_profiles_relative", True)),
+        ("Link-ratio summary plot", bool(link_ratio_entries) and render_bool(render_config, "plots.link_ratio_summary", True)),
+        ("GT-binned patch-average plots", bool(gtbin) and render_bool(render_config, "plots.gt_binned_patchavg", True)),
+    ]
+    major_state = {"completed": 0, "total": sum(1 for _, enabled in major_steps if enabled)}
+    if major_state["total"] > 0:
+        log_progress(f"Major plot groups to render: {major_state['total']}")
+
     if largest_patch_payload and render_bool(render_config, "plots.largest_patch_distance_bins", True):
+        start_major("largest-patch distance-bin maps")
+        log_progress("Rendering largest-patch distance-bin maps")
         render_largest_patch_distance_bin_maps(
             largest_patch_payload,
             out_dir=img_dir / "largest_patch_distance_bins",
             dpi=dpi,
         )
+        finish_major("largest-patch distance-bin maps")
 
-    if render_bool(render_config, "plots.j_behavior", True):
-        for plot_payload in cache.get("j_behavior_plots", []) or []:
+    if j_behavior_plots and render_bool(render_config, "plots.j_behavior", True):
+        start_major("J-behavior plots")
+        log_progress(f"Rendering J-behavior plots ({len(j_behavior_plots)} jobs)")
+        interval = progress_interval(len(j_behavior_plots))
+        for idx, plot_payload in enumerate(j_behavior_plots, start=1):
             plot_j_behavior(
                 img_dir / "j_behavior" / safe_path_token(str(plot_payload["solver_name"])) / f"{safe_path_token(str(plot_payload['patch_key']))}.png",
                 title=f"J behavior: {plot_payload['solver_label']} | {plot_payload['patch_key']}",
                 iterations=plot_payload.get("iterations", []) or [],
                 dpi=dpi,
             )
+            if idx == len(j_behavior_plots) or idx % interval == 0:
+                log_progress(f"J-behavior plots: {idx}/{len(j_behavior_plots)}")
+        finish_major("J-behavior plots")
 
-    if render_bool(render_config, "plots.patch_error_maps", True):
-        for patch_plot_job in cache.get("patch_plot_jobs", []) or []:
-            render_patch_error_maps_from_job(patch_plot_job, img_dir=img_dir, render_cfg=cache["render"])
+    if patch_plot_jobs and render_bool(render_config, "plots.patch_error_maps", True):
+        start_major("patch error maps")
+        log_progress(f"Rendering patch error maps ({len(patch_plot_jobs)} jobs)")
+        interval = progress_interval(len(patch_plot_jobs))
+        for idx, patch_plot_job in enumerate(patch_plot_jobs, start=1):
+            render_patch_error_maps_from_job(patch_plot_job, img_dir=img_dir, render_cfg=patch_map_render_cfg)
+            if idx == len(patch_plot_jobs) or idx % interval == 0:
+                log_progress(f"Patch error maps: {idx}/{len(patch_plot_jobs)}")
+        finish_major("patch error maps")
 
-    if render_bool(render_config, "plots.rae_histograms", True):
-        for payload in cache.get("rae_hist_plots", []) or []:
+    if rae_hist_plots and render_bool(render_config, "plots.rae_histograms", True):
+        start_major("RAE histograms")
+        log_progress(f"Rendering RAE histograms ({len(rae_hist_plots)} jobs)")
+        interval = progress_interval(len(rae_hist_plots))
+        for idx, payload in enumerate(rae_hist_plots, start=1):
             plot_rae_histograms(
                 img_dir / str(payload["out_relpath"]),
                 title=str(payload["title"]),
@@ -699,15 +771,20 @@ def render_report_from_cache(
                 bins=rae_bins,
                 dpi=dpi,
             )
+            if idx == len(rae_hist_plots) or idx % interval == 0:
+                log_progress(f"RAE histograms: {idx}/{len(rae_hist_plots)}")
+        finish_major("RAE histograms")
 
-    fpfn_rows = ordered_sheets.get("FPFN_ByThreshold", [])
     if fpfn_rows and render_bool(render_config, "plots.fp_fn_vs_threshold", True):
+        start_major("FP/FN vs threshold plot")
+        log_progress("Rendering FP/FN vs threshold plot")
         plot_fp_fn_vs_threshold(
             img_dir / "fp_fn_vs_threshold.png",
             title="Wet-class FP/FN rates vs threshold",
             rows=fpfn_rows,
             dpi=dpi,
         )
+        finish_major("FP/FN vs threshold plot")
 
     plot_data = cache["plot_data"]
     medians_rainy = plot_data["medians_rainy"]
@@ -722,6 +799,12 @@ def render_report_from_cache(
     enabled_jatten_k_values = [int(v) for v in render_value(render_config, "filters.jatten_k_values", jatten_k_values)]
     method_order = [label for label in solver_order if label in medians_rainy.get(str(k_values[0]), {})]
     if method_order:
+        distance_major_started = False
+        jatten_major_started = False
+        if render_bool(render_config, "plots.distance_profiles", True) or render_bool(render_config, "plots.p90_profiles", True) or render_bool(render_config, "plots.distance_profiles_relative", True):
+            start_major("distance-profile plots")
+            distance_major_started = True
+            log_progress(f"Rendering distance-profile plots for k values {enabled_k_values}")
         for k in [v for v in k_values if v in enabled_k_values]:
             kstr = str(k)
             labels_r = list(dist_labels)
@@ -752,13 +835,16 @@ def render_report_from_cache(
                 nonrainy_p90_title = f"Non-rainy pixels: per-patch p90 |GT-PRED| by distance bin (box-and-whisker, k={k})"
 
             if render_bool(render_config, "plots.distance_profiles", True):
+                log_progress(f"Distance-profile medians: k={k}")
                 plot_box_whisker(img_dir / rainy_name, rainy_title, medians_rainy[kstr], labels_r, method_order, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r)
                 plot_box_whisker(img_dir / nonrainy_name, nonrainy_title, medians_nonrainy[kstr], labels_n, method_order, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n)
             if render_bool(render_config, "plots.p90_profiles", True):
+                log_progress(f"Distance-profile p90s: k={k}")
                 plot_box_whisker(img_dir / rainy_p90_name, rainy_p90_title, p90s_rainy[kstr], labels_r, method_order, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch p90 error")
                 plot_box_whisker(img_dir / nonrainy_p90_name, nonrainy_p90_title, p90s_nonrainy[kstr], labels_n, method_order, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch p90 error")
 
             if "IDW" in medians_rainy[kstr] and render_bool(render_config, "plots.distance_profiles_relative", True):
+                log_progress(f"Relative distance profiles: k={k}")
                 plot_box_whisker(
                     img_dir / rainy_name.replace(".png", "_rel.png"),
                     f"{rainy_title} (relative to IDW medians)",
@@ -779,7 +865,13 @@ def render_report_from_cache(
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_n,
                 )
+        if distance_major_started:
+            finish_major("distance-profile plots")
 
+        if enabled_jatten_k_values and (render_bool(render_config, "plots.jatten_profiles", True) or render_bool(render_config, "plots.jatten_profiles_relative", True)):
+            start_major("J_atten plots")
+            jatten_major_started = True
+            log_progress(f"Rendering J_atten plots for k values {enabled_jatten_k_values}")
         for k in [v for v in jatten_k_values if v in enabled_jatten_k_values]:
             kstr = str(k)
             labels_jatten = list(jatten_dist_labels)
@@ -795,6 +887,7 @@ def render_report_from_cache(
                 jatten_title = f"Link-distance-binned J_atten: per-patch medians (box-and-whisker, k={k})"
 
             if render_bool(render_config, "plots.jatten_profiles", True):
+                log_progress(f"J_atten profiles: k={k}")
                 plot_box_whisker(
                     jatten_img_dir / jatten_name,
                     jatten_title,
@@ -828,6 +921,7 @@ def render_report_from_cache(
                     continue
                 if baseline_label not in jatten_medians[kstr]:
                     continue
+                log_progress(f"Relative J_atten profiles: k={k}, baseline={baseline_label}")
                 rel_profile = compute_relative_distribution_profile(jatten_medians[kstr], baseline_label=baseline_label, dist_labels=jatten_dist_labels)
                 rel_name = f"distance_iqr_medians_jatten_multi_rel_{tag}.png" if len(jatten_k_values) == 1 and k == 3 else f"distance_iqr_medians_jatten_multi_k{k}_rel_{tag}.png"
                 plot_box_whisker(
@@ -857,17 +951,22 @@ def render_report_from_cache(
                     footnote=f"For each distance bin, medians are divided by {baseline_label}'s p50 in that bin.",
                     show_boxes=False,
                 )
+        if jatten_major_started:
+            finish_major("J_atten plots")
 
-    link_ratio_entries = cache.get("link_ratio_entries", []) or []
     if link_ratio_entries and render_bool(render_config, "plots.link_ratio_summary", True):
+        start_major("link-ratio summary plot")
+        log_progress("Rendering link-ratio summary plot")
         entries = [(str(r["solver"]), str(r["label"]), [float(v) for v in r.get("values", [])]) for r in link_ratio_entries]
         plot_ratio_box_whisker(img_dir / "link_ratio_summary.png", title="Link-metric ratios vs IDW (box-and-whisker across patches)", entries=entries, dpi=dpi)
+        finish_major("link-ratio summary plot")
 
-    gtbin = cache.get("gtbin_plot_data", None)
     if gtbin and render_bool(render_config, "plots.gt_binned_patchavg", True):
         labels_to_plot = [str(v) for v in gtbin.get("labels_to_plot", [])]
         solver_plot_order = [label for label in solver_order if label in gtbin.get("rel_mean", {})]
         if labels_to_plot and solver_plot_order:
+            start_major("GT-binned patch-average plots")
+            log_progress("Rendering GT-binned patch-average plots")
             bin_count_stats = {str(k): (float(v[0]), float(v[1])) for k, v in gtbin.get("bin_count_stats", {}).items()}
             plot_gt_binned_patchavg_error(
                 img_dir / "gt_binned_patchavg_relative_abs_error_all_pixels.png",
@@ -892,8 +991,9 @@ def render_report_from_cache(
                 y_label="Avg patch absolute error |GT-PRED| (mm/h)",
                 dpi=dpi,
             )
+            finish_major("GT-binned patch-average plots")
 
-    print(f"Wrote plots under: {img_dir}")
+    log_progress(f"Wrote plots under: {img_dir}")
     return {"excel_path": excel_path, "images_dir": img_dir}
 
 
