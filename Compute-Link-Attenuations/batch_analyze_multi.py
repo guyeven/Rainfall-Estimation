@@ -1348,23 +1348,31 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     for thr_i in fp_fn_thresholds:
         gt_wet_i = gt >= float(thr_i)
         pred_wet_i = pred >= float(thr_i)
+        tp_i = np.logical_and(pred_wet_i, gt_wet_i)
         fp_i = np.logical_and(pred_wet_i, ~gt_wet_i)
         fn_i = np.logical_and(~pred_wet_i, gt_wet_i)
+        tn_i = np.logical_and(~pred_wet_i, ~gt_wet_i)
         n_all_i = int(gt.size)
         n_wet_i = int(np.sum(gt_wet_i))
         n_dry_i = int(n_all_i - n_wet_i)
+        tp_count_i = int(np.sum(tp_i))
         fp_count_i = int(np.sum(fp_i))
         fn_count_i = int(np.sum(fn_i))
+        tn_count_i = int(np.sum(tn_i))
         fp_fn_by_threshold.append(
             dict(
                 threshold_mmph=float(thr_i),
+                tp_count=tp_count_i,
                 fp_count=fp_count_i,
                 fn_count=fn_count_i,
+                tn_count=tn_count_i,
                 n_pixels=n_all_i,
                 n_wet=n_wet_i,
                 n_dry=n_dry_i,
+                tp_rate_all=(float(tp_count_i) / float(n_all_i)) if n_all_i > 0 else None,
                 fp_rate_all=(float(fp_count_i) / float(n_all_i)) if n_all_i > 0 else None,
                 fn_rate_all=(float(fn_count_i) / float(n_all_i)) if n_all_i > 0 else None,
+                tn_rate_all=(float(tn_count_i) / float(n_all_i)) if n_all_i > 0 else None,
                 fp_rate_dry=(float(fp_count_i) / float(n_dry_i)) if n_dry_i > 0 else None,
                 fn_rate_wet=(float(fn_count_i) / float(n_wet_i)) if n_wet_i > 0 else None,
             )
@@ -3493,8 +3501,10 @@ def main() -> int:
         dry_metrics[label] = {"fp_rates": [], "fn_rates": []}
         fp_fn_threshold_metrics[label] = {
             float(t): {
+                "tp_rate_all": [],
                 "fp_rate_all": [],
                 "fn_rate_all": [],
+                "tn_rate_all": [],
                 "fp_rate_dry": [],
                 "fn_rate_wet": [],
             }
@@ -3614,9 +3624,9 @@ def main() -> int:
                 t = float(row_thr.get("threshold_mmph", thr))
                 bucket = fp_fn_threshold_metrics[label].setdefault(
                     t,
-                    {"fp_rate_all": [], "fn_rate_all": [], "fp_rate_dry": [], "fn_rate_wet": []},
+                    {"tp_rate_all": [], "fp_rate_all": [], "fn_rate_all": [], "tn_rate_all": [], "fp_rate_dry": [], "fn_rate_wet": []},
                 )
-                for k_metric in ("fp_rate_all", "fn_rate_all", "fp_rate_dry", "fn_rate_wet"):
+                for k_metric in ("tp_rate_all", "fp_rate_all", "fn_rate_all", "tn_rate_all", "fp_rate_dry", "fn_rate_wet"):
                     v_metric = row_thr.get(k_metric, None)
                     if v_metric is not None:
                         bucket[k_metric].append(float(v_metric))
@@ -4003,10 +4013,19 @@ def main() -> int:
             by_thr = fp_fn_threshold_metrics[label]
             for thr_i in sorted(by_thr.keys()):
                 vals = by_thr[thr_i]
+                tp_all = np.array(vals.get("tp_rate_all", []), dtype=np.float64)
                 fp_all = np.array(vals.get("fp_rate_all", []), dtype=np.float64)
                 fn_all = np.array(vals.get("fn_rate_all", []), dtype=np.float64)
+                tn_all = np.array(vals.get("tn_rate_all", []), dtype=np.float64)
                 fp_dry = np.array(vals.get("fp_rate_dry", []), dtype=np.float64)
                 fn_wet = np.array(vals.get("fn_rate_wet", []), dtype=np.float64)
+                n_patches = int(max(tp_all.size, fp_all.size, fn_all.size, tn_all.size))
+
+                def _sem(arr: np.ndarray) -> float:
+                    if arr.size <= 1:
+                        return 0.0
+                    return float(np.std(arr, ddof=0) / math.sqrt(float(arr.size - 1)))
+
                 fpfn_rows.append(
                     dict(
                         solver=label,
@@ -4022,6 +4041,17 @@ def main() -> int:
                         fp_rate_dry_std=(float(np.std(fp_dry, ddof=0)) if fp_dry.size else 0.0),
                         fn_rate_wet_mean=(float(np.mean(fn_wet)) if fn_wet.size else 0.0),
                         fn_rate_wet_std=(float(np.std(fn_wet, ddof=0)) if fn_wet.size else 0.0),
+                        n_patches=n_patches,
+                        tp_definition="pred wet & GT wet",
+                        tn_definition="pred dry & GT dry",
+                        tp_rate_all_mean=(float(np.mean(tp_all)) if tp_all.size else 0.0),
+                        tp_rate_all_std=(float(np.std(tp_all, ddof=0)) if tp_all.size else 0.0),
+                        tp_rate_all_sem=_sem(tp_all),
+                        fp_rate_all_sem=_sem(fp_all),
+                        fn_rate_all_sem=_sem(fn_all),
+                        tn_rate_all_mean=(float(np.mean(tn_all)) if tn_all.size else 0.0),
+                        tn_rate_all_std=(float(np.std(tn_all, ddof=0)) if tn_all.size else 0.0),
+                        tn_rate_all_sem=_sem(tn_all),
                     )
                 )
         sheets["FPFN_ByThreshold"] = fpfn_rows

@@ -11,12 +11,14 @@ import numpy as np
 
 from batch_analyze_multi import (
     load_config_file,
+    load_est_payload,
     load_npz_first_key,
     mask_to_nan,
     objective_header_comments_map,
     parse_bins,
     read_report_cache,
     reorder_report_sheets,
+    resolve_path,
     safe_path_token,
     save_png_2x2,
     write_workbook,
@@ -39,6 +41,58 @@ def render_value(cfg: Dict[str, Any], path: str, default: Any) -> Any:
             return default
         cur = cur[part]
     return cur
+
+
+def ordinal(n: int) -> str:
+    if 10 <= (n % 100) <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def reorder_row_columns(
+    rows: List[Dict[str, Any]],
+    preferred_order: Sequence[str],
+) -> List[Dict[str, Any]]:
+    if not rows:
+        return rows
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        reordered: Dict[str, Any] = {}
+        for key in preferred_order:
+            if key in row:
+                reordered[key] = row[key]
+        for key, value in row.items():
+            if key not in reordered:
+                reordered[key] = value
+        out.append(reordered)
+    return out
+
+
+def solver_display_map(cache: Dict[str, Any], render_config: Dict[str, Any]) -> Dict[str, str]:
+    base = {str(v): str(v) for v in cache.get("solvers", {}).get("order", [])}
+    overrides = render_value(render_config, "labels.solver_overrides", {})
+    if not isinstance(overrides, dict):
+        return base
+    for key, value in overrides.items():
+        base[str(key)] = str(value)
+    return base
+
+
+def apply_solver_display(label: str, display_map: Dict[str, str]) -> str:
+    return display_map.get(str(label), str(label))
+
+
+def replace_solver_labels_in_text(text: str, display_map: Dict[str, str]) -> str:
+    out = str(text)
+    for raw, shown in sorted(display_map.items(), key=lambda kv: len(kv[0]), reverse=True):
+        out = out.replace(str(raw), str(shown))
+    return out
+
+
+def remap_solver_dict(data: Dict[str, Any], display_map: Dict[str, str]) -> Dict[str, Any]:
+    return {apply_solver_display(str(k), display_map): v for k, v in data.items()}
 
 
 def resolve_render_config_path(
@@ -100,6 +154,8 @@ def plot_box_whisker(
     show_boxes: bool = True,
 ) -> None:
     import matplotlib.pyplot as plt  # type: ignore
+    from matplotlib.ticker import MultipleLocator  # type: ignore
+    import textwrap
 
     n_bins = len(dist_labels)
     n_methods = len(method_order)
@@ -107,8 +163,9 @@ def plot_box_whisker(
     width = 0.8 / max(1, n_methods)
     offsets = (np.arange(n_methods) - (n_methods - 1) / 2.0) * width
 
-    fig_w = max(6, n_bins * 1.2 * float(bin_spacing))
-    fig, ax = plt.subplots(figsize=(fig_w, 4.5), dpi=dpi)
+    fig_w = max(8.8, n_bins * 1.35 * float(bin_spacing))
+    fig_h = 6.4 if footnote else 5.5
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
     color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     colors = {m: color_cycle[i % max(1, len(color_cycle))] for i, m in enumerate(method_order)}
 
@@ -143,13 +200,100 @@ def plot_box_whisker(
     tick_labels = tick_labels or dist_labels
     has_multiline = any("\n" in str(lab) for lab in tick_labels)
     if has_multiline:
-        ax.set_xticklabels(tick_labels, rotation=20, ha="right", fontsize=8)
-        fig.subplots_adjust(bottom=0.28)
+        ax.set_xticklabels(tick_labels, rotation=20, ha="right", fontsize=7.5)
         ax.set_xlabel(x_label or "Distance bin (m)\nSecond line: avg pixels [avg-std, avg+std]")
     else:
         ax.set_xticklabels(tick_labels, rotation=0)
-    ax.set_ylabel(y_label or "Per-patch median error")
-    ax.set_title(title)
+    ax.set_ylabel(y_label or "Per-patch median error", labelpad=8, fontsize=9)
+    wrapped_title = "\n".join(textwrap.wrap(str(title), width=95, break_long_words=False, break_on_hyphens=False))
+    ax.set_title(wrapped_title, fontsize=11, pad=4)
+    ax.legend(loc="best")
+    ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
+    ax.yaxis.set_minor_locator(MultipleLocator(0.1))
+    ax.grid(True, axis="y", which="minor", linestyle=":", linewidth=0.45, alpha=0.6)
+
+    if y_max is not None:
+        ax.set_ylim(0, y_max)
+    else:
+        ax.set_ylim(bottom=0)
+
+    if footnote:
+        footnote_y = 0.08
+        bottom = 0.28 if has_multiline else 0.18
+        fig.text(0.5, footnote_y, str(footnote), ha="center", va="bottom", fontsize=8, wrap=True)
+        fig.tight_layout(rect=(0.04, bottom, 0.98, 0.94))
+    else:
+        bottom = 0.2 if has_multiline else 0.1
+        fig.tight_layout(rect=(0.04, bottom, 0.98, 0.94))
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
+def plot_iqr_summary(
+    out_png: Path,
+    title: str,
+    per_patch_values: Dict[str, Dict[str, List[float]]],
+    dist_labels: List[str],
+    method_order: List[str],
+    *,
+    y_max: Optional[float] = None,
+    dpi: int = 150,
+    bin_spacing: float = 1.0,
+    tick_labels: Optional[List[str]] = None,
+    x_label: Optional[str] = None,
+    y_label: Optional[str] = None,
+    footnote: Optional[str] = None,
+    show_iqr: bool = True,
+) -> None:
+    import matplotlib.pyplot as plt  # type: ignore
+    import textwrap
+
+    n_bins = len(dist_labels)
+    n_methods = len(method_order)
+    x = np.arange(n_bins) * float(bin_spacing)
+    width = 0.8 / max(1, n_methods)
+    offsets = (np.arange(n_methods) - (n_methods - 1) / 2.0) * width
+
+    fig_w = max(8.8, n_bins * 1.35 * float(bin_spacing))
+    fig_h = 6.6 if footnote else 5.9
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    colors = {m: color_cycle[i % max(1, len(color_cycle))] for i, m in enumerate(method_order)}
+
+    for mi, method in enumerate(method_order):
+        off = offsets[mi]
+        color = colors.get(method, None)
+        for bi, lab in enumerate(dist_labels):
+            vals = np.asarray(per_patch_values.get(method, {}).get(lab, []), dtype=np.float64)
+            vals = vals[np.isfinite(vals)]
+            if vals.size == 0:
+                continue
+            p25 = float(np.percentile(vals, 25))
+            p50 = float(np.percentile(vals, 50))
+            p75 = float(np.percentile(vals, 75))
+            xpos = x[bi] + off
+            if show_iqr:
+                ax.vlines(xpos, p25, p75, color=color, linewidth=1.8, alpha=0.95)
+                ax.hlines([p25, p75], xpos - width * 0.18, xpos + width * 0.18, color=color, linewidth=1.3, alpha=0.95)
+            ax.plot(xpos, p50, marker="o", linestyle="None", color=color, markersize=4.8, label=method if bi == 0 else None)
+
+    ax.set_xticks(x)
+    tick_labels = tick_labels or dist_labels
+    has_multiline = any("\n" in str(lab) for lab in tick_labels)
+    x_label_text = x_label or "Distance bin (m)\nSecond line: average count per patch [avg-std, avg+std]"
+    if has_multiline:
+        ax.set_xticklabels(tick_labels, rotation=20, ha="right", fontsize=7.5)
+        ax.set_xlabel(x_label_text)
+    else:
+        ax.set_xticklabels(tick_labels, rotation=0)
+        if x_label_text:
+            ax.set_xlabel(x_label_text)
+    y_label_text = y_label or "Per-patch values\nDot: median, bar: IQR"
+    y_label_text = "\n".join(textwrap.fill(line, width=28) for line in str(y_label_text).splitlines())
+    ax.set_ylabel(y_label_text, labelpad=12, fontsize=9)
+    wrapped_title = "\n".join(textwrap.wrap(str(title), width=88, break_long_words=False, break_on_hyphens=False))
+    ax.set_title(wrapped_title, fontsize=11, pad=4)
     ax.legend(loc="best")
     ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
 
@@ -159,10 +303,13 @@ def plot_box_whisker(
         ax.set_ylim(bottom=0)
 
     if footnote:
-        fig.text(0.5, 0.01, str(footnote), ha="center", fontsize=8)
-        fig.tight_layout(rect=(0, 0.05, 1, 1))
+        footnote_y = 0.06
+        bottom = 0.27 if has_multiline else 0.2
+        fig.text(0.5, footnote_y, str(footnote), ha="center", va="bottom", fontsize=8, wrap=True)
+        fig.tight_layout(rect=(0.08, bottom, 0.98, 0.94))
     else:
-        fig.tight_layout()
+        bottom = 0.2 if has_multiline else 0.1
+        fig.tight_layout(rect=(0.08, bottom, 0.98, 0.94))
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png)
     plt.close(fig)
@@ -208,7 +355,7 @@ def render_patch_error_maps_from_job(
     rel_abs_max = max(rel_abs_max, 1e-9)
     dmax = max(dmax, 1e-9)
 
-    patch_plot_dir = img_dir / "patch_error_maps" / safe_path_token(solver_label)
+    patch_plot_dir = img_dir / safe_path_token(solver_label)
     save_png_2x2(
         patch_plot_dir / f"{safe_path_token(key)}_rainy.png",
         mask_to_nan(gt, rainy),
@@ -309,6 +456,68 @@ def plot_ratio_box_whisker(
     plt.close(fig)
 
 
+def plot_ratio_iqr_summary(
+    out_png: Path,
+    *,
+    title: str,
+    entries: List[Tuple[str, str, List[float]]],
+    dpi: int = 150,
+    footnote: Optional[str] = None,
+) -> None:
+    import matplotlib.pyplot as plt  # type: ignore
+
+    if not entries:
+        return
+
+    x = np.arange(len(entries))
+    fig_w = max(8, len(entries) * 0.8)
+    fig, ax = plt.subplots(figsize=(fig_w, 4.5), dpi=dpi)
+
+    solver_labels: List[str] = []
+    for solver, _, _ in entries:
+        if solver not in solver_labels:
+            solver_labels.append(solver)
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    colors = {s: color_cycle[i % max(1, len(color_cycle))] for i, s in enumerate(solver_labels)}
+
+    for i, (solver, _, vals) in enumerate(entries):
+        color = colors.get(solver, None)
+        arr = np.asarray(vals, dtype=np.float64)
+        arr = arr[np.isfinite(arr)]
+        if arr.size == 0:
+            continue
+        p25 = float(np.percentile(arr, 25))
+        p50 = float(np.percentile(arr, 50))
+        p75 = float(np.percentile(arr, 75))
+        ax.vlines(x[i], p25, p75, color=color, linewidth=1.8, alpha=0.95)
+        ax.hlines([p25, p75], x[i] - 0.12, x[i] + 0.12, color=color, linewidth=1.3, alpha=0.95)
+        ax.plot(x[i], p50, marker="o", linestyle="None", color=color, markersize=4.8)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([lab for _, lab, _ in entries], rotation=30, ha="right", fontsize=8)
+    ax.set_ylabel("Across-patch ratio summary")
+    ax.set_title(title)
+    ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
+    handles = [plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=colors[s], label=s) for s in solver_labels]
+    ax.legend(handles=handles, loc="best")
+
+    fig.text(
+        0.5,
+        0.01,
+        footnote or (
+            "Marker = median across patches; vertical segment spans p25 to p75 across patches. "
+            "Ratios are computed relative to IDW per patch."
+        ),
+        ha="center",
+        fontsize=8,
+    )
+
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout(rect=(0, 0.06, 1, 1))
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
 def plot_fp_fn_vs_threshold(
     out_png: Path,
     *,
@@ -361,6 +570,80 @@ def plot_fp_fn_vs_threshold(
     )
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout(rect=(0, 0.04, 1, 0.95))
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
+def plot_confusion_map(
+    out_png: Path,
+    *,
+    title: str,
+    solver_label: str,
+    threshold_mmph: float,
+    tp_mean: float,
+    tp_sem: float,
+    fp_mean: float,
+    fp_sem: float,
+    fn_mean: float,
+    fn_sem: float,
+    tn_mean: float,
+    tn_sem: float,
+    n_patches: int,
+    dpi: int = 150,
+) -> None:
+    import matplotlib.pyplot as plt  # type: ignore
+
+    matrix = np.array([[tp_mean, fn_mean], [fp_mean, tn_mean]], dtype=np.float64)
+    fig, ax = plt.subplots(figsize=(7.0, 6.6), dpi=dpi)
+    im = ax.imshow(matrix, cmap="Blues", vmin=0.0, vmax=max(1e-9, float(np.max(matrix))))
+
+    ax.set_xticks([0, 1])
+    ax.set_yticks([0, 1])
+    ax.set_xticklabels(["Predicted wet", "Predicted dry"])
+    ax.set_yticklabels(["GT wet", "GT dry"])
+    ax.xaxis.tick_top()
+    ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
+    ax.set_xlabel("Prediction")
+    ax.xaxis.set_label_position("top")
+    ax.set_ylabel("Ground truth")
+    ax.set_title(title, pad=42)
+
+    cell_labels = [
+        ("TP", tp_mean, tp_sem),
+        ("FN", fn_mean, fn_sem),
+        ("FP", fp_mean, fp_sem),
+        ("TN", tn_mean, tn_sem),
+    ]
+    for idx, (label, mean_val, sem_val) in enumerate(cell_labels):
+        i, j = divmod(idx, 2)
+        txt = f"{label}\nmean={mean_val:.4f}\nSEM={sem_val:.4f}"
+        ax.text(j, i, txt, ha="center", va="center", color="black", fontsize=10, fontweight="bold")
+
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_xticks(np.arange(-0.5, 2, 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, 2, 1), minor=True)
+    ax.grid(which="minor", color="white", linestyle="-", linewidth=2)
+    ax.tick_params(which="minor", bottom=False, left=False)
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.ax.set_ylabel("Mean fraction of patch pixels", rotation=90)
+
+    fig.text(
+        0.5,
+        0.065,
+        (
+            f"Threshold = {threshold_mmph:.3g} mm/h, where wet means >= {threshold_mmph:.3g} mm/h and dry means < {threshold_mmph:.3g} mm/h.\n"
+            "TP = GT wet and predicted wet; FN = GT wet and predicted dry; "
+            "FP = GT dry and predicted wet; TN = GT dry and predicted dry.\n"
+            f"Each cell reports the mean fraction of patch pixels and the "
+            f"standard error mean (SEM) across n={n_patches} patches,\nwith SEM = SD / √(n-1)."
+        ),
+        ha="center",
+        fontsize=7.5,
+    )
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout(rect=(0, 0.18, 1, 0.93))
     fig.savefig(out_png)
     plt.close(fig)
 
@@ -550,6 +833,144 @@ def plot_gt_binned_patchavg_error(
     plt.close(fig)
 
 
+def compute_parallel_link_ratio(links: Sequence[Dict[str, Any]], *, tol_deg: float = 1.0) -> float:
+    n_links = len(links)
+    if n_links <= 1:
+        return 0.0
+    angles: List[float] = []
+    for link in links:
+        dx = float(link["x1_m"]) - float(link["x0_m"])
+        dy = float(link["y1_m"]) - float(link["y0_m"])
+        if dx == 0.0 and dy == 0.0:
+            continue
+        angles.append(float(np.mod(math.atan2(dy, dx), math.pi)))
+    if len(angles) <= 1:
+        return 0.0
+    arr = np.sort(np.asarray(angles, dtype=np.float64))
+    next_diff = np.empty_like(arr)
+    next_diff[:-1] = arr[1:] - arr[:-1]
+    next_diff[-1] = arr[0] + math.pi - arr[-1]
+    prev_diff = np.empty_like(arr)
+    prev_diff[0] = arr[0] + math.pi - arr[-1]
+    prev_diff[1:] = arr[1:] - arr[:-1]
+    min_neighbor = np.minimum(prev_diff, next_diff)
+    return float(np.mean(min_neighbor <= math.radians(float(tol_deg))))
+
+
+def collect_patch_overview_rows(
+    *,
+    analysis_config: Dict[str, Any],
+    cfg_path: Optional[Path],
+) -> List[Dict[str, Any]]:
+    if cfg_path is None:
+        return []
+    base_dir = cfg_path.parent
+    est_dir_raw = render_value(analysis_config, "input.est_input_dir", None)
+    est_dir = resolve_path(est_dir_raw, base_dir=base_dir) if est_dir_raw is not None else None
+    if est_dir is None or not est_dir.exists():
+        return []
+    rows: List[Dict[str, Any]] = []
+    for est_path in sorted(est_dir.glob("est_input_*.json")):
+        try:
+            est = load_est_payload(est_path)
+            header = est.get("header", {})
+            H = int(header["H"])
+            W = int(header["W"])
+            pix = float(header.get("pixel_size_m", 125.0))
+            width_m = float(header.get("width_m", W * pix))
+            height_m = float(header.get("height_m", H * pix))
+            links = list(est.get("links", []) or [])
+            rows.append(
+                dict(
+                    patch_key=str(header.get("patch_id", est_path.stem.replace("est_input_", ""))),
+                    width_m=width_m,
+                    height_m=height_m,
+                    n_pixels=int(H * W),
+                    n_links=int(len(links)),
+                    parallel_link_ratio=compute_parallel_link_ratio(links),
+                )
+            )
+        except Exception:
+            continue
+    return rows
+
+
+def plot_patch_extent_scatter(
+    out_png: Path,
+    *,
+    rows: List[Dict[str, Any]],
+    title: str,
+    dpi: int = 150,
+) -> None:
+    import matplotlib.pyplot as plt  # type: ignore
+
+    if not rows:
+        return
+    widths_km = np.asarray([float(r["width_m"]) / 1000.0 for r in rows], dtype=np.float64)
+    heights_km = np.asarray([float(r["height_m"]) / 1000.0 for r in rows], dtype=np.float64)
+    n_pixels = np.asarray([float(r["n_pixels"]) for r in rows], dtype=np.float64)
+
+    fig, ax = plt.subplots(figsize=(7.0, 5.4), dpi=dpi)
+    ax.scatter(widths_km, heights_km, s=42, alpha=0.85, color="#1f77b4", edgecolors="white", linewidths=0.6)
+    ax.set_xlabel("Patch width (km)")
+    ax.set_ylabel("Patch height (km)")
+    ax.set_title(title)
+    ax.grid(True, linestyle=":", linewidth=0.7)
+    fig.text(
+        0.5,
+        0.03,
+        f"n = {len(rows)} patches. Average patch size = {float(np.mean(n_pixels)):.0f} pixels; SD = {float(np.std(n_pixels, ddof=0)):.1f} pixels.",
+        ha="center",
+        fontsize=8,
+    )
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout(rect=(0.08, 0.08, 0.98, 0.95))
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
+def plot_link_count_histogram(
+    out_png: Path,
+    *,
+    rows: List[Dict[str, Any]],
+    title: str,
+    dpi: int = 150,
+) -> None:
+    import matplotlib.pyplot as plt  # type: ignore
+
+    if not rows:
+        return
+    n_links = np.asarray([float(r["n_links"]) for r in rows], dtype=np.float64)
+    parallel_ratio = np.asarray([float(r["parallel_link_ratio"]) for r in rows], dtype=np.float64)
+    unique_counts = np.unique(n_links.astype(int))
+    if unique_counts.size <= 12:
+        edges = np.arange(unique_counts.min() - 0.5, unique_counts.max() + 1.5, 1.0)
+    else:
+        edges = min(12, max(5, int(round(math.sqrt(float(n_links.size))))))
+
+    fig, ax = plt.subplots(figsize=(7.0, 5.4), dpi=dpi)
+    ax.hist(n_links, bins=edges, color="#ff7f0e", alpha=0.85, edgecolor="black", linewidth=0.6)
+    ax.set_xlabel("Number of links in patch")
+    ax.set_ylabel("Frequency over patches")
+    ax.set_title(title)
+    ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
+    fig.text(
+        0.5,
+        0.03,
+        (
+            f"Average links per patch = {float(np.mean(n_links)):.1f}; SD = {float(np.std(n_links, ddof=0)):.1f}. "
+            f"Average parallel-link ratio (#parallel links / #links) = {float(np.mean(parallel_ratio)):.3f}; "
+            f"SD = {float(np.std(parallel_ratio, ddof=0)):.3f}."
+        ),
+        ha="center",
+        fontsize=8,
+    )
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout(rect=(0.08, 0.08, 0.98, 0.95))
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
 def render_largest_patch_distance_bin_maps(
     payload: Dict[str, Any],
     *,
@@ -648,18 +1069,77 @@ def render_report_from_cache(
     render_config = render_config or {}
     analysis_config: Dict[str, Any] = {}
     cfg_path = cache.get("config_path", None)
+    cfg_path_resolved: Optional[Path] = None
     if cfg_path:
-        analysis_config = load_config_file(Path(str(cfg_path)).resolve())
+        cfg_path_resolved = Path(str(cfg_path)).resolve()
+        analysis_config = load_config_file(cfg_path_resolved)
     out_dir = output_dir or Path(str(render_value(render_config, "output.out_dir", cache["output"]["out_dir"])))
     images_subdir = str(render_value(render_config, "output.images_subdir", cache["output"]["images_subdir"]))
     excel_name = str(render_value(render_config, "output.excel_filename", cache["output"]["excel_filename"]))
     img_dir = out_dir / images_subdir
     excel_path = out_dir / excel_name
+    largest_patch_img_dir = img_dir / "largest_patch_distance_bins"
+    j_behavior_img_dir = img_dir / "j_behavior"
+    patch_error_maps_img_dir = img_dir / "patch_error_maps"
+    rae_hist_img_dir = img_dir / "rae_histograms"
+    threshold_img_dir = img_dir / "threshold_sweeps"
+    distance_iqr_img_dir = img_dir / "distance_profiles_iqr"
+    distance_box_img_dir = img_dir / "distance_profiles_box_whisker"
+    jatten_iqr_img_dir = img_dir / "jatten_profiles_iqr"
+    jatten_box_img_dir = img_dir / "jatten_profiles_box_whisker"
+    summary_img_dir = img_dir / "summaries"
+    gtbin_img_dir = img_dir / "gt_binned_patchavg"
+    confusion_img_dir = img_dir / "confusion_maps"
+    patch_overview_img_dir = img_dir / "patch_overview"
 
     ordered_sheets = cache.get("ordered_sheets", {})
     if not isinstance(ordered_sheets, dict):
         raise ValueError("Cache missing ordered_sheets.")
     ordered_sheets = reorder_report_sheets(ordered_sheets)
+    display_map = solver_display_map(cache, render_config)
+    for sheet_name, rows in list(ordered_sheets.items()):
+        if not isinstance(rows, list):
+            continue
+        updated_rows: List[Dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                updated_rows.append(row)
+                continue
+            new_row = dict(row)
+            if "solver" in new_row:
+                new_row["solver"] = apply_solver_display(str(new_row["solver"]), display_map)
+            updated_rows.append(new_row)
+        ordered_sheets[sheet_name] = updated_rows
+    if "FPFN_ByThreshold" in ordered_sheets:
+        ordered_sheets["FPFN_ByThreshold"] = reorder_row_columns(
+            list(ordered_sheets["FPFN_ByThreshold"]),
+            [
+                "solver",
+                "threshold_mmph",
+                "positive_definition",
+                "fp_definition",
+                "fn_definition",
+                "fp_rate_all_mean",
+                "fp_rate_all_std",
+                "fn_rate_all_mean",
+                "fn_rate_all_std",
+                "fp_rate_dry_mean",
+                "fp_rate_dry_std",
+                "fn_rate_wet_mean",
+                "fn_rate_wet_std",
+                "n_patches",
+                "tp_definition",
+                "tn_definition",
+                "tp_rate_all_mean",
+                "tp_rate_all_std",
+                "tp_rate_all_sem",
+                "fp_rate_all_sem",
+                "fn_rate_all_sem",
+                "tn_rate_all_mean",
+                "tn_rate_all_std",
+                "tn_rate_all_sem",
+            ],
+        )
 
     objective_sheet_comments: Dict[str, str] = {}
     obj_rows = ordered_sheets.get("Objective_J", [])
@@ -699,6 +1179,7 @@ def render_report_from_cache(
     jatten_dist_labels = [str(v) for v in labels["jatten_dist_labels"]]
 
     solver_order = [str(v) for v in cache["solvers"]["order"]]
+    solver_order_display = [apply_solver_display(v, display_map) for v in solver_order]
     largest_patch_payload = cache.get("largest_patch_plot_payload", None)
     j_behavior_plots = cache.get("j_behavior_plots", []) or []
     patch_plot_jobs = cache.get("patch_plot_jobs", []) or []
@@ -706,14 +1187,17 @@ def render_report_from_cache(
     fpfn_rows = ordered_sheets.get("FPFN_ByThreshold", [])
     link_ratio_entries = cache.get("link_ratio_entries", []) or []
     gtbin = cache.get("gtbin_plot_data", None)
+    patch_overview_rows = collect_patch_overview_rows(analysis_config=analysis_config, cfg_path=cfg_path_resolved)
 
     major_steps: List[Tuple[str, bool]] = [
         ("Excel workbook", render_bool(render_config, "excel.enabled", True)),
         ("Largest-patch distance-bin maps", bool(largest_patch_payload) and render_bool(render_config, "plots.largest_patch_distance_bins", True)),
+        ("Patch overview plots", bool(patch_overview_rows) and render_bool(render_config, "plots.patch_overview", True)),
         ("J-behavior plots", bool(j_behavior_plots) and render_bool(render_config, "plots.j_behavior", True)),
         ("Patch error maps", bool(patch_plot_jobs) and render_bool(render_config, "plots.patch_error_maps", True)),
         ("RAE histograms", bool(rae_hist_plots) and render_bool(render_config, "plots.rae_histograms", True)),
         ("FP/FN vs threshold plot", bool(fpfn_rows) and render_bool(render_config, "plots.fp_fn_vs_threshold", True)),
+        ("Confusion maps", bool(fpfn_rows) and render_bool(render_config, "plots.confusion_maps", True)),
         ("Distance-profile plots", render_bool(render_config, "plots.distance_profiles", True) or render_bool(render_config, "plots.p90_profiles", True) or render_bool(render_config, "plots.distance_profiles_relative", True)),
         ("J_atten plots", render_bool(render_config, "plots.jatten_profiles", True) or render_bool(render_config, "plots.jatten_profiles_relative", True)),
         ("Link-ratio summary plot", bool(link_ratio_entries) and render_bool(render_config, "plots.link_ratio_summary", True)),
@@ -728,10 +1212,27 @@ def render_report_from_cache(
         log_progress("Rendering largest-patch distance-bin maps")
         render_largest_patch_distance_bin_maps(
             largest_patch_payload,
-            out_dir=img_dir / "largest_patch_distance_bins",
+            out_dir=largest_patch_img_dir,
             dpi=dpi,
         )
         finish_major("largest-patch distance-bin maps")
+
+    if patch_overview_rows and render_bool(render_config, "plots.patch_overview", True):
+        start_major("Patch overview plots")
+        log_progress(f"Rendering patch overview plots ({len(patch_overview_rows)} patches)")
+        plot_patch_extent_scatter(
+            patch_overview_img_dir / "patch_dimensions_scatter.png",
+            rows=patch_overview_rows,
+            title="Patch geometry overview",
+            dpi=dpi,
+        )
+        plot_link_count_histogram(
+            patch_overview_img_dir / "link_count_histogram.png",
+            rows=patch_overview_rows,
+            title="Link-count distribution across patches",
+            dpi=dpi,
+        )
+        finish_major("Patch overview plots")
 
     if j_behavior_plots and render_bool(render_config, "plots.j_behavior", True):
         start_major("J-behavior plots")
@@ -739,8 +1240,8 @@ def render_report_from_cache(
         interval = progress_interval(len(j_behavior_plots))
         for idx, plot_payload in enumerate(j_behavior_plots, start=1):
             plot_j_behavior(
-                img_dir / "j_behavior" / safe_path_token(str(plot_payload["solver_name"])) / f"{safe_path_token(str(plot_payload['patch_key']))}.png",
-                title=f"J behavior: {plot_payload['solver_label']} | {plot_payload['patch_key']}",
+                j_behavior_img_dir / safe_path_token(str(plot_payload["solver_name"])) / f"{safe_path_token(str(plot_payload['patch_key']))}.png",
+                title=f"J behavior: {apply_solver_display(str(plot_payload['solver_label']), display_map)} | {plot_payload['patch_key']}",
                 iterations=plot_payload.get("iterations", []) or [],
                 dpi=dpi,
             )
@@ -753,7 +1254,7 @@ def render_report_from_cache(
         log_progress(f"Rendering patch error maps ({len(patch_plot_jobs)} jobs)")
         interval = progress_interval(len(patch_plot_jobs))
         for idx, patch_plot_job in enumerate(patch_plot_jobs, start=1):
-            render_patch_error_maps_from_job(patch_plot_job, img_dir=img_dir, render_cfg=patch_map_render_cfg)
+            render_patch_error_maps_from_job(patch_plot_job, img_dir=patch_error_maps_img_dir, render_cfg=patch_map_render_cfg)
             if idx == len(patch_plot_jobs) or idx % interval == 0:
                 log_progress(f"Patch error maps: {idx}/{len(patch_plot_jobs)}")
         finish_major("patch error maps")
@@ -764,7 +1265,7 @@ def render_report_from_cache(
         interval = progress_interval(len(rae_hist_plots))
         for idx, payload in enumerate(rae_hist_plots, start=1):
             plot_rae_histograms(
-                img_dir / str(payload["out_relpath"]),
+                rae_hist_img_dir / Path(str(payload["out_relpath"])).name,
                 title=str(payload["title"]),
                 dist_labels=[str(v) for v in payload["dist_labels"]],
                 data_by_bin={str(k): list(v) for k, v in payload["data_by_bin"].items()},
@@ -779,12 +1280,44 @@ def render_report_from_cache(
         start_major("FP/FN vs threshold plot")
         log_progress("Rendering FP/FN vs threshold plot")
         plot_fp_fn_vs_threshold(
-            img_dir / "fp_fn_vs_threshold.png",
+            threshold_img_dir / "fp_fn_vs_threshold.png",
             title="Wet-class FP/FN rates vs threshold",
             rows=fpfn_rows,
             dpi=dpi,
         )
         finish_major("FP/FN vs threshold plot")
+
+    if fpfn_rows and render_bool(render_config, "plots.confusion_maps", True):
+        threshold_target = float(render_value(render_config, "confusion_maps.threshold_mmph", cache["render"].get("threshold_mmph", patch_map_render_cfg["threshold_mmph"])))
+        by_solver: Dict[str, List[Dict[str, Any]]] = {}
+        for row in fpfn_rows:
+            if "tp_rate_all_mean" not in row or "tn_rate_all_mean" not in row:
+                continue
+            by_solver.setdefault(str(row["solver"]), []).append(row)
+        if by_solver:
+            start_major("Confusion maps")
+            log_progress(f"Rendering confusion maps at threshold {threshold_target:.3g} mm/h")
+            for solver_label, rows in sorted(by_solver.items()):
+                chosen = min(rows, key=lambda r: abs(float(r.get("threshold_mmph", threshold_target)) - threshold_target))
+                chosen_thr = float(chosen.get("threshold_mmph", threshold_target))
+                display_solver_label = apply_solver_display(solver_label, display_map)
+                plot_confusion_map(
+                    confusion_img_dir / f"{safe_path_token(solver_label)}_confusion_map.png",
+                    title=f"Per-patch confusion summary: {display_solver_label}",
+                    solver_label=display_solver_label,
+                    threshold_mmph=chosen_thr,
+                    tp_mean=float(chosen.get("tp_rate_all_mean", 0.0)),
+                    tp_sem=float(chosen.get("tp_rate_all_sem", 0.0)),
+                    fp_mean=float(chosen.get("fp_rate_all_mean", 0.0)),
+                    fp_sem=float(chosen.get("fp_rate_all_sem", 0.0)),
+                    fn_mean=float(chosen.get("fn_rate_all_mean", 0.0)),
+                    fn_sem=float(chosen.get("fn_rate_all_sem", 0.0)),
+                    tn_mean=float(chosen.get("tn_rate_all_mean", 0.0)),
+                    tn_sem=float(chosen.get("tn_rate_all_sem", 0.0)),
+                    n_patches=int(chosen.get("n_patches", 0)),
+                    dpi=dpi,
+                )
+            finish_major("Confusion maps")
 
     plot_data = cache["plot_data"]
     medians_rainy = plot_data["medians_rainy"]
@@ -798,6 +1331,7 @@ def render_report_from_cache(
     enabled_k_values = [int(v) for v in render_value(render_config, "filters.k_values", k_values)]
     enabled_jatten_k_values = [int(v) for v in render_value(render_config, "filters.jatten_k_values", jatten_k_values)]
     method_order = [label for label in solver_order if label in medians_rainy.get(str(k_values[0]), {})]
+    method_order_display = [apply_solver_display(label, display_map) for label in method_order]
     if method_order:
         distance_major_started = False
         jatten_major_started = False
@@ -818,52 +1352,145 @@ def render_report_from_cache(
             if len(k_values) == 1 and k == 3:
                 rainy_name = "distance_iqr_medians_rainy_multi.png"
                 nonrainy_name = "distance_iqr_medians_nonrainy_multi.png"
-                rainy_title = "Rainy pixels: per-patch median |(GT-PRED)/GT| by distance bin (box-and-whisker)"
-                nonrainy_title = "Non-rainy pixels: per-patch median |GT-PRED| by distance bin (box-and-whisker)"
+                rainy_title = "Rainy pixels. IQR of per-patch median rainy-pixel relative absolute error (RAE) by distance bin"
+                nonrainy_title = "Non-rainy pixels. IQR of per-patch median non-rainy-pixel absolute error by distance bin"
                 rainy_p90_name = "distance_iqr_p90s_rainy_multi.png"
                 nonrainy_p90_name = "distance_iqr_p90s_nonrainy_multi.png"
-                rainy_p90_title = "Rainy pixels: per-patch p90 |(GT-PRED)/GT| by distance bin (box-and-whisker)"
-                nonrainy_p90_title = "Non-rainy pixels: per-patch p90 |GT-PRED| by distance bin (box-and-whisker)"
+                rainy_p90_title = "Rainy pixels. IQR of per-patch rainy-pixel 90th-percentile relative absolute error (RAE) by distance bin"
+                nonrainy_p90_title = "Non-rainy pixels. IQR of per-patch non-rainy-pixel 90th-percentile absolute error by distance bin"
             else:
                 rainy_name = f"distance_iqr_medians_rainy_multi_k{k}.png"
                 nonrainy_name = f"distance_iqr_medians_nonrainy_multi_k{k}.png"
-                rainy_title = f"Rainy pixels: per-patch median |(GT-PRED)/GT| by distance bin (box-and-whisker, k={k})"
-                nonrainy_title = f"Non-rainy pixels: per-patch median |GT-PRED| by distance bin (box-and-whisker, k={k})"
+                rainy_title = f"Rainy pixels. IQR of per-patch median rainy-pixel relative absolute error (RAE) by distance bin (to the {ordinal(k)} closest link)"
+                nonrainy_title = f"Non-rainy pixels. IQR of per-patch median non-rainy-pixel absolute error by distance bin (to the {ordinal(k)} closest link)"
                 rainy_p90_name = f"distance_iqr_p90s_rainy_multi_k{k}.png"
                 nonrainy_p90_name = f"distance_iqr_p90s_nonrainy_multi_k{k}.png"
-                rainy_p90_title = f"Rainy pixels: per-patch p90 |(GT-PRED)/GT| by distance bin (box-and-whisker, k={k})"
-                nonrainy_p90_title = f"Non-rainy pixels: per-patch p90 |GT-PRED| by distance bin (box-and-whisker, k={k})"
+                rainy_p90_title = f"Rainy pixels. IQR of per-patch rainy-pixel 90th-percentile relative absolute error (RAE) by distance bin (to the {ordinal(k)} closest link)"
+                nonrainy_p90_title = f"Non-rainy pixels. IQR of per-patch non-rainy-pixel 90th-percentile absolute error by distance bin (to the {ordinal(k)} closest link)"
+
+            rainy_box_name = rainy_name.replace(".png", "_box_whisker.png")
+            nonrainy_box_name = nonrainy_name.replace(".png", "_box_whisker.png")
+            rainy_p90_box_name = rainy_p90_name.replace(".png", "_box_whisker.png")
+            nonrainy_p90_box_name = nonrainy_p90_name.replace(".png", "_box_whisker.png")
+            if len(k_values) == 1 and k == 3:
+                rainy_box_title = "Rainy pixels. Box-and-whisker of per-patch median rainy-pixel relative absolute error (RAE) by distance bin"
+                nonrainy_box_title = "Non-rainy pixels. Box-and-whisker of per-patch median non-rainy-pixel absolute error by distance bin"
+                rainy_p90_box_title = "Rainy pixels. Box-and-whisker of per-patch rainy-pixel 90th-percentile relative absolute error (RAE) by distance bin"
+                nonrainy_p90_box_title = "Non-rainy pixels. Box-and-whisker of per-patch non-rainy-pixel 90th-percentile absolute error by distance bin"
+                rainy_rel_box_title = "Rainy pixels. Box-and-whisker of per-patch median rainy-pixel relative absolute error (RAE) by distance bin (relative to IDW bin medians)"
+                nonrainy_rel_box_title = "Non-rainy pixels. Box-and-whisker of per-patch median non-rainy-pixel absolute error by distance bin (relative to IDW bin medians)"
+            else:
+                rainy_box_title = f"Rainy pixels. Box-and-whisker of per-patch median rainy-pixel relative absolute error (RAE) by distance bin (to the {ordinal(k)} closest link)"
+                nonrainy_box_title = f"Non-rainy pixels. Box-and-whisker of per-patch median non-rainy-pixel absolute error by distance bin (to the {ordinal(k)} closest link)"
+                rainy_p90_box_title = f"Rainy pixels. Box-and-whisker of per-patch rainy-pixel 90th-percentile relative absolute error (RAE) by distance bin (to the {ordinal(k)} closest link)"
+                nonrainy_p90_box_title = f"Non-rainy pixels. Box-and-whisker of per-patch non-rainy-pixel 90th-percentile absolute error by distance bin (to the {ordinal(k)} closest link)"
+                rainy_rel_box_title = f"Rainy pixels. Box-and-whisker of per-patch median rainy-pixel relative absolute error (RAE) by distance bin (to the {ordinal(k)} closest link), relative to IDW bin medians"
+                nonrainy_rel_box_title = f"Non-rainy pixels. Box-and-whisker of per-patch median non-rainy-pixel absolute error by distance bin (to the {ordinal(k)} closest link), relative to IDW bin medians"
+            rainy_footnote = (
+                "Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\n"
+                "Each patch contributes one median rainy-pixel relative absolute error value in each distance bin.\n"
+                "Dot = median of those per-patch medians across patches.\n"
+                "Bar = 25th to 75th percentile of those per-patch medians across patches.\n"
+                "Tick labels show the average rainy-pixel count per patch in the bin."
+            )
+            nonrainy_footnote = (
+                "Metric: |GT(p)-PRED(p)| over non-rainy pixels p.\n"
+                "Each patch contributes one median non-rainy-pixel absolute error value in each distance bin.\n"
+                "Dot = median of those per-patch medians across patches.\n"
+                "Bar = 25th to 75th percentile of those per-patch medians across patches.\n"
+                "Tick labels show the average non-rainy-pixel count per patch in the bin."
+            )
+            rainy_box_footnote = (
+                "Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\n"
+                "Each patch contributes one median rainy-pixel relative absolute error value in each distance bin.\n"
+                "Box = q1 to q3, center line = median, whiskers = min to max across patches."
+            )
+            nonrainy_box_footnote = (
+                "Metric: |GT(p)-PRED(p)| over non-rainy pixels p.\n"
+                "Each patch contributes one median non-rainy-pixel absolute error value in each distance bin.\n"
+                "Box = q1 to q3, center line = median, whiskers = min to max across patches."
+            )
+            medians_rainy_display = remap_solver_dict(medians_rainy[kstr], display_map)
+            medians_nonrainy_display = remap_solver_dict(medians_nonrainy[kstr], display_map)
+            p90s_rainy_display = remap_solver_dict(p90s_rainy[kstr], display_map)
+            p90s_nonrainy_display = remap_solver_dict(p90s_nonrainy[kstr], display_map)
 
             if render_bool(render_config, "plots.distance_profiles", True):
                 log_progress(f"Distance-profile medians: k={k}")
-                plot_box_whisker(img_dir / rainy_name, rainy_title, medians_rainy[kstr], labels_r, method_order, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r)
-                plot_box_whisker(img_dir / nonrainy_name, nonrainy_title, medians_nonrainy[kstr], labels_n, method_order, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n)
+                plot_iqr_summary(distance_iqr_img_dir / rainy_name, rainy_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch median rainy-pixel RAE\nDot: median, bar: IQR", footnote=rainy_footnote)
+                plot_iqr_summary(distance_iqr_img_dir / nonrainy_name, nonrainy_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch median non-rainy-pixel absolute error\nDot: median, bar: IQR", footnote=nonrainy_footnote)
+                plot_box_whisker(distance_box_img_dir / rainy_box_name, rainy_box_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch median rainy-pixel RAE", footnote=rainy_box_footnote)
+                plot_box_whisker(distance_box_img_dir / nonrainy_box_name, nonrainy_box_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch median non-rainy-pixel absolute error", footnote=nonrainy_box_footnote)
             if render_bool(render_config, "plots.p90_profiles", True):
                 log_progress(f"Distance-profile p90s: k={k}")
-                plot_box_whisker(img_dir / rainy_p90_name, rainy_p90_title, p90s_rainy[kstr], labels_r, method_order, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch p90 error")
-                plot_box_whisker(img_dir / nonrainy_p90_name, nonrainy_p90_title, p90s_nonrainy[kstr], labels_n, method_order, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch p90 error")
+                plot_iqr_summary(distance_iqr_img_dir / rainy_p90_name, rainy_p90_title, p90s_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch rainy-pixel p90 RAE\nDot: median, bar: IQR", footnote="Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\nEach patch contributes one rainy-pixel 90th-percentile relative absolute error value in each distance bin.\nDot = median of those per-patch p90 values across patches.\nBar = 25th to 75th percentile of those per-patch p90 values across patches.\nTick labels show the average rainy-pixel count per patch in the bin.")
+                plot_iqr_summary(distance_iqr_img_dir / nonrainy_p90_name, nonrainy_p90_title, p90s_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch non-rainy-pixel p90 absolute error\nDot: median, bar: IQR", footnote="Metric: |GT(p)-PRED(p)| over non-rainy pixels p.\nEach patch contributes one non-rainy-pixel 90th-percentile absolute error value in each distance bin.\nDot = median of those per-patch p90 values across patches.\nBar = 25th to 75th percentile of those per-patch p90 values across patches.\nTick labels show the average non-rainy-pixel count per patch in the bin.")
+                plot_box_whisker(distance_box_img_dir / rainy_p90_box_name, rainy_p90_box_title, p90s_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch rainy-pixel p90 RAE", footnote="Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\nEach patch contributes one rainy-pixel 90th-percentile relative absolute error value in each distance bin.\nBox = q1 to q3, center line = median, whiskers = min to max across patches.")
+                plot_box_whisker(distance_box_img_dir / nonrainy_p90_box_name, nonrainy_p90_box_title, p90s_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch non-rainy-pixel p90 absolute error", footnote="Metric: |GT(p)-PRED(p)| over non-rainy pixels p.\nEach patch contributes one non-rainy-pixel 90th-percentile absolute error value in each distance bin.\nBox = q1 to q3, center line = median, whiskers = min to max across patches.")
 
             if "IDW" in medians_rainy[kstr] and render_bool(render_config, "plots.distance_profiles_relative", True):
                 log_progress(f"Relative distance profiles: k={k}")
+                rainy_rel_name = rainy_name.replace(".png", "_rel.png")
+                nonrainy_rel_name = nonrainy_name.replace(".png", "_rel.png")
+                rainy_rel_box_name = rainy_box_name.replace(".png", "_rel.png")
+                nonrainy_rel_box_name = nonrainy_box_name.replace(".png", "_rel.png")
                 plot_box_whisker(
-                    img_dir / rainy_name.replace(".png", "_rel.png"),
-                    f"{rainy_title} (relative to IDW medians)",
-                    compute_relative_distribution_profile(medians_rainy[kstr], baseline_label="IDW", dist_labels=dist_labels),
+                    distance_box_img_dir / rainy_rel_box_name,
+                    rainy_rel_box_title,
+                    remap_solver_dict(compute_relative_distribution_profile(medians_rainy[kstr], baseline_label="IDW", dist_labels=dist_labels), display_map),
                     labels_r,
-                    method_order,
+                    method_order_display,
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_r,
+                    y_label="Per-patch median rainy-pixel RAE relative to IDW",
+                    footnote="Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\nEach per-patch median is divided by IDW's median in the same distance bin.\nBox = q1 to q3, center line = median, whiskers = min to max across patches.",
                 )
-                plot_box_whisker(
-                    img_dir / nonrainy_name.replace(".png", "_rel.png"),
-                    f"{nonrainy_title} (relative to IDW medians)",
-                    compute_relative_distribution_profile(medians_nonrainy[kstr], baseline_label="IDW", dist_labels=dist_labels),
+                plot_iqr_summary(
+                    distance_iqr_img_dir / rainy_rel_name,
+                    f"Rainy pixels. IQR of per-patch median rainy-pixel relative absolute error (RAE) by distance bin (to the {ordinal(k)} closest link), relative to IDW bin medians",
+                    remap_solver_dict(compute_relative_distribution_profile(medians_rainy[kstr], baseline_label="IDW", dist_labels=dist_labels), display_map),
+                    labels_r,
+                    method_order_display,
+                    dpi=dpi,
+                    bin_spacing=bin_spacing,
+                    tick_labels=tick_labels_r,
+                    y_label="Per-patch median rainy-pixel RAE relative to IDW\nDot: median, bar: IQR",
+                    footnote=(
+                        "Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\n"
+                        "Each per-patch median is divided by IDW's median in the same distance bin, so IDW is the baseline at 1.0.\n"
+                        "Dot = median of those patch-level ratios across patches.\n"
+                        "Bar = 25th to 75th percentile of those patch-level ratios across patches."
+                    ),
+                )
+                plot_iqr_summary(
+                    distance_iqr_img_dir / nonrainy_rel_name,
+                    f"Non-rainy pixels. IQR of per-patch median non-rainy-pixel absolute error by distance bin (to the {ordinal(k)} closest link), relative to IDW bin medians",
+                    remap_solver_dict(compute_relative_distribution_profile(medians_nonrainy[kstr], baseline_label="IDW", dist_labels=dist_labels), display_map),
                     labels_n,
-                    method_order,
+                    method_order_display,
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_n,
+                    y_label="Per-patch error-median ratio to IDW\nDot: median, bar: IQR",
+                    footnote=(
+                        "Metric: |GT(p)-PRED(p)| over non-rainy pixels p.\n"
+                        "Each per-patch median is divided by IDW's median in the same distance bin, so IDW is the baseline at 1.0.\n"
+                        "Dot = median of those patch-level ratios across patches.\n"
+                        "Bar = 25th to 75th percentile of those patch-level ratios across patches."
+                    ),
+                )
+                plot_box_whisker(
+                    distance_box_img_dir / nonrainy_rel_box_name,
+                    nonrainy_rel_box_title,
+                    remap_solver_dict(compute_relative_distribution_profile(medians_nonrainy[kstr], baseline_label="IDW", dist_labels=dist_labels), display_map),
+                    labels_n,
+                    method_order_display,
+                    dpi=dpi,
+                    bin_spacing=bin_spacing,
+                    tick_labels=tick_labels_n,
+                    y_label="Per-patch median non-rainy-pixel error relative to IDW",
+                    footnote="Metric: |GT(p)-PRED(p)| over non-rainy pixels p.\nEach per-patch median is divided by IDW's median in the same distance bin.\nBox = q1 to q3, center line = median, whiskers = min to max across patches.",
                 )
         if distance_major_started:
             finish_major("distance-profile plots")
@@ -878,42 +1505,50 @@ def render_report_from_cache(
             if prune_bins_enabled:
                 labels_jatten = filter_bins_by_zero_fraction(jatten_dist_labels, {str(kb): list(v) for kb, v in jatten_link_bin_counts[kstr].items()}, zero_frac_threshold=prune_bins_zero_frac)
             tick_labels_jatten = build_bin_tick_labels(labels_jatten, {str(kb): list(v) for kb, v in jatten_link_bin_counts[kstr].items()}, count_label="links")
-            jatten_img_dir = img_dir / "jatten_iqr_plots"
+            jatten_medians_display = remap_solver_dict(jatten_medians[kstr], display_map)
             if len(jatten_k_values) == 1 and k == 3:
                 jatten_name = "distance_iqr_medians_jatten_multi.png"
-                jatten_title = "Link-distance-binned J_atten: per-patch medians (box-and-whisker)"
+                jatten_title = "J_atten by link-distance bin: median across patches with interquartile range"
             else:
                 jatten_name = f"distance_iqr_medians_jatten_multi_k{k}.png"
-                jatten_title = f"Link-distance-binned J_atten: per-patch medians (box-and-whisker, k={k})"
+                jatten_title = f"J_atten by link d{k} distance bin: median across patches with interquartile range"
+            jatten_box_name = jatten_name.replace(".png", "_box_whisker.png")
+            jatten_footnote = (
+                f"Each marker summarizes per-patch median J_atten in one link d{k} distance bin. "
+                "Vertical segment spans p25 to p75 across patches. Tick labels show average number of links per patch in the bin."
+            )
+            jatten_box_footnote = (
+                f"Box-and-whisker across per-patch median J_atten values in each link d{k} distance bin. "
+                "Box = q1 to q3, center line = median, whiskers = min to max."
+            )
 
             if render_bool(render_config, "plots.jatten_profiles", True):
-                log_progress(f"J_atten profiles: k={k}")
-                plot_box_whisker(
-                    jatten_img_dir / jatten_name,
+                log_progress(f"J_atten profiles: k={k}") 
+                plot_iqr_summary(
+                    jatten_iqr_img_dir / jatten_name,
                     jatten_title,
-                    jatten_medians[kstr],
+                    jatten_medians_display,
                     labels_jatten,
-                    method_order,
+                    method_order_display,
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_jatten,
                     x_label="Distance bin (m)\nSecond line: avg links [avg-std, avg+std]",
-                    y_label="J_atten link contribution (per-patch median across patches)",
-                    footnote="Per-link contribution: ((A_hat - A_obs)^2 / L_km) / #valid_links. Links are binned by segment-to-segment distance to the k-th closest other link.",
+                    y_label="Across-patch summary of per-patch median J_atten",
+                    footnote=jatten_footnote,
                 )
                 plot_box_whisker(
-                    jatten_img_dir / jatten_name.replace(".png", "_no_p25_p75.png"),
-                    f"{jatten_title} (medians only)",
-                    jatten_medians[kstr],
+                    jatten_box_img_dir / jatten_box_name,
+                    f"{jatten_title} (box-and-whisker view)",
+                    jatten_medians_display,
                     labels_jatten,
-                    method_order,
+                    method_order_display,
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_jatten,
                     x_label="Distance bin (m)\nSecond line: avg links [avg-std, avg+std]",
-                    y_label="J_atten link contribution (per-patch median across patches)",
-                    footnote="Per-link contribution: ((A_hat - A_obs)^2 / L_km) / #valid_links. Links are binned by segment-to-segment distance to the k-th closest other link.",
-                    show_boxes=False,
+                    y_label="Per-patch median J_atten",
+                    footnote=jatten_box_footnote,
                 )
 
             for baseline_label, tag in (("IDW", "idw"), ("ILDW", "ildw")):
@@ -923,33 +1558,35 @@ def render_report_from_cache(
                     continue
                 log_progress(f"Relative J_atten profiles: k={k}, baseline={baseline_label}")
                 rel_profile = compute_relative_distribution_profile(jatten_medians[kstr], baseline_label=baseline_label, dist_labels=jatten_dist_labels)
+                rel_profile_display = remap_solver_dict(rel_profile, display_map)
                 rel_name = f"distance_iqr_medians_jatten_multi_rel_{tag}.png" if len(jatten_k_values) == 1 and k == 3 else f"distance_iqr_medians_jatten_multi_k{k}_rel_{tag}.png"
+                rel_box_name = rel_name.replace(".png", "_box_whisker.png")
+                rel_footnote = f"Marker = median across patches; vertical segment = p25 to p75 after dividing each patch by {baseline_label}'s median in the same link-distance bin."
                 plot_box_whisker(
-                    jatten_img_dir / rel_name,
-                    f"Link-distance-binned J_atten: per-patch medians (relative to {baseline_label} median)",
-                    rel_profile,
+                    jatten_box_img_dir / rel_box_name,
+                    f"J_atten by link d{k} distance bin relative to {baseline_label} bin median (box-and-whisker view)",
+                    rel_profile_display,
                     labels_jatten,
-                    method_order,
+                    method_order_display,
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_jatten,
                     x_label="Distance bin (m)\nSecond line: avg links [avg-std, avg+std]",
-                    y_label=f"J_atten link-contribution ratio (per-patch median; baseline={baseline_label} p50)",
-                    footnote=f"For each distance bin, per-patch values are divided by {baseline_label}'s p50 in that bin.",
+                    y_label=f"Per-patch ratio to {baseline_label} bin median",
+                    footnote=f"Each per-patch value is divided by {baseline_label}'s median in the same link d{k} distance bin. Box = q1 to q3; whiskers = min to max.",
                 )
-                plot_box_whisker(
-                    jatten_img_dir / rel_name.replace(".png", "_no_p25_p75.png"),
-                    f"Link-distance-binned J_atten: per-patch medians (relative to {baseline_label} median, medians only)",
-                    rel_profile,
+                plot_iqr_summary(
+                    jatten_iqr_img_dir / rel_name,
+                    f"J_atten by link d{k} distance bin relative to {baseline_label} bin median",
+                    rel_profile_display,
                     labels_jatten,
-                    method_order,
+                    method_order_display,
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_jatten,
                     x_label="Distance bin (m)\nSecond line: avg links [avg-std, avg+std]",
-                    y_label=f"J_atten link-contribution ratio (per-patch median; baseline={baseline_label} p50)",
-                    footnote=f"For each distance bin, medians are divided by {baseline_label}'s p50 in that bin.",
-                    show_boxes=False,
+                    y_label=f"Across-patch summary of ratio to {baseline_label} bin median",
+                    footnote=rel_footnote,
                 )
         if jatten_major_started:
             finish_major("J_atten plots")
@@ -957,37 +1594,57 @@ def render_report_from_cache(
     if link_ratio_entries and render_bool(render_config, "plots.link_ratio_summary", True):
         start_major("link-ratio summary plot")
         log_progress("Rendering link-ratio summary plot")
-        entries = [(str(r["solver"]), str(r["label"]), [float(v) for v in r.get("values", [])]) for r in link_ratio_entries]
-        plot_ratio_box_whisker(img_dir / "link_ratio_summary.png", title="Link-metric ratios vs IDW (box-and-whisker across patches)", entries=entries, dpi=dpi)
+        entries = [
+            (
+                apply_solver_display(str(r["solver"]), display_map),
+                replace_solver_labels_in_text(str(r["label"]), display_map),
+                [float(v) for v in r.get("values", [])],
+            )
+            for r in link_ratio_entries
+        ]
+        plot_ratio_iqr_summary(
+            summary_img_dir / "link_ratio_summary.png",
+            title="Link-metric ratios vs IDW: median across patches with interquartile range",
+            entries=entries,
+            dpi=dpi,
+            footnote="Marker = median across patches; vertical segment spans p25 to p75 across patches. Ratios are computed per patch relative to IDW.",
+        )
+        plot_ratio_box_whisker(
+            summary_img_dir / "link_ratio_summary_box_whisker.png",
+            title="Link-metric ratios vs IDW: box-and-whisker across patches",
+            entries=entries,
+            dpi=dpi,
+        )
         finish_major("link-ratio summary plot")
 
     if gtbin and render_bool(render_config, "plots.gt_binned_patchavg", True):
         labels_to_plot = [str(v) for v in gtbin.get("labels_to_plot", [])]
         solver_plot_order = [label for label in solver_order if label in gtbin.get("rel_mean", {})]
         if labels_to_plot and solver_plot_order:
+            solver_plot_order_display = [apply_solver_display(label, display_map) for label in solver_plot_order]
             start_major("GT-binned patch-average plots")
             log_progress("Rendering GT-binned patch-average plots")
             bin_count_stats = {str(k): (float(v[0]), float(v[1])) for k, v in gtbin.get("bin_count_stats", {}).items()}
             plot_gt_binned_patchavg_error(
-                img_dir / "gt_binned_patchavg_relative_abs_error_all_pixels.png",
+                gtbin_img_dir / "gt_binned_patchavg_relative_abs_error_all_pixels.png",
                 title="GT-binned all-pixels error (avg of patch-averaged error ± std)",
                 bin_labels=labels_to_plot,
                 bin_count_stats=bin_count_stats,
-                solver_order=solver_plot_order,
-                mean_by_solver={str(k): [float(x) for x in v] for k, v in gtbin.get("rel_mean", {}).items()},
-                std_by_solver={str(k): [float(x) for x in v] for k, v in gtbin.get("rel_std", {}).items()},
+                solver_order=solver_plot_order_display,
+                mean_by_solver={apply_solver_display(str(k), display_map): [float(x) for x in v] for k, v in gtbin.get("rel_mean", {}).items()},
+                std_by_solver={apply_solver_display(str(k), display_map): [float(x) for x in v] for k, v in gtbin.get("rel_std", {}).items()},
                 y_label="Avg patch error (|GT-PRED|/GT; [0,1) uses |GT-PRED|)",
                 footnote="Note: For GT in [0,1) mm/h, the metric uses absolute error |GT-PRED| (not RAE).",
                 dpi=dpi,
             )
             plot_gt_binned_patchavg_error(
-                img_dir / "gt_binned_patchavg_absolute_error_all_pixels.png",
+                gtbin_img_dir / "gt_binned_patchavg_absolute_error_all_pixels.png",
                 title="GT-binned all-pixels absolute error (avg of patch means ± std)",
                 bin_labels=labels_to_plot,
                 bin_count_stats=bin_count_stats,
-                solver_order=solver_plot_order,
-                mean_by_solver={str(k): [float(x) for x in v] for k, v in gtbin.get("abs_mean", {}).items()},
-                std_by_solver={str(k): [float(x) for x in v] for k, v in gtbin.get("abs_std", {}).items()},
+                solver_order=solver_plot_order_display,
+                mean_by_solver={apply_solver_display(str(k), display_map): [float(x) for x in v] for k, v in gtbin.get("abs_mean", {}).items()},
+                std_by_solver={apply_solver_display(str(k), display_map): [float(x) for x in v] for k, v in gtbin.get("abs_std", {}).items()},
                 y_label="Avg patch absolute error |GT-PRED| (mm/h)",
                 dpi=dpi,
             )
