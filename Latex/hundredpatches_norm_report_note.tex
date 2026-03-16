@@ -5,12 +5,15 @@
 \usepackage{booktabs}
 \usepackage{float}
 \usepackage{caption}
+\usepackage{subcaption}
 
 % Change only these lines to point the note at another rendered report.
 \newcommand{\reportroot}{../Compute-Link-Attenuations/HundredPatches/norm/report}
 \newcommand{\datasetlabel}{HundredPatches/norm}
 \newcommand{\distanceboxplot}{\reportroot/images/distance_profiles_box_whisker/distance_iqr_medians_rainy_multi_k3_box_whisker_rel.png}
-\newcommand{\confusionplot}{\reportroot/images/confusion_maps/Nonlinear_Optimizer_confusion_map.png}
+\newcommand{\idwconfusionplot}{\reportroot/images/confusion_maps/IDW_confusion_map.png}
+\newcommand{\ildwconfusionplot}{\reportroot/images/confusion_maps/ILDW_confusion_map.png}
+\newcommand{\nonlinearconfusionplot}{\reportroot/images/confusion_maps/Nonlinear_Optimizer_confusion_map.png}
 \newcommand{\patchgeometryplot}{\reportroot/images/patch_overview/patch_dimensions_scatter.png}
 \newcommand{\linkhistplot}{\reportroot/images/patch_overview/link_count_histogram.png}
 
@@ -55,16 +58,34 @@ The table below gives the average number of rainy pixels per patch and the corre
 \section*{Confusion Map}
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.72\textwidth]{\confusionplot}
-  \caption{Per-patch confusion summary for the nonlinear optimizer solver at the configured wet/dry threshold. Each cell shows the mean fraction of patch pixels in that outcome class together with the standard error of the mean across patches.}
+  \begin{subfigure}[t]{0.46\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{\idwconfusionplot}
+    \caption{IDW}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.46\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{\ildwconfusionplot}
+    \caption{ILDW}
+  \end{subfigure}
+  
+  \vspace{0.8em}
+  
+  \begin{subfigure}[t]{0.58\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{\nonlinearconfusionplot}
+    \caption{Nonlinear Optimizer}
+  \end{subfigure}
+  \caption{Per-patch confusion summaries for IDW, ILDW, and the nonlinear optimizer at the configured wet/dry threshold. In each panel, rows correspond to ground truth and columns correspond to predictions. The entries therefore report the mean across patches of the true-positive, false-negative, false-positive, and true-negative pixel fractions, together with the corresponding standard error of the mean.}
 \end{figure}
 
 Rows correspond to ground truth and columns correspond to predictions. The four cells are:
 \begin{itemize}
-  \item TP: GT wet, predicted wet.
-  \item FN: GT wet, predicted dry.
-  \item FP: GT dry, predicted wet.
-  \item TN: GT dry, predicted dry.
+  \item TP: pixel is wet in the ground truth and predicted wet by the algorithm.
+  \item FN: pixel is wet in the ground truth but predicted dry by the algorithm.
+  \item FP: pixel is dry in the ground truth but predicted wet by the algorithm.
+  \item TN: pixel is dry in the ground truth and predicted dry by the algorithm.
 \end{itemize}
 
 \section*{Patch Geometry Overview}
@@ -80,7 +101,7 @@ This figure makes it easy to see whether the selected patches occupy a tight geo
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.82\textwidth]{\linkhistplot}
-  \caption{Histogram of the number of links per patch. The figure footnote also reports the average parallel-link ratio, defined here as the fraction of links in a patch that have at least one near-parallel partner.}
+  \caption{Histogram of the number of links per patch. The figure footnote also reports the average parallel-link ratio, defined here as the fraction of links in a patch that have at least one parallel partner.}
 \end{figure}
 
 This histogram summarizes how link density varies across the selected patches. The parallel-link ratio is included because the current expectation is that it should stay close to $1$ for this dataset.

@@ -833,28 +833,48 @@ def plot_gt_binned_patchavg_error(
     plt.close(fig)
 
 
-def compute_parallel_link_ratio(links: Sequence[Dict[str, Any]], *, tol_deg: float = 1.0) -> float:
+def compute_parallel_link_ratio(
+    links: Sequence[Dict[str, Any]],
+    *,
+    endpoint_tol_m: float = 1.0,
+) -> float:
     n_links = len(links)
     if n_links <= 1:
         return 0.0
-    angles: List[float] = []
+    link_rows: List[Tuple[float, float, float, float]] = []
     for link in links:
-        dx = float(link["x1_m"]) - float(link["x0_m"])
-        dy = float(link["y1_m"]) - float(link["y0_m"])
+        x0 = float(link["x0_m"])
+        y0 = float(link["y0_m"])
+        x1 = float(link["x1_m"])
+        y1 = float(link["y1_m"])
+        dx = x1 - x0
+        dy = y1 - y0
         if dx == 0.0 and dy == 0.0:
             continue
-        angles.append(float(np.mod(math.atan2(dy, dx), math.pi)))
-    if len(angles) <= 1:
+        link_rows.append((x0, y0, x1, y1))
+    if len(link_rows) <= 1:
         return 0.0
-    arr = np.sort(np.asarray(angles, dtype=np.float64))
-    next_diff = np.empty_like(arr)
-    next_diff[:-1] = arr[1:] - arr[:-1]
-    next_diff[-1] = arr[0] + math.pi - arr[-1]
-    prev_diff = np.empty_like(arr)
-    prev_diff[0] = arr[0] + math.pi - arr[-1]
-    prev_diff[1:] = arr[1:] - arr[:-1]
-    min_neighbor = np.minimum(prev_diff, next_diff)
-    return float(np.mean(min_neighbor <= math.radians(float(tol_deg))))
+    endpoint_tol_sq = float(endpoint_tol_m) ** 2
+
+    def sqdist(ax: float, ay: float, bx: float, by: float) -> float:
+        return (ax - bx) ** 2 + (ay - by) ** 2
+
+    matched = np.zeros(len(link_rows), dtype=bool)
+    for left, (x0_i, y0_i, x1_i, y1_i) in enumerate(link_rows):
+        for cand in range(left + 1, len(link_rows)):
+            x0_j, y0_j, x1_j, y1_j = link_rows[cand]
+            direct = (
+                sqdist(x0_i, y0_i, x0_j, y0_j) <= endpoint_tol_sq
+                and sqdist(x1_i, y1_i, x1_j, y1_j) <= endpoint_tol_sq
+            )
+            flipped = (
+                sqdist(x0_i, y0_i, x1_j, y1_j) <= endpoint_tol_sq
+                and sqdist(x1_i, y1_i, x0_j, y0_j) <= endpoint_tol_sq
+            )
+            if direct or flipped:
+                matched[left] = True
+                matched[cand] = True
+    return float(np.mean(matched))
 
 
 def collect_patch_overview_rows(
@@ -946,27 +966,52 @@ def plot_link_count_histogram(
     if unique_counts.size <= 12:
         edges = np.arange(unique_counts.min() - 0.5, unique_counts.max() + 1.5, 1.0)
     else:
-        edges = min(12, max(5, int(round(math.sqrt(float(n_links.size))))))
+        n_bins = min(16, max(10, int(round(1.4 * math.sqrt(float(n_links.size))))))
+        width = max(25.0, math.ceil((float(n_links.max()) - float(n_links.min())) / n_bins / 25.0) * 25.0)
+        left = math.floor(float(n_links.min()) / width) * width
+        right = math.ceil(float(n_links.max()) / width) * width
+        edges = np.arange(left, right + 0.5 * width, width)
 
-    fig, ax = plt.subplots(figsize=(7.0, 5.4), dpi=dpi)
-    ax.hist(n_links, bins=edges, color="#ff7f0e", alpha=0.85, edgecolor="black", linewidth=0.6)
-    ax.set_xlabel("Number of links in patch")
+    fig, ax = plt.subplots(figsize=(8.2, 6.0), dpi=dpi)
+    counts, bin_edges, _ = ax.hist(
+        n_links,
+        bins=edges,
+        color="#ff7f0e",
+        alpha=0.85,
+        edgecolor="black",
+        linewidth=0.6,
+    )
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    bin_labels = [f"[{left:.0f}, {right:.0f})" for left, right in zip(bin_edges[:-1], bin_edges[1:])]
+    if bin_labels:
+        bin_labels[-1] = f"[{bin_edges[-2]:.0f}, {bin_edges[-1]:.0f}]"
+    if len(bin_centers) <= 12:
+        tick_positions = bin_centers
+        tick_labels = bin_labels
+    else:
+        step = 2 if len(bin_centers) <= 20 else 3
+        tick_positions = bin_centers[::step]
+        tick_labels = bin_labels[::step]
+    ax.set_xticks(tick_positions)
+    ax.set_xticklabels(tick_labels, rotation=28, ha="right", fontsize=8)
+    ax.set_xlabel("Links per patch (histogram bin intervals)")
     ax.set_ylabel("Frequency over patches")
     ax.set_title(title)
     ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
     fig.text(
         0.5,
-        0.03,
+        0.05,
         (
-            f"Average links per patch = {float(np.mean(n_links)):.1f}; SD = {float(np.std(n_links, ddof=0)):.1f}. "
-            f"Average parallel-link ratio (#parallel links / #links) = {float(np.mean(parallel_ratio)):.3f}; "
+            f"Average links per patch = {float(np.mean(n_links)):.1f}; SD = {float(np.std(n_links, ddof=0)):.1f}.\n"
+            f"Average parallel-link ratio (#parallel links / #links; links are counted as matching when\n"
+            f"their corresponding endpoints are within 1 m in Euclidean distance) = {float(np.mean(parallel_ratio)):.3f}; "
             f"SD = {float(np.std(parallel_ratio, ddof=0)):.3f}."
         ),
         ha="center",
         fontsize=8,
     )
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.08, 0.08, 0.98, 0.95))
+    fig.tight_layout(rect=(0.08, 0.20, 0.98, 0.95))
     fig.savefig(out_png)
     plt.close(fig)
 
