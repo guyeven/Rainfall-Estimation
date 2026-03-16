@@ -149,6 +149,13 @@ def load_config(path: Path) -> dict:
         return json.load(f)
 
 
+def resolve_config_path(path_value: str, config_path: Path) -> Path:
+    p = Path(path_value).expanduser()
+    if p.is_absolute():
+        return p
+    return (config_path.parent / p).resolve()
+
+
 def _seg_dist2(px, py, x0, y0, x1, y1) -> float:
     """Squared distance from point to segment."""
     ax, ay = x0, y0
@@ -189,10 +196,11 @@ def main() -> None:
     # Inputs: config OR interactive
     # -----------------------------------------------------------------
     if args.config:
-        cfg = load_config(Path(args.config).expanduser())
-        patch_list = Path(cfg["patch_list_jsonl"]).expanduser()
+        cfg_path = Path(args.config).expanduser().resolve()
+        cfg = load_config(cfg_path)
+        patch_list = resolve_config_path(str(cfg["patch_list_jsonl"]), cfg_path)
         patch_id = str(cfg["patch_id"]).strip()
-        patch_out_jsonl = Path(cfg["per_patch_output_jsonl"]).expanduser()
+        patch_out_jsonl = resolve_config_path(str(cfg["per_patch_output_jsonl"]), cfg_path)
     else:
         base_dir = _select_dir_with_dialog("Choose directory containing patch JSONL files")
 
