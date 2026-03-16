@@ -10,7 +10,41 @@ __pycache__/
 
 # Node / Electron deps + build output
 **/node_modules/
+Patch-Generator/build/
+Patch-Generator/dist/
+Patch-Generator/electron/
 Patch-Generator/electron/dist/
+
+# Common generated report / experiment artifacts
+**/Diagnostics-Out/
+**/report/
+**/est_dir/
+**/gt_dir/
+**/sol_dir_*/
+
+# LaTeX build products
+*.aux
+*.log
 
 # Stray duplicate artifacts
 * 2.*
+* 3.*
+
+# Keep these refactor experiment trees visible even if they contain
+# generated outputs we may want to inspect or commit intentionally.
+!Compute-Link-Attenuations/TenPatches/norm_post_refactor/
+!Compute-Link-Attenuations/TenPatches/norm_post_refactor/**
+!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/
+!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/**
+!Compute-Link-Attenuations/TenPatches/norm_post_refactor/analyze_multi.yaml
+!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/analyze_multi.yaml
+!Compute-Link-Attenuations/TenPatches/norm_post_refactor/batch_analyze_output_multi/
+!Compute-Link-Attenuations/TenPatches/norm_post_refactor/batch_analyze_output_multi/**
+!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/batch_analyze_output_multi/
+!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/batch_analyze_output_multi/**
+!Compute-Link-Attenuations/TenPatches/norm_post_refactor/report/
+!Compute-Link-Attenuations/TenPatches/norm_post_refactor/report/**
+!Compute-Link-Attenuations/TenPatches/norm_post_refactor/sol_dir_*/
+!Compute-Link-Attenuations/TenPatches/norm_post_refactor/sol_dir_*/**
+!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/sol_dir_*/
+!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/sol_dir_*/**

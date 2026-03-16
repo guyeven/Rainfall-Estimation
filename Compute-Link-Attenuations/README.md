@@ -1,13 +1,11 @@
-# Batch pipeline: multi-solver rainfall estimation + analysis
+# Batch pipeline: multi-solver rainfall estimation + cache-based report rendering
 
 This repo supports a two-stage workflow:
 
 1. **Run multiple solvers** on a set of `est_input_*.json` patches and write one `_solution.npz` per patch per solver.
-2. **Analyze** the outputs against ground truth (GT) and produce:
-   - an Excel workbook with per-bin statistics
-   - two “distance-profile” plots (rainy vs non-rainy) comparing GT vs each solver
+2. **Analyze** the outputs against ground truth (GT), write a cache JSON, and optionally render a report from that cache.
 
-The workflow is designed so that **IDW is treated like any other solver**: you run it once to produce `.npz` outputs, then feed those outputs into the analyzer.
+The workflow is designed so that **IDW is treated like any other solver**: you run it once to produce `.npz` outputs, then feed those outputs into the analyzer. The main benefit of the cache split is that you can iterate on plots and Excel output with `render_analysis_report.py` without re-running the expensive statistics pass in `batch_analyze_multi.py`.
 
 ---
 
@@ -131,19 +129,22 @@ solvers:
 - computes per-bin statistics for:
   - **coverage bins** (how many links intersect a pixel)
   - **distance bins** (distance to the 3rd nearest link)
-- produces:
-  - an Excel workbook with sheets for `GT vs <solver>`
-  - two summary plots:
-    1. **rainy pixels**: distance-profile using *relative absolute error*
-    2. **non-rainy pixels**: distance-profile using *absolute error*
-
-The plots show, per distance bin:
-- the **median** error per patch
-- aggregated across patches via **IQR** (interquartile range: p25–p75)
+- writes a cache JSON containing:
+  - ordered Excel-sheet payloads
+  - per-patch distributions used by the aggregate plots
+  - optional plot jobs for patch-map rendering
+- by default, immediately calls `render_analysis_report.py` afterward unless you pass `--analyze-only`
 
 ### Command
 ```bash
 python batch_analyze_multi.py --config <path/to/analyze_multi.yaml>
+```
+
+### Analyze-only command
+If you want to stop after the cache is written and render later:
+
+```bash
+python batch_analyze_multi.py --config <path/to/analyze_multi.yaml> --analyze-only
 ```
 
 ### Config: high-level structure
@@ -186,30 +187,108 @@ output:
   excel_filename: "coverage_stats_long_multi.xlsx"
 ```
 
+### What gets written
+The analyzer writes its main cache to:
+
+```text
+<output.out_dir>/<excel_filename_without_suffix>_report_cache.json
+```
+
+For example, if:
+- `out_dir = "batch_analyze_output_multi"`
+- `excel_filename = "stats_multi_new_solver.xlsx"`
+
+then the cache path is:
+
+```text
+batch_analyze_output_multi/stats_multi_new_solver_report_cache.json
+```
+
 ---
 
-## 3) Example run: `TenPatches/`
+## 3) Render a report from an existing cache: `render_analysis_report.py`
 
-Up to this commit, the folder `TenPatches/` contains a complete example run using three methods:
+### What it does
+`render_analysis_report.py`:
+- reads the cache JSON produced by `batch_analyze_multi.py`
+- writes the Excel workbook
+- renders the configured plots into the report output directory
 
-- **OPT_0.1**: L-BFGS-B solver with \(R_0\) initialised to a constant **0.1**
-- **OPT_IDW**: L-BFGS-B solver with \(R_0\) initialised from **IDW**
-- **IDW**: inverse-distance weighting baseline
+This is the command you use when you want to regenerate plots and Excel from cached analysis results, without recomputing the statistics.
+
+### Command
+```bash
+python render_analysis_report.py \
+  --cache <path/to/*_report_cache.json> \
+  --output-dir <path/to/report_dir> \
+  --render-config <path/to/render_report.yaml>
+```
+
+### Example: HundredPatches
+```bash
+python render_analysis_report.py \
+  --cache HundredPatches/norm_post_refactor/batch_analyze_output_multi/stats_multi_new_solver_report_cache.json \
+  --output-dir HundredPatches/norm_post_refactor/report \
+  --render-config HundredPatches/norm_post_refactor/render_report.yaml
+```
+
+If `--render-config` is omitted, the renderer tries to auto-discover `render_report.yaml` next to the analysis config recorded in the cache. If that file is not present, it falls back to built-in defaults.
+
+---
+
+## 4) The two main experiment directories
+
+The two directories that currently matter most are:
+
+- [TenPatches](/Users/isoto/Documents/MPI/Research/RainfallMap/Compute-Link-Attenuations/TenPatches)
+  Contains experiments built from **10 patches**.
+
+- [HundredPatches](/Users/isoto/Documents/MPI/Research/RainfallMap/Compute-Link-Attenuations/HundredPatches)
+  Contains experiments built from **100 patches**.
+
+In practice, these are the two scales you will most often compare when testing solver behavior, report rendering, and runtime.
+
+---
+
+## 5) Example runs
+
+### TenPatches
 
 The workflow is:
 
-1) Run solvers:
+1. Run solvers:
 ```bash
 python batch_solve_multi.py --config TenPatches/batch_solve_multi_config.yaml
 ```
 
-2) Analyze outputs:
+2. Analyze outputs and render immediately:
 ```bash
 python batch_analyze_multi.py --config TenPatches/analyze_multi.yaml
 ```
 
-Outputs are written under the `out_dir` specified in the analyzer config:
-- Excel workbook (per-solver sheets)
-- 2 distance-profile plots:
-  - rainy pixels
-  - non-rainy pixels
+3. Or analyze first, then rerender from cache later:
+```bash
+python batch_analyze_multi.py --config TenPatches/norm_post_refactor/analyze_multi.yaml --analyze-only
+
+python render_analysis_report.py \
+  --cache TenPatches/norm_post_refactor/batch_analyze_output_multi/stats_multi_new_solver_report_cache.json \
+  --output-dir TenPatches/norm_post_refactor/report \
+  --render-config TenPatches/norm_post_refactor/render_report.yaml
+```
+
+### HundredPatches
+
+```bash
+python batch_analyze_multi.py --config HundredPatches/norm_post_refactor/analyze_multi.yaml --analyze-only
+
+python render_analysis_report.py \
+  --cache HundredPatches/norm_post_refactor/batch_analyze_output_multi/stats_multi_new_solver_report_cache.json \
+  --output-dir HundredPatches/norm_post_refactor/report \
+  --render-config HundredPatches/norm_post_refactor/render_report.yaml
+```
+
+Outputs are written under the `out_dir` and report directory you provide:
+- cache JSON
+- Excel workbook
+- aggregate plots
+- optional patch error maps, if the cache contains `patch_plot_jobs`
