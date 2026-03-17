@@ -1,5 +1,6 @@
 \documentclass[11pt]{article}
-
+\usepackage{siunitx}
+\usepackage{cleveref}
 \usepackage[margin=1in]{geometry}
 \usepackage{graphicx}
 \usepackage{booktabs}
@@ -24,6 +25,7 @@ This note summarizes results for a collection of 100 patches. All aggregate figu
   \centering
   \includegraphics[width=\textwidth]{\distanceboxplot}
   \caption{Rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median rainy-pixel relative-absolute-error (RAE) value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a rainy pixel is a pixel whose ground-truth rainfall is at least the configured wet threshold (set to 0.6), and relative absolute error for a rainy pixel $p$ is defined as $|GT(p)-PRED(p)| / GT(p)$.}
+  \label{fig:RAE}
 \end{figure}
 
 This plot summarizes how solver performance changes as pixels get farther from the third-nearest link. Lower values indicate lower rainy-pixel relative absolute error in that distance bin.
@@ -33,21 +35,25 @@ The table below gives the average number of rainy pixels per patch and the corre
 
 \begin{table}[H]
   \centering
-  \begin{tabular}{lrr}
+    \begin{tabular}{l
+                  S[table-format=5.1]
+                  S[table-format=5.1]}
     \toprule
-    Distance bin (to the 3rd closest link) & Avg. rainy pixels / patch & SD \\
+    {Distance to 3rd-closest link (m)} & {mean(\# rainy pixels)} & {SD} \\
     \midrule
-    $\leq 125$ m & 4267.0 & 960.4 \\
-    $(125,375]$ m & 16737.7 & 3803.2 \\
-    $(375,750]$ m & 26809.9 & 6707.0 \\
-    $(750,1500]$ m & 51988.5 & 14468.0 \\
-    $(1500,3125]$ m & 88839.4 & 27531.1 \\
-    $(3125,6000]$ m & 45929.4 & 15679.4 \\
-    $(6000,9000]$ m & 3835.8 & 2725.7 \\
-    $>9000$ m & 514.4 & 966.9 \\
+    $[0,125]$      &  4267.0 &   960.4 \\
+    $(125,375]$     & 16737.7 &  3803.2 \\
+    $(375,750]$     & 26809.9 &  6707.0 \\
+    $(750,1500]$    & 51988.5 & 14468.0 \\
+    $(1500,3125]$   & 88839.4 & 27531.1 \\
+    $(3125,6000]$   & 45929.4 & 15679.4 \\
+    $(6000,9000]$   &  3835.8 &  2725.7 \\
+    $(9000,\infty)$         &   514.4 &   966.9 \\
     \bottomrule
   \end{tabular}
-  \caption{Rainy-pixel counts per patch for the distance bins to the 3rd closest link used in the rainy-pixel distance-profile plots.}
+  \caption{Distribution of the number of pixels per distance bin. In each patch, pixels are classified into bins according to their distance to the 3rd-closest link. Formally, a pixel $p$ belongs to bin $(d_1,d_2]$ if the disc of radius $d_2$ centered at $p$ intersects at least $3$ links and the disc of radius $d_1$ centered at $p$ intersects at most $2$ links. Let $|\mathrm{bin}_i(P)|$ denote the number of pixels in patch $P$ that belong to $\mathrm{bin}_i$. The table reports, for each bin, the mean and standard deviation of $|\mathrm{bin}_i(P)|$ across patches. The last bin, 
+$(9000,\infty)$ is not shown in \Cref{fig:RAE} because it is only sparsely populated.}
+  %\caption{Rainy-pixel counts per patch for the distance bins to the 3rd closest link used in the rainy-pixel distance-profile plots.}
 \end{table}
 
 \section*{Confusion Map}
@@ -106,23 +112,25 @@ The table below gives the average number of rainy pixels per patch and the corre
   \caption{Patch-averaged wet/dry confusion matrices for IDW, ILDW, and the nonlinear optimizer at a threshold of $0.6$ mm/h, where a pixel is called wet if its rainfall is at least $0.6$ mm/h and dry otherwise. For each patch, pixels are first assigned to the four confusion categories defined by the ground-truth and predicted wet/dry labels: top-left is TP, top-right is FN, bottom-left is FP, and bottom-right is TN. The count in each category is then divided by the total number of pixels in that patch, producing a patch-level pixel fraction. The table entries report the mean of those patch-level fractions across the 100 evaluated patches, together with the standard error of the mean (SEM). These are therefore fractions of all pixels in a patch, not row-normalized conditional rates.}
 \end{table}
 
+
 \section*{Patch Geometry Overview}
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.82\textwidth]{\patchgeometryplot}
-  \caption{Scatter plot of patch dimensions for the 100 patches used in the analysis, with one marker per patch. The figure summarizes the range of patch geometries represented in the dataset and makes it clear that the evaluation is not restricted to a single fixed patch shape. The dashed diagonal is the $1{:}1$ line between width and height.}
-\end{figure}
+% \begin{figure}[H]
+%   \centering
+%   \includegraphics[width=0.82\textwidth]{\patchgeometryplot}
+%   \caption{Patch width versus patch height for the 100 patches, with one dot per patch.  Across patches, the mean patch area is 269,491 pixels with SD of 76,755 pixels (pixels are squares with side length $125$m).}
+%  % \caption{Patch width versus patch height, with one marker per patch. The footnote on the figure reports the average patch size in pixels and its standard deviation across patches.}
+% \end{figure}
 
-This figure makes it easy to see whether the selected patches occupy a tight geometry range or whether the report is mixing very different patch extents.
+% This figure makes it easy to see whether the selected patches occupy a tight geometry range or whether the report is mixing very different patch extents.
 
-\section*{Link Count Distribution}
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.82\textwidth]{\linkhistplot}
-  \caption{Histogram of the number of links per patch. The figure footnote also reports the average parallel-link ratio, defined here as the fraction of links in a patch that have at least one parallel partner.}
-\end{figure}
+% \section*{Link Count Distribution}
+% \begin{figure}[H]
+%   \centering
+%   \includegraphics[width=0.82\textwidth]{\linkhistplot}
+%   \caption{Histogram of the number of links per patch. The figure footnote also reports the average parallel-link ratio, defined here as the fraction of links in a patch that have at least one parallel partner.}
+% \end{figure}
 
-This histogram summarizes how link density varies across the selected patches. The parallel-link ratio is included because the current expectation is that it should stay close to $1$ for this dataset.
+% This histogram summarizes how link density varies across the selected patches. The parallel-link ratio is included because the current expectation is that it should stay close to $1$ for this dataset.
 
 \begin{table}[H]
   \centering
