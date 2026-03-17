@@ -10,7 +10,7 @@
 % Change only these lines to point the note at another rendered report.
 \newcommand{\reportroot}{../Compute-Link-Attenuations/TenPatches/norm/report}
 \newcommand{\datasetlabel}{TenPatches/norm}
-\newcommand{\distanceboxplot}{\reportroot/images/distance_profiles_box_whisker/distance_iqr_medians_rainy_multi_k3_box_whisker_rel.png}
+\newcommand{\distanceboxplot}{\reportroot/images/distance_profiles_box_whisker/distance_iqr_medians_rainy_multi_k3_box_whisker.png}
 \newcommand{\idwconfusionplot}{\reportroot/images/confusion_maps/IDW_confusion_map.png}
 \newcommand{\ildwconfusionplot}{\reportroot/images/confusion_maps/ILDW_confusion_map.png}
 \newcommand{\nonlinearconfusionplot}{\reportroot/images/confusion_maps/OPT_NORM_ILDW_MULT_ILDW_INIT_confusion_map.png}
@@ -24,14 +24,16 @@
 \begin{document}
 \maketitle
 
+This note summarizes results for a collection of 10 patches. All aggregate figures and tables that follow should therefore be read as patch-level summaries over this ten-patch evaluation set, rather than as statistics from a single patch or from the full archive of available patches.
+
 \section*{Relative Rainy-Pixel Distance Profile}
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{\distanceboxplot}
-  \caption{Rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link, shown relative to IDW. Each patch contributes one median rainy-pixel relative-absolute-error value per distance bin; those patch-level medians are divided by the IDW median in the same bin before the across-patch box-and-whisker summary is formed. Here, a rainy pixel is a pixel whose ground-truth rainfall is at least the configured wet threshold, and relative absolute error is defined as $|GT(p)-PRED(p)| / GT(p)$ over rainy pixels $p$.}
+  \caption{Rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median rainy-pixel relative-absolute-error value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a rainy pixel is a pixel whose ground-truth rainfall is at least the configured wet threshold, and relative absolute error is defined as $|GT(p)-PRED(p)| / GT(p)$ over rainy pixels $p$.}
 \end{figure}
 
-This plot summarizes how solver performance changes as pixels get farther from the third-nearest link. Values below $1$ indicate lower error than IDW in that distance bin, while values above $1$ indicate higher error than IDW.
+This plot summarizes how solver performance changes as pixels get farther from the third-nearest link. Lower values indicate lower rainy-pixel relative absolute error in that distance bin.
 
 \subsection*{Rainy-pixel Count Table for Distance to the 3rd Closest Link}
 The table below gives the average number of rainy pixels per patch and the corresponding standard deviation for each distance bin to the 3rd closest link. These are the same patch-level counts summarized in the tick labels of the rainy-pixel distance-profile plots.
@@ -56,43 +58,66 @@ The table below gives the average number of rainy pixels per patch and the corre
 \end{table}
 
 \section*{Confusion Map}
-\begin{figure}[H]
+\begin{table}[H]
   \centering
-  \begin{subfigure}[t]{0.46\textwidth}
+  \begin{minipage}[t]{0.31\textwidth}
     \centering
-    \includegraphics[width=\textwidth]{\idwconfusionplot}
-    \caption{IDW}
-  \end{subfigure}
-  \hfill
-  \begin{subfigure}[t]{0.46\textwidth}
-    \centering
-    \includegraphics[width=\textwidth]{\ildwconfusionplot}
-    \caption{ILDW}
-  \end{subfigure}
-  
-  \vspace{0.8em}
-  
-  \begin{subfigure}[t]{0.58\textwidth}
-    \centering
-    \includegraphics[width=\textwidth]{\nonlinearconfusionplot}
-    \caption{Nonlinear Optimizer}
-  \end{subfigure}
-  \caption{Per-patch confusion summaries for IDW, ILDW, and the nonlinear optimizer at the configured wet/dry threshold. In each panel, rows correspond to ground truth and columns correspond to predictions. The entries therefore report the mean across patches of the true-positive, false-negative, false-positive, and true-negative pixel fractions, together with the corresponding standard error of the mean.}
-\end{figure}
+    \textbf{IDW}
 
-Rows correspond to ground truth and columns correspond to predictions. The four cells are:
-\begin{itemize}
-  \item TP: pixel is wet in the ground truth and predicted wet by the algorithm.
-  \item FN: pixel is wet in the ground truth but predicted dry by the algorithm.
-  \item FP: pixel is dry in the ground truth but predicted wet by the algorithm.
-  \item TN: pixel is dry in the ground truth and predicted dry by the algorithm.
-\end{itemize}
+    \vspace{0.35em}
+    \scriptsize
+    \begin{tabular}{lcc}
+      \toprule
+       & \multicolumn{2}{c}{Prediction} \\
+      GT & Wet & Dry \\
+      \midrule
+      Wet & $0.935 \pm 0.034$ & $0.001 \pm 0.001$ \\
+      Dry & $0.033 \pm 0.012$ & $0.031 \pm 0.021$ \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \textbf{ILDW}
+
+    \vspace{0.35em}
+    \scriptsize
+    \begin{tabular}{lcc}
+      \toprule
+       & \multicolumn{2}{c}{Prediction} \\
+      GT & Wet & Dry \\
+      \midrule
+      Wet & $0.934 \pm 0.034$ & $0.002 \pm 0.001$ \\
+      Dry & $0.031 \pm 0.011$ & $0.033 \pm 0.022$ \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \textbf{Nonlinear Optimizer}
+
+    \vspace{0.35em}
+    \scriptsize
+    \begin{tabular}{lcc}
+      \toprule
+       & \multicolumn{2}{c}{Prediction} \\
+      GT & Wet & Dry \\
+      \midrule
+      Wet & $0.931 \pm 0.035$ & $0.004 \pm 0.002$ \\
+      Dry & $0.022 \pm 0.008$ & $0.042 \pm 0.026$ \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \caption{Patch-averaged wet/dry confusion matrices for IDW, ILDW, and the nonlinear optimizer at a threshold of $0.6$ mm/h, where a pixel is called wet if its rainfall is at least $0.6$ mm/h and dry otherwise. For each patch, pixels are first assigned to the four confusion categories defined by the ground-truth and predicted wet/dry labels: top-left is TP, top-right is FN, bottom-left is FP, and bottom-right is TN. The count in each category is then divided by the total number of pixels in that patch, producing a patch-level pixel fraction. The table entries report the mean of those patch-level fractions across the 10 evaluated patches, together with the standard error of the mean (SEM). These are therefore fractions of all pixels in a patch, not row-normalized conditional rates.}
+\end{table}
 
 \section*{Patch Geometry Overview}
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.82\textwidth]{\patchgeometryplot}
-  \caption{Patch width versus patch height, with one marker per patch. The footnote on the figure reports the average patch size in pixels and its standard deviation across patches.}
+  \caption{Scatter plot of patch dimensions for the 10 patches used in the analysis, with one marker per patch. The figure summarizes the range of patch geometries represented in the dataset and makes it clear that the evaluation is not restricted to a single fixed patch shape. The dashed diagonal is the $1{:}1$ line between width and height.}
 \end{figure}
 
 This figure makes it easy to see whether the selected patches occupy a tight geometry range or whether the report is mixing very different patch extents.

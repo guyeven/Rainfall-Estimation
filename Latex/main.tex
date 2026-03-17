@@ -7,8 +7,7 @@
 \usepackage{caption}
 \usepackage{subcaption}
 
-% Change only these lines to point the note at another rendered report.
-\input{hundredpatches_paths.tex}
+\input{main_paths.tex}
 
 \title{Rainfall Estimation}
 \author{}
@@ -23,7 +22,7 @@ This note summarizes results for a collection of 100 patches. All aggregate figu
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{\distanceboxplot}
-  \caption{Rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median rainy-pixel relative-absolute-error (RAE) value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a rainy pixel is a pixel whose ground-truth rainfall is at least the configured wet threshold (set to 0.6), and relative absolute error for a rainy pixel $p$ is defined as $|GT(p)-PRED(p)| / GT(p)$.}
+  \caption{Rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median rainy-pixel relative-absolute-error value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a rainy pixel is a pixel whose ground-truth rainfall is at least the configured wet threshold (set to 0.6), and relative absolute error is defined as $|GT(p)-PRED(p)| / GT(p)$ over rainy pixels $p$.}
 \end{figure}
 
 This plot summarizes how solver performance changes as pixels get farther from the third-nearest link. Lower values indicate lower rainy-pixel relative absolute error in that distance bin.

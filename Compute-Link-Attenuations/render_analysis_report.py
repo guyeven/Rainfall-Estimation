@@ -152,6 +152,7 @@ def plot_box_whisker(
     y_label: Optional[str] = None,
     footnote: Optional[str] = None,
     show_boxes: bool = True,
+    broken_y: bool = False,
 ) -> None:
     import matplotlib.pyplot as plt  # type: ignore
     from matplotlib.ticker import MultipleLocator  # type: ignore
@@ -164,66 +165,119 @@ def plot_box_whisker(
     offsets = (np.arange(n_methods) - (n_methods - 1) / 2.0) * width
 
     fig_w = max(8.8, n_bins * 1.35 * float(bin_spacing))
-    fig_h = 6.4 if footnote else 5.5
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+    fig_h = 7.0 if broken_y else (6.4 if footnote else 5.5)
     color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     colors = {m: color_cycle[i % max(1, len(color_cycle))] for i, m in enumerate(method_order)}
 
-    for mi, method in enumerate(method_order):
-        off = offsets[mi]
-        color = colors.get(method, None)
-        medians: List[float] = []
-        for bi, lab in enumerate(dist_labels):
-            vals = np.asarray(per_patch_values.get(method, {}).get(lab, []), dtype=np.float64)
-            vals = vals[np.isfinite(vals)]
-            if vals.size == 0:
-                medians.append(0.0)
-                continue
-            medians.append(float(np.percentile(vals, 50)))
-            if show_boxes:
-                ax.boxplot(
-                    [vals],
-                    positions=[x[bi] + off],
-                    widths=width * 0.8,
-                    patch_artist=True,
-                    showfliers=False,
-                    whis=(0, 100),
-                    manage_ticks=False,
-                    boxprops={"facecolor": color, "alpha": 0.25, "edgecolor": color, "linewidth": 1.2},
-                    whiskerprops={"color": color, "linewidth": 1.2},
-                    capprops={"color": color, "linewidth": 1.2},
-                    medianprops={"color": color, "linewidth": 1.4},
-                )
-        ax.plot(x + off, medians, marker="o", linestyle="None", color=color, label=method)
+    finite_vals = np.concatenate(
+        [
+            np.asarray(per_patch_values.get(method, {}).get(lab, []), dtype=np.float64)
+            for method in method_order
+            for lab in dist_labels
+        ]
+        or [np.array([], dtype=np.float64)]
+    )
+    finite_vals = finite_vals[np.isfinite(finite_vals)]
+    if broken_y and finite_vals.size:
+        low_end = float(np.percentile(finite_vals, 90))
+        high_start = float(np.percentile(finite_vals, 98))
+        y_top = float(np.max(finite_vals))
+        if high_start <= low_end * 1.15 or y_top <= high_start:
+            broken_y = False
+    if broken_y:
+        fig, (ax_top, ax) = plt.subplots(
+            2,
+            1,
+            sharex=True,
+            figsize=(fig_w, fig_h),
+            dpi=dpi,
+            gridspec_kw={"height_ratios": [1.0, 2.2], "hspace": 0.05},
+        )
+        axes = [ax_top, ax]
+    else:
+        fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+        axes = [ax]
+
+    def draw_contents(target_ax: Any) -> None:
+        for mi, method in enumerate(method_order):
+            off = offsets[mi]
+            color = colors.get(method, None)
+            medians: List[float] = []
+            for bi, lab in enumerate(dist_labels):
+                vals = np.asarray(per_patch_values.get(method, {}).get(lab, []), dtype=np.float64)
+                vals = vals[np.isfinite(vals)]
+                if vals.size == 0:
+                    medians.append(0.0)
+                    continue
+                medians.append(float(np.percentile(vals, 50)))
+                if show_boxes:
+                    target_ax.boxplot(
+                        [vals],
+                        positions=[x[bi] + off],
+                        widths=width * 0.8,
+                        patch_artist=True,
+                        showfliers=False,
+                        whis=(0, 100),
+                        manage_ticks=False,
+                        boxprops={"facecolor": color, "alpha": 0.25, "edgecolor": color, "linewidth": 1.2},
+                        whiskerprops={"color": color, "linewidth": 1.2},
+                        capprops={"color": color, "linewidth": 1.2},
+                        medianprops={"color": color, "linewidth": 1.4},
+                    )
+            target_ax.plot(x + off, medians, marker="o", linestyle="None", color=color, label=method)
+
+    for target_ax in axes:
+        draw_contents(target_ax)
 
     ax.set_xticks(x)
     tick_labels = tick_labels or dist_labels
     has_multiline = any("\n" in str(lab) for lab in tick_labels)
     if has_multiline:
-        ax.set_xticklabels(tick_labels, rotation=20, ha="right", fontsize=7.5)
-        ax.set_xlabel(x_label or "Distance bin (m)\nSecond line: avg pixels [avg-std, avg+std]")
+        interval_only = [str(lab).split("\n", 1)[0] for lab in tick_labels]
+        ax.set_xticklabels(interval_only, rotation=0, ha="center", fontsize=7.2)
+        ax.set_xlabel(x_label or "Distance bin (m)")
     else:
         ax.set_xticklabels(tick_labels, rotation=0)
     ax.set_ylabel(y_label or "Per-patch median error", labelpad=8, fontsize=9)
     wrapped_title = "\n".join(textwrap.wrap(str(title), width=95, break_long_words=False, break_on_hyphens=False))
-    ax.set_title(wrapped_title, fontsize=11, pad=4)
-    ax.legend(loc="best")
-    ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
-    ax.yaxis.set_minor_locator(MultipleLocator(0.1))
-    ax.grid(True, axis="y", which="minor", linestyle=":", linewidth=0.45, alpha=0.6)
+    if broken_y:
+        ax_top.set_title(wrapped_title, fontsize=11, pad=4)
+        ax_top.legend(loc="best")
+    else:
+        ax.set_title(wrapped_title, fontsize=11, pad=4)
+        ax.legend(loc="best")
+    for target_ax in axes:
+        target_ax.grid(True, axis="y", linestyle=":", linewidth=0.5, alpha=0.45)
+        target_ax.yaxis.set_minor_locator(MultipleLocator(0.1))
 
-    if y_max is not None:
+    if broken_y:
+        low_ylim_top = low_end * 1.05
+        high_ylim_bottom = high_start * 0.98
+        high_ylim_top = y_top * 1.03
+        ax.set_ylim(0, low_ylim_top)
+        ax_top.set_ylim(high_ylim_bottom, high_ylim_top)
+        ax_top.spines["bottom"].set_visible(False)
+        ax.spines["top"].set_visible(False)
+        ax_top.tick_params(labeltop=False, bottom=False)
+        d = 0.015
+        kwargs = dict(transform=ax_top.transAxes, color="k", clip_on=False, linewidth=0.8)
+        ax_top.plot((-d, +d), (-d, +d), **kwargs)
+        ax_top.plot((1 - d, 1 + d), (-d, +d), **kwargs)
+        kwargs.update(transform=ax.transAxes)
+        ax.plot((-d, +d), (1 - d, 1 + d), **kwargs)
+        ax.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
+    elif y_max is not None:
         ax.set_ylim(0, y_max)
     else:
         ax.set_ylim(bottom=0)
 
     if footnote:
         footnote_y = 0.08
-        bottom = 0.28 if has_multiline else 0.18
+        bottom = 0.32 if has_multiline else 0.18
         fig.text(0.5, footnote_y, str(footnote), ha="center", va="bottom", fontsize=8, wrap=True)
         fig.tight_layout(rect=(0.04, bottom, 0.98, 0.94))
     else:
-        bottom = 0.2 if has_multiline else 0.1
+        bottom = 0.24 if has_multiline else 0.1
         fig.tight_layout(rect=(0.04, bottom, 0.98, 0.94))
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png)
@@ -245,6 +299,7 @@ def plot_iqr_summary(
     y_label: Optional[str] = None,
     footnote: Optional[str] = None,
     show_iqr: bool = True,
+    broken_y: bool = False,
 ) -> None:
     import matplotlib.pyplot as plt  # type: ignore
     import textwrap
@@ -256,34 +311,66 @@ def plot_iqr_summary(
     offsets = (np.arange(n_methods) - (n_methods - 1) / 2.0) * width
 
     fig_w = max(8.8, n_bins * 1.35 * float(bin_spacing))
-    fig_h = 6.6 if footnote else 5.9
-    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+    fig_h = 7.2 if broken_y else (6.6 if footnote else 5.9)
     color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     colors = {m: color_cycle[i % max(1, len(color_cycle))] for i, m in enumerate(method_order)}
+    finite_vals = np.concatenate(
+        [
+            np.asarray(per_patch_values.get(method, {}).get(lab, []), dtype=np.float64)
+            for method in method_order
+            for lab in dist_labels
+        ]
+        or [np.array([], dtype=np.float64)]
+    )
+    finite_vals = finite_vals[np.isfinite(finite_vals)]
+    if broken_y and finite_vals.size:
+        low_end = float(np.percentile(finite_vals, 90))
+        high_start = float(np.percentile(finite_vals, 98))
+        y_top = float(np.max(finite_vals))
+        if high_start <= low_end * 1.15 or y_top <= high_start:
+            broken_y = False
+    if broken_y:
+        fig, (ax_top, ax) = plt.subplots(
+            2,
+            1,
+            sharex=True,
+            figsize=(fig_w, fig_h),
+            dpi=dpi,
+            gridspec_kw={"height_ratios": [1.0, 2.2], "hspace": 0.05},
+        )
+        axes = [ax_top, ax]
+    else:
+        fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+        axes = [ax]
 
-    for mi, method in enumerate(method_order):
-        off = offsets[mi]
-        color = colors.get(method, None)
-        for bi, lab in enumerate(dist_labels):
-            vals = np.asarray(per_patch_values.get(method, {}).get(lab, []), dtype=np.float64)
-            vals = vals[np.isfinite(vals)]
-            if vals.size == 0:
-                continue
-            p25 = float(np.percentile(vals, 25))
-            p50 = float(np.percentile(vals, 50))
-            p75 = float(np.percentile(vals, 75))
-            xpos = x[bi] + off
-            if show_iqr:
-                ax.vlines(xpos, p25, p75, color=color, linewidth=1.8, alpha=0.95)
-                ax.hlines([p25, p75], xpos - width * 0.18, xpos + width * 0.18, color=color, linewidth=1.3, alpha=0.95)
-            ax.plot(xpos, p50, marker="o", linestyle="None", color=color, markersize=4.8, label=method if bi == 0 else None)
+    def draw_contents(target_ax: Any) -> None:
+        for mi, method in enumerate(method_order):
+            off = offsets[mi]
+            color = colors.get(method, None)
+            for bi, lab in enumerate(dist_labels):
+                vals = np.asarray(per_patch_values.get(method, {}).get(lab, []), dtype=np.float64)
+                vals = vals[np.isfinite(vals)]
+                if vals.size == 0:
+                    continue
+                p25 = float(np.percentile(vals, 25))
+                p50 = float(np.percentile(vals, 50))
+                p75 = float(np.percentile(vals, 75))
+                xpos = x[bi] + off
+                if show_iqr:
+                    target_ax.vlines(xpos, p25, p75, color=color, linewidth=1.8, alpha=0.95)
+                    target_ax.hlines([p25, p75], xpos - width * 0.18, xpos + width * 0.18, color=color, linewidth=1.3, alpha=0.95)
+                target_ax.plot(xpos, p50, marker="o", linestyle="None", color=color, markersize=4.8, label=method if bi == 0 else None)
+
+    for target_ax in axes:
+        draw_contents(target_ax)
 
     ax.set_xticks(x)
     tick_labels = tick_labels or dist_labels
     has_multiline = any("\n" in str(lab) for lab in tick_labels)
-    x_label_text = x_label or "Distance bin (m)\nSecond line: average count per patch [avg-std, avg+std]"
+    x_label_text = x_label or "Distance bin (m)"
     if has_multiline:
-        ax.set_xticklabels(tick_labels, rotation=20, ha="right", fontsize=7.5)
+        interval_only = [str(lab).split("\n", 1)[0] for lab in tick_labels]
+        ax.set_xticklabels(interval_only, rotation=0, ha="center", fontsize=7.2)
         ax.set_xlabel(x_label_text)
     else:
         ax.set_xticklabels(tick_labels, rotation=0)
@@ -293,22 +380,43 @@ def plot_iqr_summary(
     y_label_text = "\n".join(textwrap.fill(line, width=28) for line in str(y_label_text).splitlines())
     ax.set_ylabel(y_label_text, labelpad=12, fontsize=9)
     wrapped_title = "\n".join(textwrap.wrap(str(title), width=88, break_long_words=False, break_on_hyphens=False))
-    ax.set_title(wrapped_title, fontsize=11, pad=4)
-    ax.legend(loc="best")
-    ax.grid(True, axis="y", linestyle=":", linewidth=0.7)
+    if broken_y:
+        ax_top.set_title(wrapped_title, fontsize=11, pad=4)
+        ax_top.legend(loc="best")
+    else:
+        ax.set_title(wrapped_title, fontsize=11, pad=4)
+        ax.legend(loc="best")
+    for target_ax in axes:
+        target_ax.grid(True, axis="y", linestyle=":", linewidth=0.5, alpha=0.45)
 
-    if y_max is not None:
+    if broken_y:
+        low_ylim_top = low_end * 1.05
+        high_ylim_bottom = high_start * 0.98
+        high_ylim_top = y_top * 1.03
+        ax.set_ylim(0, low_ylim_top)
+        ax_top.set_ylim(high_ylim_bottom, high_ylim_top)
+        ax_top.spines["bottom"].set_visible(False)
+        ax.spines["top"].set_visible(False)
+        ax_top.tick_params(labeltop=False, bottom=False)
+        d = 0.015
+        kwargs = dict(transform=ax_top.transAxes, color="k", clip_on=False, linewidth=0.8)
+        ax_top.plot((-d, +d), (-d, +d), **kwargs)
+        ax_top.plot((1 - d, 1 + d), (-d, +d), **kwargs)
+        kwargs.update(transform=ax.transAxes)
+        ax.plot((-d, +d), (1 - d, 1 + d), **kwargs)
+        ax.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
+    elif y_max is not None:
         ax.set_ylim(0, y_max)
     else:
         ax.set_ylim(bottom=0)
 
     if footnote:
         footnote_y = 0.06
-        bottom = 0.27 if has_multiline else 0.2
+        bottom = 0.31 if has_multiline else 0.2
         fig.text(0.5, footnote_y, str(footnote), ha="center", va="bottom", fontsize=8, wrap=True)
         fig.tight_layout(rect=(0.08, bottom, 0.98, 0.94))
     else:
-        bottom = 0.2 if has_multiline else 0.1
+        bottom = 0.24 if has_multiline else 0.1
         fig.tight_layout(rect=(0.08, bottom, 0.98, 0.94))
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_png)
@@ -594,19 +702,19 @@ def plot_confusion_map(
     import matplotlib.pyplot as plt  # type: ignore
 
     matrix = np.array([[tp_mean, fn_mean], [fp_mean, tn_mean]], dtype=np.float64)
-    fig, ax = plt.subplots(figsize=(7.0, 6.6), dpi=dpi)
+    fig, ax = plt.subplots(figsize=(6.7, 5.8), dpi=dpi)
     im = ax.imshow(matrix, cmap="Blues", vmin=0.0, vmax=max(1e-9, float(np.max(matrix))))
 
     ax.set_xticks([0, 1])
     ax.set_yticks([0, 1])
-    ax.set_xticklabels(["Predicted wet", "Predicted dry"])
-    ax.set_yticklabels(["GT wet", "GT dry"])
+    ax.set_xticklabels(["Wet", "Dry"])
+    ax.set_yticklabels(["Wet", "Dry"])
     ax.xaxis.tick_top()
     ax.tick_params(top=True, bottom=False, labeltop=True, labelbottom=False)
     ax.set_xlabel("Prediction")
     ax.xaxis.set_label_position("top")
     ax.set_ylabel("Ground truth")
-    ax.set_title(title, pad=42)
+    ax.set_title(title, pad=22)
 
     cell_labels = [
         ("TP", tp_mean, tp_sem),
@@ -616,8 +724,8 @@ def plot_confusion_map(
     ]
     for idx, (label, mean_val, sem_val) in enumerate(cell_labels):
         i, j = divmod(idx, 2)
-        txt = f"{label}\nmean={mean_val:.4f}\nSEM={sem_val:.4f}"
-        ax.text(j, i, txt, ha="center", va="center", color="black", fontsize=10, fontweight="bold")
+        txt = f"{label}\n{mean_val:.3f}\n± {sem_val:.3f}"
+        ax.text(j, i, txt, ha="center", va="center", color="black", fontsize=11, fontweight="bold")
 
     for spine in ax.spines.values():
         spine.set_visible(False)
@@ -627,23 +735,20 @@ def plot_confusion_map(
     ax.tick_params(which="minor", bottom=False, left=False)
 
     cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    cbar.ax.set_ylabel("Mean fraction of patch pixels", rotation=90)
+    cbar.ax.set_ylabel("Mean pixel fraction", rotation=90)
 
     fig.text(
         0.5,
-        0.065,
+        0.03,
         (
-            f"Threshold = {threshold_mmph:.3g} mm/h, where wet means >= {threshold_mmph:.3g} mm/h and dry means < {threshold_mmph:.3g} mm/h.\n"
-            "TP = GT wet and predicted wet; FN = GT wet and predicted dry; "
-            "FP = GT dry and predicted wet; TN = GT dry and predicted dry.\n"
-            f"Each cell reports the mean fraction of patch pixels and the "
-            f"standard error mean (SEM) across n={n_patches} patches,\nwith SEM = SD / √(n-1)."
+            f"Threshold = {threshold_mmph:.3g} mm/h. "
+            f"Each cell shows mean pixel fraction across n={n_patches} patches, with ± SEM."
         ),
         ha="center",
-        fontsize=7.5,
+        fontsize=8,
     )
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0, 0.18, 1, 0.93))
+    fig.tight_layout(rect=(0, 0.08, 1, 0.95))
     fig.savefig(out_png)
     plt.close(fig)
 
@@ -674,16 +779,22 @@ def plot_j_behavior(
                 out.append(float("nan"))
         return out
 
+    def weighted_or_raw(weighted_key: str, raw_key: str) -> List[float]:
+        vals = series(weighted_key)
+        if not vals or all(math.isnan(v) for v in vals):
+            return series(raw_key)
+        return vals
+
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(8.5, 4.8), dpi=dpi)
-    ax.plot(xs, series("J_native_total"), marker="o", markersize=2.0, linewidth=1.0, label="J_weighted_sum (J_native_total)")
-    ax.plot(xs, series("J_atten"), marker="o", markersize=2.0, linewidth=0.9, label="J_atten")
-    ax.plot(xs, series("J_1d"), marker="o", markersize=2.0, linewidth=0.9, label="J_1d")
-    ax.plot(xs, series("J_total"), marker="o", markersize=2.0, linewidth=0.9, label="J_total")
-    ax.plot(xs, series("J_2d"), marker="o", markersize=2.0, linewidth=0.9, label="J_2d")
+    ax.plot(xs, series("J_native_total"), marker="o", markersize=2.0, linewidth=1.0, label=r"$J_{\mathrm{weighted\_sum}}$")
+    ax.plot(xs, weighted_or_raw("weighted_J_atten", "J_atten"), marker="o", markersize=2.0, linewidth=0.9, label=r"$\alpha_{\mathrm{atten}} \cdot J_{\mathrm{atten}}$")
+    ax.plot(xs, weighted_or_raw("weighted_J_1d", "J_1d"), marker="o", markersize=2.0, linewidth=0.9, label=r"$\alpha_{1d} \cdot J_{1d}$")
+    ax.plot(xs, weighted_or_raw("weighted_J_total", "J_total"), marker="o", markersize=2.0, linewidth=0.9, label=r"$\alpha_{\mathrm{total}} \cdot J_{\mathrm{total}}$")
+    ax.plot(xs, weighted_or_raw("weighted_J_2d", "J_2d"), marker="o", markersize=2.0, linewidth=0.9, label=r"$\alpha_{2d} \cdot J_{2d}$")
     ax.set_title(title)
     ax.set_xlabel("Iteration")
-    ax.set_ylabel("Value")
+    ax.set_ylabel("Weighted objective contribution")
     ax.grid(axis="y", alpha=0.25)
     ax.legend(loc="best", fontsize=8)
     fig.tight_layout()
@@ -928,23 +1039,19 @@ def plot_patch_extent_scatter(
         return
     widths_km = np.asarray([float(r["width_m"]) / 1000.0 for r in rows], dtype=np.float64)
     heights_km = np.asarray([float(r["height_m"]) / 1000.0 for r in rows], dtype=np.float64)
-    n_pixels = np.asarray([float(r["n_pixels"]) for r in rows], dtype=np.float64)
 
     fig, ax = plt.subplots(figsize=(7.0, 5.4), dpi=dpi)
-    ax.scatter(widths_km, heights_km, s=42, alpha=0.85, color="#1f77b4", edgecolors="white", linewidths=0.6)
-    ax.set_xlabel("Patch width (km)")
-    ax.set_ylabel("Patch height (km)")
+    ax.scatter(widths_km, heights_km, s=42, alpha=0.72, color="#1f77b4", edgecolors="white", linewidths=0.6)
+    lo = min(float(np.min(widths_km)), float(np.min(heights_km)))
+    hi = max(float(np.max(widths_km)), float(np.max(heights_km)))
+    ax.plot([lo, hi], [lo, hi], linestyle="--", linewidth=1.0, color="#7f7f7f", alpha=0.8)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel("Width (km)")
+    ax.set_ylabel("Height (km)")
     ax.set_title(title)
-    ax.grid(True, linestyle=":", linewidth=0.7)
-    fig.text(
-        0.5,
-        0.03,
-        f"n = {len(rows)} patches. Average patch size = {float(np.mean(n_pixels)):.0f} pixels; SD = {float(np.std(n_pixels, ddof=0)):.1f} pixels.",
-        ha="center",
-        fontsize=8,
-    )
+    ax.grid(True, linestyle=":", linewidth=0.6, alpha=0.35)
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.08, 0.08, 0.98, 0.95))
+    fig.tight_layout(rect=(0.08, 0.06, 0.98, 0.95))
     fig.savefig(out_png)
     plt.close(fig)
 
@@ -1268,7 +1375,7 @@ def render_report_from_cache(
         plot_patch_extent_scatter(
             patch_overview_img_dir / "patch_dimensions_scatter.png",
             rows=patch_overview_rows,
-            title="Patch geometry overview",
+            title="Scatter plot of patch dimensions",
             dpi=dpi,
         )
         plot_link_count_histogram(
@@ -1348,7 +1455,7 @@ def render_report_from_cache(
                 display_solver_label = apply_solver_display(solver_label, display_map)
                 plot_confusion_map(
                     confusion_img_dir / f"{safe_path_token(solver_label)}_confusion_map.png",
-                    title=f"Per-patch confusion summary: {display_solver_label}",
+                    title=f"Wet/dry confusion matrix (patch-averaged): {display_solver_label}",
                     solver_label=display_solver_label,
                     threshold_mmph=chosen_thr,
                     tp_mean=float(chosen.get("tp_rate_all_mean", 0.0)),
@@ -1386,6 +1493,7 @@ def render_report_from_cache(
             log_progress(f"Rendering distance-profile plots for k values {enabled_k_values}")
         for k in [v for v in k_values if v in enabled_k_values]:
             kstr = str(k)
+            focus_rainy_k3 = (k == 3)
             labels_r = list(dist_labels)
             labels_n = list(dist_labels)
             if prune_bins_enabled:
@@ -1459,19 +1567,24 @@ def render_report_from_cache(
             medians_nonrainy_display = remap_solver_dict(medians_nonrainy[kstr], display_map)
             p90s_rainy_display = remap_solver_dict(p90s_rainy[kstr], display_map)
             p90s_nonrainy_display = remap_solver_dict(p90s_nonrainy[kstr], display_map)
+            rainy_plot_title = "Distribution of patch-level median rainy-pixel RAE by distance bin" if focus_rainy_k3 else rainy_title
+            rainy_box_plot_title = "Distribution of patch-level median rainy-pixel RAE by distance bin" if focus_rainy_k3 else rainy_box_title
+            rainy_x_label = "Distance to 3rd-closest link (m)" if focus_rainy_k3 else None
+            rainy_plot_footnote = None if focus_rainy_k3 else rainy_footnote
+            rainy_box_plot_footnote = None
 
             if render_bool(render_config, "plots.distance_profiles", True):
                 log_progress(f"Distance-profile medians: k={k}")
-                plot_iqr_summary(distance_iqr_img_dir / rainy_name, rainy_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch median rainy-pixel RAE\nDot: median, bar: IQR", footnote=rainy_footnote)
+                plot_iqr_summary(distance_iqr_img_dir / rainy_name, rainy_plot_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, x_label=rainy_x_label, y_label="Patch-level median rainy-pixel RAE\nDot: median, bar: IQR", footnote=rainy_plot_footnote, broken_y=focus_rainy_k3)
                 plot_iqr_summary(distance_iqr_img_dir / nonrainy_name, nonrainy_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch median non-rainy-pixel absolute error\nDot: median, bar: IQR", footnote=nonrainy_footnote)
-                plot_box_whisker(distance_box_img_dir / rainy_box_name, rainy_box_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch median rainy-pixel RAE", footnote=rainy_box_footnote)
-                plot_box_whisker(distance_box_img_dir / nonrainy_box_name, nonrainy_box_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch median non-rainy-pixel absolute error", footnote=nonrainy_box_footnote)
+                plot_box_whisker(distance_box_img_dir / rainy_box_name, rainy_box_plot_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, x_label=rainy_x_label, y_label="Median rainy-pixel RAE per patch", footnote=rainy_box_plot_footnote, broken_y=True)
+                plot_box_whisker(distance_box_img_dir / nonrainy_box_name, nonrainy_box_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch median non-rainy-pixel absolute error", footnote=None, broken_y=True)
             if render_bool(render_config, "plots.p90_profiles", True):
                 log_progress(f"Distance-profile p90s: k={k}")
                 plot_iqr_summary(distance_iqr_img_dir / rainy_p90_name, rainy_p90_title, p90s_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch rainy-pixel p90 RAE\nDot: median, bar: IQR", footnote="Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\nEach patch contributes one rainy-pixel 90th-percentile relative absolute error value in each distance bin.\nDot = median of those per-patch p90 values across patches.\nBar = 25th to 75th percentile of those per-patch p90 values across patches.\nTick labels show the average rainy-pixel count per patch in the bin.")
                 plot_iqr_summary(distance_iqr_img_dir / nonrainy_p90_name, nonrainy_p90_title, p90s_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch non-rainy-pixel p90 absolute error\nDot: median, bar: IQR", footnote="Metric: |GT(p)-PRED(p)| over non-rainy pixels p.\nEach patch contributes one non-rainy-pixel 90th-percentile absolute error value in each distance bin.\nDot = median of those per-patch p90 values across patches.\nBar = 25th to 75th percentile of those per-patch p90 values across patches.\nTick labels show the average non-rainy-pixel count per patch in the bin.")
-                plot_box_whisker(distance_box_img_dir / rainy_p90_box_name, rainy_p90_box_title, p90s_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch rainy-pixel p90 RAE", footnote="Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\nEach patch contributes one rainy-pixel 90th-percentile relative absolute error value in each distance bin.\nBox = q1 to q3, center line = median, whiskers = min to max across patches.")
-                plot_box_whisker(distance_box_img_dir / nonrainy_p90_box_name, nonrainy_p90_box_title, p90s_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch non-rainy-pixel p90 absolute error", footnote="Metric: |GT(p)-PRED(p)| over non-rainy pixels p.\nEach patch contributes one non-rainy-pixel 90th-percentile absolute error value in each distance bin.\nBox = q1 to q3, center line = median, whiskers = min to max across patches.")
+                plot_box_whisker(distance_box_img_dir / rainy_p90_box_name, rainy_p90_box_title, p90s_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch rainy-pixel p90 RAE", footnote=None, broken_y=True)
+                plot_box_whisker(distance_box_img_dir / nonrainy_p90_box_name, nonrainy_p90_box_title, p90s_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch non-rainy-pixel p90 absolute error", footnote=None, broken_y=True)
 
             if "IDW" in medians_rainy[kstr] and render_bool(render_config, "plots.distance_profiles_relative", True):
                 log_progress(f"Relative distance profiles: k={k}")
@@ -1479,34 +1592,39 @@ def render_report_from_cache(
                 nonrainy_rel_name = nonrainy_name.replace(".png", "_rel.png")
                 rainy_rel_box_name = rainy_box_name.replace(".png", "_rel.png")
                 nonrainy_rel_box_name = nonrainy_box_name.replace(".png", "_rel.png")
+                rainy_rel_plot_title = "Distribution of patch-level median rainy-pixel RAE by distance bin, relative to IDW" if focus_rainy_k3 else rainy_rel_box_title
                 plot_box_whisker(
                     distance_box_img_dir / rainy_rel_box_name,
-                    rainy_rel_box_title,
+                    rainy_rel_plot_title,
                     remap_solver_dict(compute_relative_distribution_profile(medians_rainy[kstr], baseline_label="IDW", dist_labels=dist_labels), display_map),
                     labels_r,
                     method_order_display,
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_r,
-                    y_label="Per-patch median rainy-pixel RAE relative to IDW",
-                    footnote="Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\nEach per-patch median is divided by IDW's median in the same distance bin.\nBox = q1 to q3, center line = median, whiskers = min to max across patches.",
+                    x_label=rainy_x_label,
+                    y_label="Patch-level median rainy-pixel RAE relative to IDW",
+                    footnote=None,
+                    broken_y=True,
                 )
                 plot_iqr_summary(
                     distance_iqr_img_dir / rainy_rel_name,
-                    f"Rainy pixels. IQR of per-patch median rainy-pixel relative absolute error (RAE) by distance bin (to the {ordinal(k)} closest link), relative to IDW bin medians",
+                    "Distribution of patch-level median rainy-pixel RAE by distance bin, relative to IDW" if focus_rainy_k3 else f"Rainy pixels. IQR of per-patch median rainy-pixel relative absolute error (RAE) by distance bin (to the {ordinal(k)} closest link), relative to IDW bin medians",
                     remap_solver_dict(compute_relative_distribution_profile(medians_rainy[kstr], baseline_label="IDW", dist_labels=dist_labels), display_map),
                     labels_r,
                     method_order_display,
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_r,
-                    y_label="Per-patch median rainy-pixel RAE relative to IDW\nDot: median, bar: IQR",
-                    footnote=(
+                    x_label=rainy_x_label,
+                    y_label="Patch-level median rainy-pixel RAE relative to IDW\nDot: median, bar: IQR",
+                    footnote=None if focus_rainy_k3 else (
                         "Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\n"
                         "Each per-patch median is divided by IDW's median in the same distance bin, so IDW is the baseline at 1.0.\n"
                         "Dot = median of those patch-level ratios across patches.\n"
                         "Bar = 25th to 75th percentile of those patch-level ratios across patches."
                     ),
+                    broken_y=True,
                 )
                 plot_iqr_summary(
                     distance_iqr_img_dir / nonrainy_rel_name,
@@ -1535,7 +1653,8 @@ def render_report_from_cache(
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_n,
                     y_label="Per-patch median non-rainy-pixel error relative to IDW",
-                    footnote="Metric: |GT(p)-PRED(p)| over non-rainy pixels p.\nEach per-patch median is divided by IDW's median in the same distance bin.\nBox = q1 to q3, center line = median, whiskers = min to max across patches.",
+                    footnote=None,
+                    broken_y=True,
                 )
         if distance_major_started:
             finish_major("distance-profile plots")
