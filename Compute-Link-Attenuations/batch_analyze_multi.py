@@ -1643,6 +1643,9 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
 
     attn_all, J1_all, n_valid = attn_l1_and_J1(A_obs, A_hat, L_km, valid)
     attn_10, J1_10, n_10 = attn_l1_and_J1(A_obs, A_hat, L_km, ge10)
+    mean_abs_attn_err_per_km_all, length_weighted_abs_attn_err_per_km_all = abs_attn_error_per_km_metrics(
+        A_obs, A_hat, L_km, valid
+    )
     max_abs_diff, p95_abs_diff, p99_abs_diff = abs_diff_summary(A_obs, A_hat, valid)
     J1_len1_all = j1_len1(A_obs, A_hat, L_km, valid)
     J1_len1_10 = j1_len1(A_obs, A_hat, L_km, ge10)
@@ -1669,6 +1672,8 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         p99_abs_diff=p99_abs_diff,
         J_atten_x_num_links_all=J1_len1_all,
         J_atten_x_num_links_ge10km=J1_len1_10,
+        mean_abs_attn_err_per_km_all=mean_abs_attn_err_per_km_all,
+        length_weighted_abs_attn_err_per_km_all=length_weighted_abs_attn_err_per_km_all,
         E_all=E_all,
         E2_all=E2_all,
     )
@@ -1678,6 +1683,8 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         L1=attn_all,
         J1=J1_all,
         J1_len1=J1_len1_all,
+        MEAN_ABS_ATTN_ERR_PER_KM=mean_abs_attn_err_per_km_all,
+        LENGTH_WEIGHTED_ABS_ATTN_ERR_PER_KM=length_weighted_abs_attn_err_per_km_all,
         E=E_all,
         E2=E2_all,
         abs_norm_resid_valid=abs_norm_resid_valid.tolist(),
@@ -1799,6 +1806,28 @@ def attn_l1_and_J1(A_obs: np.ndarray, A_hat: np.ndarray, L_km: np.ndarray, mask:
     attn_l1 = float(np.sum(np.abs(diff)))
     J1 = float(np.sum((diff / L_km[idx]) ** 2))
     return attn_l1, J1, int(idx.size)
+
+
+def abs_attn_error_per_km_metrics(
+    A_obs: np.ndarray,
+    A_hat: np.ndarray,
+    L_km: np.ndarray,
+    mask: np.ndarray,
+) -> Tuple[float, float]:
+    """
+    Returns two per-patch attenuation error summaries on the selected links:
+      1. mean over valid links of |A_hat - A_obs| / L_km
+      2. sum |A_hat - A_obs| / sum L_km
+    """
+    idx = np.where(mask)[0]
+    if idx.size == 0:
+        return 0.0, 0.0
+    diff_abs = np.abs(A_hat[idx] - A_obs[idx])
+    lengths = L_km[idx]
+    mean_per_link = float(np.mean(diff_abs / lengths))
+    total_len = float(np.sum(lengths))
+    length_weighted = float(np.sum(diff_abs) / total_len) if total_len > 0.0 else 0.0
+    return mean_per_link, length_weighted
 
 
 def abs_diff_summary(A_obs: np.ndarray, A_hat: np.ndarray, mask: np.ndarray) -> Tuple[float, float, float]:
@@ -1966,12 +1995,26 @@ def write_workbook(
                 "p99_abs_diff",
                 "J_atten_x_num_links_all",
                 "J_atten_x_num_links_ge10km",
+                "mean_abs_attn_err_per_km_all",
+                "length_weighted_abs_attn_err_per_km_all",
                 "E_all",
                 "E2_all",
                 "J_atten_IDW",
                 "J_atten_ILDW",
                 "J_atten_ALG_over_IDW",
                 "J_atten_ALG_over_ILDW",
+            ])
+
+        if sheet_name == "AttenuationErrorPerKm_BySolver":
+            return _ordered([
+                "solver",
+                "mean_abs_attn_err_per_km_mean",
+                "mean_abs_attn_err_per_km_std",
+                "length_weighted_abs_attn_err_per_km_mean",
+                "length_weighted_abs_attn_err_per_km_std",
+                "n_patches",
+                "metric",
+                "definition",
             ])
 
         if (
@@ -4070,6 +4113,52 @@ def main() -> int:
         overall_by_solver_rows = enrich_overall_by_solver_ratios(overall_by_solver_rows)
         sheets["OverallStats_BySolver"] = overall_by_solver_rows
         sheet_order.append("OverallStats_BySolver")
+
+    attenuation_error_rows: List[Dict[str, Any]] = []
+    for solver_label in [label for _, label, _, _, _ in solvers if label in link_metrics]:
+        per_patch = link_metrics.get(solver_label, {})
+        vals_mean = [
+            float(v["MEAN_ABS_ATTN_ERR_PER_KM"])
+            for v in per_patch.values()
+            if "MEAN_ABS_ATTN_ERR_PER_KM" in v
+        ]
+        vals_lenw = [
+            float(v["LENGTH_WEIGHTED_ABS_ATTN_ERR_PER_KM"])
+            for v in per_patch.values()
+            if "LENGTH_WEIGHTED_ABS_ATTN_ERR_PER_KM" in v
+        ]
+        n_patches = int(max(len(vals_mean), len(vals_lenw)))
+        attenuation_error_rows.append(
+            dict(
+                solver=solver_label,
+                mean_abs_attn_err_per_km_mean=(float(np.mean(vals_mean)) if vals_mean else 0.0),
+                mean_abs_attn_err_per_km_std=(float(np.std(vals_mean, ddof=0)) if vals_mean else 0.0),
+                length_weighted_abs_attn_err_per_km_mean=(float(np.mean(vals_lenw)) if vals_lenw else 0.0),
+                length_weighted_abs_attn_err_per_km_std=(float(np.std(vals_lenw, ddof=0)) if vals_lenw else 0.0),
+                n_patches=n_patches,
+            )
+        )
+    if attenuation_error_rows:
+        attenuation_error_rows.extend([
+            dict(
+                solver="DEFINITION",
+                metric="mean_abs_attn_err_per_km",
+                definition=(
+                    "Per patch: mean over valid links of |A_hat - A_obs| / L_km; "
+                    "then summarized across patches by solver."
+                ),
+            ),
+            dict(
+                solver="DEFINITION",
+                metric="length_weighted_abs_attn_err_per_km",
+                definition=(
+                    "Per patch: sum over valid links of |A_hat - A_obs| divided by "
+                    "sum over valid links of L_km; then summarized across patches by solver."
+                ),
+            ),
+        ])
+        sheets["AttenuationErrorPerKm_BySolver"] = attenuation_error_rows
+        sheet_order.append("AttenuationErrorPerKm_BySolver")
 
     # Enrich LinkStats sheets (non-baseline solvers) with J_atten comparisons vs IDW/ILDW.
     enrich_linkstats_with_baseline_jatten(sheets)

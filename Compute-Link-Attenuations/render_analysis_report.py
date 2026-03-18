@@ -787,7 +787,7 @@ def plot_j_behavior(
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(8.5, 4.8), dpi=dpi)
-    ax.plot(xs, series("J_native_total"), marker="o", markersize=2.0, linewidth=1.0, label=r"$J_{\mathrm{weighted\_sum}}$")
+    ax.plot(xs, series("J_native_total"), marker="o", markersize=2.0, linewidth=1.0, label=r"$J_{\mathrm{weighted\ sum}}$")
     ax.plot(xs, weighted_or_raw("weighted_J_atten", "J_atten"), marker="o", markersize=2.0, linewidth=0.9, label=r"$\alpha_{\mathrm{atten}} \cdot J_{\mathrm{atten}}$")
     ax.plot(xs, weighted_or_raw("weighted_J_1d", "J_1d"), marker="o", markersize=2.0, linewidth=0.9, label=r"$\alpha_{1d} \cdot J_{1d}$")
     ax.plot(xs, weighted_or_raw("weighted_J_total", "J_total"), marker="o", markersize=2.0, linewidth=0.9, label=r"$\alpha_{\mathrm{total}} \cdot J_{\mathrm{total}}$")
@@ -1176,7 +1176,9 @@ def render_largest_patch_distance_bin_maps(
         )
         if x0.size > 0:
             for i in range(x0.size):
-                ax.plot([x0[i], x1[i]], [y0[i], y1[i]], color="black", linewidth=0.55, alpha=0.55)
+                # Dark halo first, then a bright center line so links stay visible on any bin color.
+                ax.plot([x0[i], x1[i]], [y0[i], y1[i]], color="black", linewidth=1.8, alpha=0.9, solid_capstyle="round")
+                ax.plot([x0[i], x1[i]], [y0[i], y1[i]], color="white", linewidth=1.0, alpha=1.0, solid_capstyle="round")
 
         cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         cbar.set_ticks(np.arange(n_bins))
@@ -1567,8 +1569,9 @@ def render_report_from_cache(
             medians_nonrainy_display = remap_solver_dict(medians_nonrainy[kstr], display_map)
             p90s_rainy_display = remap_solver_dict(p90s_rainy[kstr], display_map)
             p90s_nonrainy_display = remap_solver_dict(p90s_nonrainy[kstr], display_map)
-            rainy_plot_title = "Distribution of patch-level median rainy-pixel RAE by distance bin" if focus_rainy_k3 else rainy_title
-            rainy_box_plot_title = "Distribution of patch-level median rainy-pixel RAE by distance bin" if focus_rainy_k3 else rainy_box_title
+            rainy_plot_title = "Distribution of patch-level median RAE over rainy pixels by distance bin" if focus_rainy_k3 else rainy_title
+            rainy_box_plot_title = "Distribution of patch-level median RAE over rainy pixels by distance bin" if focus_rainy_k3 else rainy_box_title
+            nonrainy_box_plot_title = "Distribution of patch-level median non-rainy-pixel absolute error by distance bin" if focus_rainy_k3 else nonrainy_box_title
             rainy_x_label = "Distance to 3rd-closest link (m)" if focus_rainy_k3 else None
             rainy_plot_footnote = None if focus_rainy_k3 else rainy_footnote
             rainy_box_plot_footnote = None
@@ -1578,7 +1581,7 @@ def render_report_from_cache(
                 plot_iqr_summary(distance_iqr_img_dir / rainy_name, rainy_plot_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, x_label=rainy_x_label, y_label="Patch-level median rainy-pixel RAE\nDot: median, bar: IQR", footnote=rainy_plot_footnote, broken_y=focus_rainy_k3)
                 plot_iqr_summary(distance_iqr_img_dir / nonrainy_name, nonrainy_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch median non-rainy-pixel absolute error\nDot: median, bar: IQR", footnote=nonrainy_footnote)
                 plot_box_whisker(distance_box_img_dir / rainy_box_name, rainy_box_plot_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, x_label=rainy_x_label, y_label="Median rainy-pixel RAE per patch", footnote=rainy_box_plot_footnote, broken_y=True)
-                plot_box_whisker(distance_box_img_dir / nonrainy_box_name, nonrainy_box_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch median non-rainy-pixel absolute error", footnote=None, broken_y=True)
+                plot_box_whisker(distance_box_img_dir / nonrainy_box_name, nonrainy_box_plot_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Median non-rainy-pixel absolute error per patch", footnote=None, broken_y=True)
             if render_bool(render_config, "plots.p90_profiles", True):
                 log_progress(f"Distance-profile p90s: k={k}")
                 plot_iqr_summary(distance_iqr_img_dir / rainy_p90_name, rainy_p90_title, p90s_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch rainy-pixel p90 RAE\nDot: median, bar: IQR", footnote="Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\nEach patch contributes one rainy-pixel 90th-percentile relative absolute error value in each distance bin.\nDot = median of those per-patch p90 values across patches.\nBar = 25th to 75th percentile of those per-patch p90 values across patches.\nTick labels show the average rainy-pixel count per patch in the bin.")
