@@ -1231,9 +1231,11 @@ def render_largest_patch_distance_bin_maps(
         cbar.set_ticks(np.arange(n_bins))
         cbar.set_ticklabels(labels)
         cbar.ax.set_ylabel(f"d{k} distance bin (m)")
+        width_km = (float(W) * pix) / 1000.0
+        height_km = (float(H) * pix) / 1000.0
         ax.set_title(
-            f"Largest patch distance bins (k={k}) with links\n"
-            f"{patch_key} | size={(float(W) * pix) / 1000.0:.1f}x{(float(H) * pix) / 1000.0:.1f} km | area={area_km2:.1f} km^2 | links={x0.size}"
+            f"Largest patch in the data set: distance bins to the {ordinal(k)} closest link\n"
+            f"Size = {width_km:.1f} x {height_km:.1f} km, area = {area_km2:.1f} km$^2$, links = {x0.size}"
         )
         ax.set_xlabel("x_local (m)")
         ax.set_ylabel("y_local (m)")
