@@ -1,4 +1,6 @@
 \documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage{siunitx}
 \usepackage{cleveref}
 \usepackage[margin=1in]{geometry}
@@ -7,6 +9,8 @@
 \usepackage{float}
 \usepackage{caption}
 \usepackage{subcaption}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
 
 % Change only these lines to point the note at another rendered report.
 \input{main_paths.tex}
@@ -21,26 +25,27 @@
 This note summarizes results for a collection of 100 patches. All aggregate figures and tables that follow should therefore be read as patch-level summaries over this hundred-patch evaluation set, rather than as statistics from a single patch or from the full archive of available patches.
 
 \section*{Relative Absolute Error Rainy-Pixel Distance Profile}
+For a patch $P$, let $\Omega(P)$ denote its pixel set, let $R_P : \Omega(P) \to \mathbb{R}_{\ge 0}$ be the ground-truth rainfall field, and let $\widehat{R}_{P,s} : \Omega(P) \to \mathbb{R}_{\ge 0}$ be the rainfall field predicted by solver $s$. We call a pixel rainy when $R_P(p) \ge 0.6$ mm/h, and we write $\Omega_{\mathrm{rain}}(P)=\{p \in \Omega(P) : R_P(p)\ge 0.6\}$. For rainy pixels, the relative absolute error is
+\[
+\mathrm{RAE}_{P,s}(p)=\frac{|R_P(p)-\widehat{R}_{P,s}(p)|}{R_P(p)}.
+\]
+Let $d_3(p)$ denote the distance from pixel $p$ to its third-closest link, and let $B_i$ denote one of the displayed distance bins. For each patch, solver, and distance bin, we first form the rainy-pixel subset $\Omega_{\mathrm{rain},i}(P)=\{p \in \Omega_{\mathrm{rain}}(P): d_3(p)\in B_i\}$ and then compute the patch-level median
+\[
+m_{P,s,i}=\operatorname{median}\bigl\{\mathrm{RAE}_{P,s}(p): p\in \Omega_{\mathrm{rain},i}(P)\bigr\}.
+\]
+The box-and-whisker plot for bin $B_i$ and solver $s$ is therefore the distribution, across the 100 patches, of the patch-level medians $m_{P,s,i}$. In each box, the lower whisker tip is the minimum, the lower box edge is the 25th percentile, the central line is the median, the upper box edge is the 75th percentile, and the upper whisker tip is the maximum value among the patch-level medians $\{m_{P,s,i}\}_P$.
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{\distanceboxplot}
-  \caption{Rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median rainy-pixel relative-absolute-error (RAE) value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a rainy pixel is a pixel whose ground-truth rainfall is at least the configured wet threshold (set to 0.6 mm/h), and relative absolute error for a rainy pixel $p$ is defined as $|GT(p)-PRED(p)| / GT(p)$.}
+  \caption{Rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median rainy-pixel relative-absolute-error (RAE) value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a rainy pixel is a pixel whose ground-truth rainfall is at least the configured wet threshold (set to 0.6 mm/h), and the relative absolute error for a rainy pixel $p$ by solver $s$ is defined as $|R_P(p)-\widehat{R}_{P,s}(p)| / R_P(p)$.}
   \label{fig:RAE}
 \end{figure}
 
 This plot summarizes how solver performance changes as pixels get farther from the third-nearest link. Lower values indicate lower rainy-pixel relative absolute error in that distance bin.
 
-\section*{Absolute Error Non-Rainy-Pixel Distance Profile}
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\textwidth]{\nonrainydistanceboxplot }
-  \caption{Non-rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median non-rainy-pixel absolute error value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a non-rainy pixel is a pixel whose ground-truth rainfall is below the configured wet threshold (set to 0.6 mm/h), and the absolute error for a non-rainy pixel $p$ is defined as $|GT(p)-PRED(p)|$.}
-  \label{fig:AE}
-\end{figure}
-
-
 \subsection*{Rainy-pixel count table for distance to the third closest link}
-The table below gives the average number of rainy pixels per patch and the corresponding standard deviation for each distance bin to the 3rd closest link. These are the same patch-level counts summarized in the tick labels of the rainy-pixel distance-profile plots.
+The table below gives the average number of rainy pixels per patch and the corresponding standard deviation for each distance bin to the third closest link. These are the same patch-level counts summarized in the tick labels of the rainy-pixel distance-profile plots.
 
 \begin{table}[H]
   \centering
@@ -62,9 +67,193 @@ The table below gives the average number of rainy pixels per patch and the corre
     {Total}         & 238922.1 (100\%) & {} \\
     \bottomrule
   \end{tabular}
-  \caption{Distribution of the number of pixels per distance bin. In each patch, pixels are classified into bins according to their distance to the 3rd-closest link. Formally, a pixel $p$ belongs to bin $(d_1,d_2]$ if the disc of radius $d_2$ centered at $p$ intersects at least $3$ links and the disc of radius $d_1$ centered at $p$ intersects at most $2$ links. Let $|\mathrm{bin}_i(P)|$ denote the number of pixels in patch $P$ that belong to $\mathrm{bin}_i$. The table reports, for each bin, the mean and standard deviation of $|\mathrm{bin}_i(P)|$ across patches. The last bin, 
+  \caption{Distribution of the number of pixels per distance bin. In each patch, pixels are classified into bins according to their distance to the third closest link. Formally, a pixel $p$ belongs to bin $(d_1,d_2]$ if the disc of radius $d_2$ centered at $p$ intersects at least $3$ links and the disc of radius $d_1$ centered at $p$ intersects at most $2$ links. Let $|\mathrm{bin}_i(P)|$ denote the number of pixels in patch $P$ that belong to $\mathrm{bin}_i$. The table reports, for each bin, the mean and standard deviation of $|\mathrm{bin}_i(P)|$ across patches. The last bin, 
 $(9000,\infty)$ is merged with the previous bin in \Cref{fig:RAE} because it is  sparsely populated.}
   %\caption{Rainy-pixel counts per patch for the distance bins to the third closest link used in the rainy-pixel distance-profile plots.}
+\end{table}
+
+\section*{Absolute Error Non-Rainy-Pixel Distance Profile}
+The non-rainy analysis is constructed in the same way, but on the complementary pixel set
+\[
+\Omega_{\mathrm{nonrain}}(P)=\{p \in \Omega(P) : R_P(p)<0.6\}.
+\]
+For non-rainy pixels, we use absolute error rather than relative absolute error, namely
+\[
+\mathrm{AE}_{P,s}(p)=|R_P(p)-\widehat{R}_{P,s}(p)|.
+\]
+For each distance bin $B_i$, patch $P$, and solver $s$, we therefore compute
+\[
+\widetilde{m}_{P,s,i}=\operatorname{median}\bigl\{\mathrm{AE}_{P,s}(p): p\in \Omega_{\mathrm{nonrain}}(P),\ d_3(p)\in B_i\bigr\},
+\]
+and the corresponding box-and-whisker plot summarizes the cross-patch distribution of these patch-level medians $\widetilde{m}_{P,s,i}$.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{\nonrainydistanceboxplot }
+  \caption{Non-rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median non-rainy-pixel absolute error value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a non-rainy pixel is a pixel whose ground-truth rainfall is below the configured wet threshold (set to 0.6 mm/h), and the absolute error for a non-rainy pixel $p$ by solver $s$ is defined as $|R_P(p)-\widehat{R}_{P,s}(p)|$.}
+  \label{fig:AE}
+\end{figure}
+
+\subsection*{Non-rainy-pixel count table for distance to the third closest link}
+The table below gives the average number of non-rainy pixels per patch and the corresponding standard deviation for each distance bin to the third closest link. These are the same patch-level counts summarized in the tick labels of the non-rainy-pixel distance-profile plots.
+
+\begin{table}[H]
+  \centering
+    \begin{tabular}{l
+                  l
+                  S[table-format=5.1]}
+    \toprule
+    {Distance to third closest link (m)} & {Mean count (\% of total)} & {SD} \\
+    \midrule
+    $[0,125]$       & 563.6 (1.84\%) & 777.6 \\
+    $(125,375]$     & 2261.1 (7.40\%) & 3093.5 \\
+    $(375,750]$     & 3389.1 (11.09\%) & 4709.5 \\
+    $(750,1500]$    & 6446.5 (21.09\%) & 9257.7 \\
+    $(1500,3125]$   & 10776.2 (35.25\%) & 15553.7 \\
+    $(3125,6000]$   & 6197.2 (20.27\%) & 8990.0 \\
+    $(6000,9000]$   & 849.9 (2.78\%) & 1289.7 \\
+    $(9000,\infty)$ & 85.5 (0.28\%) & 250.9 \\
+    \midrule
+    {Total}         & 30569.2 (100\%) & {} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Distribution of the number of non-rainy pixels per distance bin. In each patch, pixels are classified into bins according to their distance to the third closest link. The last bin, $(9000,\infty)$, is merged with the previous bin in \Cref{fig:AE} because it is sparsely populated.}
+\end{table}
+
+\section*{Largest-Patch Link Geometry}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{\largestpatchbinsplot}
+  \caption{Distance-bin map for the largest evaluated patch in the data set. Each pixel is colored according to the bin induced by its distance to the third closest link, and the complete link geometry is overlaid in white.}
+\end{figure}
+
+The same largest patch is also useful for describing the structure of the underlying link network. In the summaries below, link length refers to the path length of a link, carrier frequency is the microwave-link frequency in GHz, and endpoint degree is the number of links incident to a given endpoint node. Here, an endpoint node is a location at which one or more links meet.
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.32\textwidth}
+    \centering
+    \begin{tikzpicture}
+      \begin{axis}[
+        width=\linewidth,
+        height=5.0cm,
+        ybar,
+        bar width=10pt,
+        ymin=0,
+        symbolic x coords={{[0,1)},{[1,2)},{[2,4)},{[4,8)},{[8,16)},{[16,24]}},
+        xtick=data,
+        xticklabel style={rotate=35,anchor=east,font=\scriptsize},
+        ylabel={Count},
+        xlabel={Length bin (km)},
+        title={Link length},
+        grid=major
+      ]
+      \addplot coordinates {({[0,1)},330) ({[1,2)},515) ({[2,4)},546) ({[4,8)},387) ({[8,16)},109) ({[16,24]},7)};
+      \end{axis}
+    \end{tikzpicture}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \centering
+    \begin{tikzpicture}
+      \begin{axis}[
+        width=\linewidth,
+        height=5.0cm,
+        ybar,
+        bar width=10pt,
+        ymin=0,
+        symbolic x coords={{[10,15)},{[15,20)},{[20,25)},{[25,30)},{[30,35)},{[35,40)},{[40,60]}},
+        xtick=data,
+        xticklabel style={rotate=35,anchor=east,font=\scriptsize},
+        ylabel={Count},
+        xlabel={Frequency bin (GHz)},
+        title={Carrier frequency},
+        grid=major
+      ]
+      \addplot coordinates {({[10,15)},20) ({[15,20)},67) ({[20,25)},79) ({[25,30)},257) ({[30,35)},84) ({[35,40)},1306) ({[40,60]},81)};
+      \end{axis}
+    \end{tikzpicture}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.32\textwidth}
+    \centering
+    \begin{tikzpicture}
+      \begin{axis}[
+        width=\linewidth,
+        height=5.0cm,
+        ybar,
+        bar width=10pt,
+        ymin=0,
+        symbolic x coords={{[1,2)},{[2,3)},{[3,5)},{[5,7)},{[7,11)},{[11,21)},{[21,100]}},
+        xtick=data,
+        xticklabel style={rotate=35,anchor=east,font=\scriptsize},
+        ylabel={Count},
+        xlabel={Endpoint-degree bin},
+        title={Endpoint degree},
+        grid=major
+      ]
+      \addplot coordinates {({[1,2)},168) ({[2,3)},560) ({[3,5)},246) ({[5,7)},68) ({[7,11)},39) ({[11,21)},26) ({[21,100]},16)};
+      \end{axis}
+    \end{tikzpicture}
+  \end{subfigure}
+  \caption{Histogram summaries for the largest patch. Left: link lengths. Middle: carrier frequencies. Right: endpoint-degree histogram. The x-axis gives endpoint degree and the y-axis gives the number of endpoint nodes in each degree bin.}
+\end{figure}
+
+\begin{table}[H]
+  \centering
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \scriptsize
+    \begin{tabular}{lrr}
+      \toprule
+      Length bin (km) & Count & \% \\
+      \midrule
+      $[0,1)$ & 330 & 17.4 \\
+      $[1,2)$ & 515 & 27.2 \\
+      $[2,4)$ & 546 & 28.8 \\
+      $[4,8)$ & 387 & 20.4 \\
+      $[8,16)$ & 109 & 5.8 \\
+      $[16,24]$ & 7 & 0.4 \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \scriptsize
+    \begin{tabular}{lrr}
+      \toprule
+      Frequency bin (GHz) & Count & \% \\
+      \midrule
+      $[10,15)$ & 20 & 1.1 \\
+      $[15,20)$ & 67 & 3.5 \\
+      $[20,25)$ & 79 & 4.2 \\
+      $[25,30)$ & 257 & 13.6 \\
+      $[30,35)$ & 84 & 4.4 \\
+      $[35,40)$ & 1306 & 69.0 \\
+      $[40,60]$ & 81 & 4.3 \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \scriptsize
+    \begin{tabular}{lrr}
+      \toprule
+      Endpoint-degree bin & Count & \% \\
+      \midrule
+      $[1,2)$ & 168 & 15.0 \\
+      $[2,3)$ & 560 & 49.9 \\
+      $[3,5)$ & 246 & 21.9 \\
+      $[5,7)$ & 68 & 6.1 \\
+      $[7,11)$ & 39 & 3.5 \\
+      $[11,21)$ & 26 & 2.3 \\
+      $[21,100]$ & 16 & 1.4 \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \caption{Tabulated distributions for the largest-patch link network. The first panel counts links by path-length interval, the second counts links by carrier-frequency interval, and the third counts unique endpoint nodes by their graph degree.}
 \end{table}
 
 \section*{Confusion Matrix}
@@ -128,9 +317,10 @@ $(9000,\infty)$ is merged with the previous bin in \Cref{fig:RAE} because it is 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.82\textwidth]{\patchgeometryplot}
-  \caption{Patch width versus patch height for the 100 patches, with one dot per patch.  Across patches, the mean patch area is 269,491 pixels with SD of 76,755 pixels (pixels are squares with side length $125$m).}
+\caption{Patch width versus patch height for the 100 patches, with one dot per patch.  Across patches, the mean patch area is 269,491 pixels with SD of 76,755 pixels (pixels are squares with side length $125$m).}
  % \caption{Patch width versus patch height, with one marker per patch. The footnote on the figure reports the average patch size in pixels and its standard deviation across patches.}
 \end{figure}
+
 
 % This figure makes it easy to see whether the selected patches occupy a tight geometry range or whether the report is mixing very different patch extents.
 
@@ -189,9 +379,103 @@ In the data set, link multiplicities were either 1 or 2, with approximately $10\
     Nonlinear Optimizer & 0.00230 & 0.00437 \\
     \bottomrule
   \end{tabular}
-  \caption{Patch-level summary of the mean absolute attenuation error per km. For a given patch, we compute $\frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left|\hat{A}_\ell - A_\ell^{\mathrm{obs}}\right|}{|\ell|}$, where $\hat{A}_\ell$ is the attenuation induced by the estimated rainfall field on link $\ell$, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. Thus, the absolute attenuation error of every link is normalized by the link's length. The table reports the mean and standard deviation of this quantity across the $100$ evaluated patches for each solver. Lower values indicate better agreement with the observed link attenuations.
+\caption{Patch-level summary of the mean absolute attenuation error per km. For a given patch, we compute $\frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left|\hat{A}_\ell - A_\ell^{\mathrm{obs}}\right|}{|\ell|}$, where $\hat{A}_\ell$ is the attenuation induced by the estimated rainfall field on link $\ell$, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. Thus, the absolute attenuation error of every link is normalized by the link's length. The table reports the mean and standard deviation of this quantity across the $100$ evaluated patches for each solver. Lower values indicate better agreement with the observed link attenuations.
   }
 \end{table}
+
+\section*{Qualitative Case Studies}
+The three case studies below pair a geographic view of the selected patch with the corresponding rainy-pixel solver outputs. The timestamp in each caption identifies the radar scene, and patch 0 denotes the selected patch within that scene. This layout is intended to keep the geographic context and the solver behavior visually tied to one another.
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\contextscreenshotone}
+    \caption{Map of the area of the rain event}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\idwcaseone}
+    \caption{IDW}
+  \end{subfigure}
+
+  \vspace{0.5em}
+
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\ildwcaseone}
+    \caption{ILDW}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\optcaseone}
+    \caption{Nonlinear optimizer}
+  \end{subfigure}
+  \caption{Case study for a rain event registered on January 28th, 2023. The map on the left shows the selected patch footprint in geographic context. The three rainy-pixel solver panels correspond to that same patch and show, for each solver, the ground truth field $R_P$, the estimate $\widehat{R}_{P,s}$, the signed relative error $(R_P-\widehat{R}_{P,s})/R_P$, and the absolute relative error $|R_P-\widehat{R}_{P,s}|/R_P$. This layout keeps the location of the event visually tied to the reconstruction quality of each solver.}
+\end{figure}
+
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\contextscreenshottwo}
+    \caption{Map of the area of the rain event}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\idwcasetwo}
+    \caption{IDW}
+  \end{subfigure}
+
+  \vspace{0.5em}
+
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\ildwcasetwo}
+    \caption{ILDW}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\optcasetwo}
+    \caption{Nonlinear optimizer}
+  \end{subfigure}
+  \caption{Case study for a rain event registered on January 31st, 2023. The left panel provides the map view of the selected patch, while the three solver panels show, for IDW, ILDW, and the nonlinear optimizer, the rainy-pixel ground truth field $R_P$, the estimate $\widehat{R}_{P,s}$, the signed relative error $(R_P-\widehat{R}_{P,s})/R_P$, and the absolute relative error $|R_P-\widehat{R}_{P,s}|/R_P$. The common layout makes it easier to compare smoothing, displacement, and error localization across methods for the same event.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\contextscreenshotthree}
+    \caption{Map of the area of the rain event}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\idwcasethree}
+    \caption{IDW}
+  \end{subfigure}
+
+  \vspace{0.5em}
+
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\ildwcasethree}
+    \caption{ILDW}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\optcasethree}
+    \caption{Nonlinear optimizer}
+  \end{subfigure}
+  \caption{Case study for a rain event registered on January 31st, 2023. The map on the left identifies the patch location and footprint, and the three solver panels show the same rainy-pixel diagnostic decomposition as above for IDW, ILDW, and the nonlinear optimizer: $R_P$, $\widehat{R}_{P,s}$, $(R_P-\widehat{R}_{P,s})/R_P$, and $|R_P-\widehat{R}_{P,s}|/R_P$. Together with the previous two figures, this case gives a compact qualitative comparison of solver behavior across distinct rainfall scenes.}
+\end{figure}
 
 % \begin{table}[H]
 %   \centering
