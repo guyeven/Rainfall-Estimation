@@ -25,15 +25,44 @@
 This note summarizes results for a collection of 100 patches. All aggregate figures and tables that follow should therefore be read as patch-level summaries over this hundred-patch evaluation set, rather than as statistics from a single patch or from the full archive of available patches.
 
 \section*{Relative Absolute Error Rainy-Pixel Distance Profile}
-For a patch $P$, let $\Omega(P)$ denote its pixel set, let $R_P : \Omega(P) \to \mathbb{R}_{\ge 0}$ be the ground-truth rainfall field, and let $\widehat{R}_{P,s} : \Omega(P) \to \mathbb{R}_{\ge 0}$ be the rainfall field predicted by solver $s$. We call a pixel rainy when $R_P(p) \ge 0.6$ mm/h, and we write $\Omega_{\mathrm{rain}}(P)=\{p \in \Omega(P) : R_P(p)\ge 0.6\}$. For rainy pixels, the relative absolute error is
+For a patch $P$, let $\Omega(P)$ denote its pixel set, let $R_P : \Omega(P) \to \mathbb{R}_{\ge 0}$ be the ground-truth rainfall field, and let $\widehat{R}_{P,s} : \Omega(P) \to \mathbb{R}_{\ge 0}$ be the rainfall field predicted by solver $s$. We define a pixel $p$ to be rainy if $R_P(p) \ge 0.6$ mm/h, and we write
 \[
-\mathrm{RAE}_{P,s}(p)=\frac{|R_P(p)-\widehat{R}_{P,s}(p)|}{R_P(p)}.
+\Omega_{\mathrm{rain}}(P)=\{p \in \Omega(P) : R_P(p)\ge 0.6\}.
 \]
-Let $d_3(p)$ denote the distance from pixel $p$ to its third-closest link, and let $B_i$ denote one of the displayed distance bins. For each patch, solver, and distance bin, we first form the rainy-pixel subset $\Omega_{\mathrm{rain},i}(P)=\{p \in \Omega_{\mathrm{rain}}(P): d_3(p)\in B_i\}$ and then compute the patch-level median
+For a rainy pixel $p$, the relative absolute error with respect to solver $s$ is
 \[
-m_{P,s,i}=\operatorname{median}\bigl\{\mathrm{RAE}_{P,s}(p): p\in \Omega_{\mathrm{rain},i}(P)\bigr\}.
+\mathrm{RAE}_{P,s}(p)\triangleq\frac{|R_P(p)-\widehat{R}_{P,s}(p)|}{R_P(p)}.
 \]
-The box-and-whisker plot for bin $B_i$ and solver $s$ is therefore the distribution, across the 100 patches, of the patch-level medians $m_{P,s,i}$. In each box, the lower whisker tip is the minimum, the lower box edge is the 25th percentile, the central line is the median, the upper box edge is the 75th percentile, and the upper whisker tip is the maximum value among the patch-level medians $\{m_{P,s,i}\}_P$.
+To study how prediction quality changes with link proximity, we group pixels by distance to the third-closest link. Let $\mathcal{L}(P)$ denote the set of links contained in patch $P$. For a pixel $p\in\Omega(P)$, let $c(p)\in\mathbb{R}^2$ denote the center of pixel $p$. For a link $\ell\in\mathcal{L}(P)$, viewed geometrically as a line segment, let
+\[
+\operatorname{dist}(p,\ell)\triangleq \operatorname{dist}\bigl(c(p),\ell\bigr)
+\]
+denote the Euclidean distance from the pixel center to that link segment. If the links in patch $P$ are written as $\ell_1,\dots,\ell_{|\mathcal{L}(P)|}$, we define
+\[
+d_3(p)\triangleq \text{the third-order statistic of } \bigl\{\operatorname{dist}(p,\ell_j)\bigr\}_{j=1}^{|\mathcal{L}(P)|},
+\]
+that is, the distance from the center of pixel $p$ to its third-closest link segment.
+
+For each index $i$, let $b_{i-1}$ and $b_i$ denote the lower and upper distance cutoffs of the $i$th bin, and write $B_i=(b_{i-1},b_i]$. A pixel $p$ belongs to bin $B_i$ exactly when $d_3(p)\in B_i$.
+
+For each patch $P$, solver $s$, and distance bin $B_i$, we then collect the rainy-pixel RAE values in that bin and summarize them by the patch-level median
+\[
+m_{s,i}^{\mathrm{wet}}(P)\triangleq
+\operatorname{median}\bigl\{\mathrm{RAE}_{P,s}(p): p\in 
+\Omega_{\mathrm{rain}}(P),\ d_3(p)\in B_i
+\bigr\}\;.
+\]
+
+In \Cref{fig:RAE}, these patch-level medians are compared across the full benchmark collection $\mathcal{P}$ of $100$ patches. There, the displayed distance bins are
+\[
+[0,125]\ \text{m},\ (125,375]\ \text{m},\ (375,750]\ \text{m},\ (750,1500]\ \text{m},\ (1500,3125]\ \text{m},\ (3125,6000]\ \text{m},
+\]
+with the sparsely populated tail beyond \SI{6000}{m} merged into the last displayed bin. For fixed solver $s$ and distance bin $B_i$, let
+\[
+\mu_{s,i}^{\mathrm{wet}} \triangleq \{m_{s,i}^{\mathrm{wet}}(P)\}_{P\in\mathcal{P}}
+\]
+denote the sequence of patch-level rainy-pixel median RAE values across patches. Each box-and-whisker then summarizes this sequence: the lower whisker tip is the minimum of $\mu_{s,i}^{\mathrm{wet}}$, the lower edge of the box is its 25th percentile, the horizontal line segment with the filled circle at its center marks the median, the upper edge of the box is its 75th percentile, and the upper whisker tip is its maximum.
+
 
 \begin{figure}[H]
   \centering
@@ -53,7 +82,7 @@ The table below gives the average number of rainy pixels per patch and the corre
                   l
                   S[table-format=5.1]}
     \toprule
-    {Distance to third closest link (m)} & {Mean count (\% of total)} & {SD} \\
+    {Distance to third closest link (m)} & {Wet mean count (\% of total)} & {SD} \\
     \midrule
     $[0,125]$       & 4267.0 (1.79\%) &   960.4 \\
     $(125,375]$     & 16737.7 (7.01\%) &  3803.2 \\
@@ -73,19 +102,19 @@ $(9000,\infty)$ is merged with the previous bin in \Cref{fig:RAE} because it is 
 \end{table}
 
 \section*{Absolute Error Non-Rainy-Pixel Distance Profile}
-The non-rainy analysis is constructed in the same way, but on the complementary pixel set
+For the dry-pixel analysis, we focus on pixels whose ground-truth rainfall falls below the wet threshold. We therefore define the non-rainy pixel set by
 \[
 \Omega_{\mathrm{nonrain}}(P)=\{p \in \Omega(P) : R_P(p)<0.6\}.
 \]
-For non-rainy pixels, we use absolute error rather than relative absolute error, namely
+For these pixels, relative normalization by $R_P(p)$ is not appropriate because the denominator may be zero or very small. We therefore measure reconstruction quality by absolute error rather than relative absolute error:
 \[
 \mathrm{AE}_{P,s}(p)=|R_P(p)-\widehat{R}_{P,s}(p)|.
 \]
-For each distance bin $B_i$, patch $P$, and solver $s$, we therefore compute
+Using the same third-nearest-link distance $d_3(p)$ and the same displayed bins $B_i$ as in the rainy-pixel analysis, we compute for each patch $P$, solver $s$, and distance bin $B_i$
 \[
-\widetilde{m}_{P,s,i}=\operatorname{median}\bigl\{\mathrm{AE}_{P,s}(p): p\in \Omega_{\mathrm{nonrain}}(P),\ d_3(p)\in B_i\bigr\},
+m_{s,i}^{\mathrm{dry}}(P)=\operatorname{median}\bigl\{\mathrm{AE}_{P,s}(p): p\in \Omega_{\mathrm{nonrain}}(P),\ d_3(p)\in B_i\bigr\},
 \]
-and the corresponding box-and-whisker plot summarizes the cross-patch distribution of these patch-level medians $\widetilde{m}_{P,s,i}$.
+and the corresponding box-and-whisker plot summarizes the cross-patch distribution of these dry-pixel patch-level medians. Thus the rainy and non-rainy figures use the same distance-bin construction, but they differ both in the pixel set being summarized and in the error metric being aggregated.
 
 \begin{figure}[H]
   \centering
@@ -103,7 +132,7 @@ The table below gives the average number of non-rainy pixels per patch and the c
                   l
                   S[table-format=5.1]}
     \toprule
-    {Distance to third closest link (m)} & {Mean count (\% of total)} & {SD} \\
+    {Distance to third closest link (m)} & {Dry mean count (\% of total)} & {SD} \\
     \midrule
     $[0,125]$       & 563.6 (1.84\%) & 777.6 \\
     $(125,375]$     & 2261.1 (7.40\%) & 3093.5 \\
