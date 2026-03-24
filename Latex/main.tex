@@ -9,6 +9,7 @@
 \usepackage{float}
 \usepackage{caption}
 \usepackage{subcaption}
+\usepackage{pdfpages}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 
@@ -47,7 +48,7 @@ For each index $i$, let $b_{i-1}$ and $b_i$ denote the lower and upper distance 
 
 For each patch $P$, solver $s$, and distance bin $B_i$, we then collect the rainy-pixel RAE values in that bin and summarize them by the patch-level median
 \[
-m_{s,i}^{\mathrm{wet}}(P)\triangleq
+m_{s,i}^{\mathrm{rain}}(P)\triangleq
 \operatorname{median}\bigl\{\mathrm{RAE}_{P,s}(p): p\in 
 \Omega_{\mathrm{rain}}(P),\ d_3(p)\in B_i
 \bigr\}\;.
@@ -59,25 +60,22 @@ In \Cref{fig:RAE}, these patch-level medians are compared across the full benchm
 \]
 with the sparsely populated tail beyond \SI{6000}{m} merged into the last displayed bin. For fixed solver $s$ and distance bin $B_i$, let
 \[
-\mu_{s,i}^{\mathrm{wet}} \triangleq \{m_{s,i}^{\mathrm{wet}}(P)\}_{P\in\mathcal{P}}
+\mu_{s,i}^{\mathrm{rain}} \triangleq \{m_{s,i}^{\mathrm{rain}}(P)\}_{P\in\mathcal{P}}
 \]
-denote the sequence of patch-level rainy-pixel median RAE values across patches. Each box-and-whisker then summarizes this sequence: the lower whisker tip is the minimum of $\mu_{s,i}^{\mathrm{wet}}$, the lower edge of the box is its 25th percentile, the horizontal line segment with the filled circle at its center marks the median, the upper edge of the box is its 75th percentile, and the upper whisker tip is its maximum.
+denote the sequence of patch-level rainy-pixel median RAE values across patches. Each box-and-whisker then summarizes this sequence: the lower whisker tip is the minimum of $\mu_{s,i}^{\mathrm{rain}}$, the lower edge of the box is its 25th percentile, the horizontal line segment with the filled circle at its center marks the median, the upper edge of the box is its 75th percentile, and the upper whisker tip is its maximum.
 
 
-\begin{figure}[H]
+\begin{figure}[!htbp]
   \centering
   \includegraphics[width=\textwidth]{\distanceboxplot}
-  \caption{Rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median rainy-pixel relative-absolute-error (RAE) value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a rainy pixel is a pixel whose ground-truth rainfall is at least the configured wet threshold (set to 0.6 mm/h), and the relative absolute error for a rainy pixel $p$ by solver $s$ is defined as $|R_P(p)-\widehat{R}_{P,s}(p)| / R_P(p)$.}
+  \caption{Rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median rainy-pixel relative-absolute-error (RAE) value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a rainy pixel is a pixel whose ground-truth rainfall is at least the configured wet threshold (set to 0.6 mm/h), and the relative absolute error for a rainy pixel $p$ by solver $s$ is defined as $|R_P(p)-\widehat{R}_{P,s}(p)| / R_P(p)$. The corresponding rainy-pixel counts per bin are reported in \Cref{tab:rainy_counts}.}
   \label{fig:RAE}
 \end{figure}
 
-This plot summarizes how solver performance changes as pixels get farther from the third-nearest link. Lower values indicate lower rainy-pixel relative absolute error in that distance bin.
-
-\subsection*{Rainy-pixel count table for distance to the third closest link}
-The table below gives the average number of rainy pixels per patch and the corresponding standard deviation for each distance bin to the third closest link. These are the same patch-level counts summarized in the tick labels of the rainy-pixel distance-profile plots.
-
-\begin{table}[H]
+\begin{table}[!htbp]
   \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
     \begin{tabular}{l
                   l
                   S[table-format=5.1]}
@@ -96,9 +94,8 @@ The table below gives the average number of rainy pixels per patch and the corre
     {Total}         & 238922.1 (100\%) & {} \\
     \bottomrule
   \end{tabular}
-  \caption{Distribution of the number of pixels per distance bin. In each patch, pixels are classified into bins according to their distance to the third closest link. Formally, a pixel $p$ belongs to bin $(d_1,d_2]$ if the disc of radius $d_2$ centered at $p$ intersects at least $3$ links and the disc of radius $d_1$ centered at $p$ intersects at most $2$ links. Let $|\mathrm{bin}_i(P)|$ denote the number of pixels in patch $P$ that belong to $\mathrm{bin}_i$. The table reports, for each bin, the mean and standard deviation of $|\mathrm{bin}_i(P)|$ across patches. The last bin, 
-$(9000,\infty)$ is merged with the previous bin in \Cref{fig:RAE} because it is  sparsely populated.}
-  %\caption{Rainy-pixel counts per patch for the distance bins to the third closest link used in the rainy-pixel distance-profile plots.}
+  \caption{Rainy-pixel counts per distance bin for the same distance-to-third-closest-link partition used in \Cref{fig:RAE}. For each patch, pixels are classified by the value of $d_3(p)$, and the table reports the mean and standard deviation of the rainy-pixel count in each bin across patches. The last bin, $(9000,\infty)$, is merged with the previous bin in \Cref{fig:RAE} because it is sparsely populated.}
+  \label{tab:rainy_counts}
 \end{table}
 
 \section*{Absolute Error Non-Rainy-Pixel Distance Profile}
@@ -106,25 +103,27 @@ For the dry-pixel analysis, we focus on pixels whose ground-truth rainfall falls
 \[
 \Omega_{\mathrm{nonrain}}(P)=\{p \in \Omega(P) : R_P(p)<0.6\}.
 \]
-For these pixels, relative normalization by $R_P(p)$ is not appropriate because the denominator may be zero or very small. We therefore measure reconstruction quality by absolute error rather than relative absolute error:
+For these pixels, relative normalization by $R_P(p)$ is not appropriate because the denominator may be zero or very small. We therefore measure prediction quality by absolute error rather than relative absolute error:
 \[
 \mathrm{AE}_{P,s}(p)=|R_P(p)-\widehat{R}_{P,s}(p)|.
 \]
-Using the same third-nearest-link distance $d_3(p)$ and the same displayed bins $B_i$ as in the rainy-pixel analysis, we compute for each patch $P$, solver $s$, and distance bin $B_i$
+Using the same definition of the third-closest-link distance $d_3(p)$ introduced above, and the same distance bins $B_i$ as in the rainy-pixel analysis, we compute for each patch $P$, solver $s$, and distance bin $B_i$
 \[
-m_{s,i}^{\mathrm{dry}}(P)=\operatorname{median}\bigl\{\mathrm{AE}_{P,s}(p): p\in \Omega_{\mathrm{nonrain}}(P),\ d_3(p)\in B_i\bigr\},
+m_{s,i}^{\mathrm{nonrain}}(P)\triangleq
+\operatorname{median}\bigl\{\mathrm{AE}_{P,s}(p): p\in \Omega_{\mathrm{nonrain}}(P),\ d_3(p)\in B_i\bigr\},
 \]
-and the corresponding box-and-whisker plot summarizes the cross-patch distribution of these dry-pixel patch-level medians. Thus the rainy and non-rainy figures use the same distance-bin construction, but they differ both in the pixel set being summarized and in the error metric being aggregated.
+and, for fixed $s$ and $i$, the corresponding box-and-whisker plot summarizes the sequence
+\[
+\mu_{s,i}^{\mathrm{nonrain}}\triangleq \{m_{s,i}^{\mathrm{nonrain}}(P)\}_{P\in\mathcal{P}}
+\]
+of patch-level non-rainy-pixel median AE values across patches. Thus the rainy and non-rainy figures use the same distance-bin construction, but they differ both in the pixel set being summarized and in the error metric being aggregated.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{\nonrainydistanceboxplot }
-  \caption{Non-rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median non-rainy-pixel absolute error value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a non-rainy pixel is a pixel whose ground-truth rainfall is below the configured wet threshold (set to 0.6 mm/h), and the absolute error for a non-rainy pixel $p$ by solver $s$ is defined as $|R_P(p)-\widehat{R}_{P,s}(p)|$.}
+  \caption{Non-rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median non-rainy-pixel absolute error value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a non-rainy pixel is a pixel whose ground-truth rainfall is below the configured wet threshold (set to 0.6 mm/h), and the absolute error for a non-rainy pixel $p$ by solver $s$ is defined as $|R_P(p)-\widehat{R}_{P,s}(p)|$. The corresponding non-rainy-pixel counts per bin are reported in \Cref{tab:nonrain_counts}.}
   \label{fig:AE}
 \end{figure}
-
-\subsection*{Non-rainy-pixel count table for distance to the third closest link}
-The table below gives the average number of non-rainy pixels per patch and the corresponding standard deviation for each distance bin to the third closest link. These are the same patch-level counts summarized in the tick labels of the non-rainy-pixel distance-profile plots.
 
 \begin{table}[H]
   \centering
@@ -146,7 +145,8 @@ The table below gives the average number of non-rainy pixels per patch and the c
     {Total}         & 30569.2 (100\%) & {} \\
     \bottomrule
   \end{tabular}
-  \caption{Distribution of the number of non-rainy pixels per distance bin. In each patch, pixels are classified into bins according to their distance to the third closest link. The last bin, $(9000,\infty)$, is merged with the previous bin in \Cref{fig:AE} because it is sparsely populated.}
+  \caption{Non-rainy-pixel counts per distance bin for the same distance-to-third-closest-link partition used in \Cref{fig:AE}. For each patch, pixels are classified by the value of $d_3(p)$, and the table reports the mean and standard deviation of the non-rainy-pixel count in each bin across patches. The last bin, $(9000,\infty)$, is merged with the previous bin in \Cref{fig:AE} because it is sparsely populated.}
+  \label{tab:nonrain_counts}
 \end{table}
 
 \section*{Largest-Patch Link Geometry}
@@ -415,6 +415,19 @@ In the data set, link multiplicities were either 1 or 2, with approximately $10\
 \section*{Qualitative Case Studies}
 The three case studies below pair a geographic view of the selected patch with the corresponding rainy-pixel solver outputs. The timestamp in each caption identifies the radar scene, and patch 0 denotes the selected patch within that scene. This layout is intended to keep the geographic context and the solver behavior visually tied to one another.
 
+For the nonlinear optimizer, the estimated rainfall field is computed with the L-BFGS-B algorithm, initialized from the ILDW field and constrained to remain nonnegative at every pixel. The objective minimized by the optimizer is a weighted sum of four terms,
+\[
+\alpha_{\mathrm{atten}} J_{\mathrm{atten}} + \alpha_{1d} J_{1d} + \alpha_{2d} J_{2d} + \alpha_{\mathrm{total}} J_{\mathrm{total}},
+\]
+where the instance-specific weights are chosen from the corresponding ILDW objective values, namely
+\[
+\alpha_{\mathrm{atten}}=\frac{1}{J_{\mathrm{atten}}^{\mathrm{ILDW}}},\qquad
+\alpha_{1d}=\frac{1}{J_{1d}^{\mathrm{ILDW}}},\qquad
+\alpha_{2d}=\frac{1}{2\,J_{2d}^{\mathrm{ILDW}}},\qquad
+\alpha_{\mathrm{total}}=\frac{1}{J_{\mathrm{total}}^{\mathrm{ILDW}}}.
+\]
+The optimizer-trace plots included below show, for each selected case study, how the weighted objective and its weighted constituent terms decrease over the optimization iterations.
+
 \begin{figure}[H]
   \centering
   \begin{subfigure}[t]{0.48\textwidth}
@@ -443,6 +456,12 @@ The three case studies below pair a geographic view of the selected patch with t
     \caption{Nonlinear optimizer}
   \end{subfigure}
   \caption{Case study for a rain event registered on January 28th, 2023. The map on the left shows the selected patch footprint in geographic context. The three rainy-pixel solver panels correspond to that same patch and show, for each solver, the ground truth field $R_P$, the estimate $\widehat{R}_{P,s}$, the signed relative error $(R_P-\widehat{R}_{P,s})/R_P$, and the absolute relative error $|R_P-\widehat{R}_{P,s}|/R_P$. This layout keeps the location of the event visually tied to the reconstruction quality of each solver.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.72\textwidth]{\jcaseone}
+  \caption{Optimizer trace for the January 28th, 2023 case study. The plot shows the reduction of the weighted objective $J_{\mathrm{weighted\ sum}}$ and of the weighted constituent terms over L-BFGS-B iterations.}
 \end{figure}
 
 
@@ -478,6 +497,12 @@ The three case studies below pair a geographic view of the selected patch with t
 
 \begin{figure}[H]
   \centering
+  \includegraphics[width=0.72\textwidth]{\jcasetwo}
+  \caption{Optimizer trace for the January 31st, 2023 case study at 02:00. As above, the plot reports the iteration-by-iteration decrease of the weighted objective and its weighted constituent terms.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
   \begin{subfigure}[t]{0.48\textwidth}
     \centering
     \includegraphics[width=\linewidth]{\contextscreenshotthree}
@@ -505,6 +530,22 @@ The three case studies below pair a geographic view of the selected patch with t
   \end{subfigure}
   \caption{Case study for a rain event registered on January 31st, 2023. The map on the left identifies the patch location and footprint, and the three solver panels show the same rainy-pixel diagnostic decomposition as above for IDW, ILDW, and the nonlinear optimizer: $R_P$, $\widehat{R}_{P,s}$, $(R_P-\widehat{R}_{P,s})/R_P$, and $|R_P-\widehat{R}_{P,s}|/R_P$. Together with the previous two figures, this case gives a compact qualitative comparison of solver behavior across distinct rainfall scenes.}
 \end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.72\textwidth]{\jcasethree}
+  \caption{Optimizer trace for the January 31st, 2023 case study at 16:00. The weighted objective and weighted component terms are shown over the L-BFGS-B iterations for the same patch displayed in the spatial case-study panels above.}
+\end{figure}
+
+\section*{Optimization Algorithm}
+The nonlinear optimizer used in this note is L-BFGS-B, a limited-memory quasi-Newton method for smooth constrained optimization. In the present setting, the optimization variable is the rainfall value at every pixel of the patch, so the problem dimension is the number of pixels in the patch. Rather than storing a full Hessian matrix, L-BFGS-B builds a low-memory approximation to local curvature information from the most recent iterates and gradients, and uses that approximation to propose a descent direction. A line search is then carried out along that direction, and the process is repeated until the stopping criteria on iteration count, function reduction, or projected gradient norm are met.
+
+The suffix ``-B'' indicates that the method handles box constraints. Here those constraints enforce nonnegativity of the rainfall field, so every pixel estimate is required to remain in $[0,\infty)$. In practice, this means that the optimizer can exploit gradient-based curvature information while still respecting the physically natural requirement that rainfall rates should not become negative. The optimizer is initialized from the ILDW estimate, and the cost-reduction plots in the previous section illustrate how the weighted objective decreases from that starting point over successive iterations.
+
+\section*{IDW and ILDW Pseudocode}
+For reference, the no-comments pseudocode for the IDW and ILDW baselines is included below.
+
+\includepdf[pages=-,pagecommand={\thispagestyle{plain}}]{idw_ildw_pseudocode_no_comments.pdf}
 
 % \begin{table}[H]
 %   \centering

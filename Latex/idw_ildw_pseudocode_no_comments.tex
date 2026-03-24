@@ -6,7 +6,7 @@
 
 \newcommand{\RR}{\mathbb{R}}
 
-\title{IDW and ILDW (Short Pseudocode)}
+\title{Pseudocode for IDW and ILDW}
 \date{}
 
 \begin{document}
@@ -30,7 +30,6 @@ Each pixel $p$ has center $c_p\in\RR^2$.
 \State $R_\ell \gets \left(\dfrac{A_\ell/L_\ell}{\kappa_\ell}\right)^{1/\alpha_\ell}$
 \EndFor
 \For{each pixel $p$ with center $c_p$}
-\State $m_\ell \gets (p_{\ell,1}+p_{\ell,2})/2$ for each link $\ell$
 \If{one or more link midpoints lie inside pixel $p$}
 \State $\hat R_p \gets$ mean of $R_\ell$ of those links
 \Else
