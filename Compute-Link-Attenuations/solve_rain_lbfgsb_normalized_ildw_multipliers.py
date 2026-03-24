@@ -132,6 +132,10 @@ def _compute_instance_multipliers(
     t_p: np.ndarray,
     t_q: np.ndarray,
     t_r: np.ndarray,
+    num_atten: float = 1.0,
+    num_1d: float = 1.0,
+    num_2d: float = 0.5,
+    num_total: float = 1.0,
 ) -> Dict[str, float]:
     J_atten, J_1d, J_2d, J_total, _, _, _, _ = _compute_terms_and_grads(
         prob, R_ildw_flat, t_p=t_p, t_q=t_q, t_r=t_r
@@ -141,16 +145,20 @@ def _compute_instance_multipliers(
     beta_2d = _safe_inverse(J_2d)
     beta_total = _safe_inverse(J_total)
 
-    alpha_atten = beta_atten
-    alpha_1d = beta_1d
-    alpha_2d = 0.5 * beta_2d
-    alpha_total = beta_total
+    alpha_atten = float(num_atten) * beta_atten
+    alpha_1d = float(num_1d) * beta_1d
+    alpha_2d = float(num_2d) * beta_2d
+    alpha_total = float(num_total) * beta_total
 
     return {
         "J_atten_ildw": float(J_atten),
         "J_1d_ildw": float(J_1d),
         "J_2d_ildw": float(J_2d),
         "J_total_ildw": float(J_total),
+        "num_atten": float(num_atten),
+        "num_1d": float(num_1d),
+        "num_2d": float(num_2d),
+        "num_total": float(num_total),
         "beta_atten": float(beta_atten),
         "beta_1d": float(beta_1d),
         "beta_2d": float(beta_2d),
@@ -223,6 +231,10 @@ def solve_lbfgsb_and_save(
     lam: float | None = None,
     mu: float | None = None,
     eta: float | None = None,
+    num_atten: float = 1.0,
+    num_1d: float = 1.0,
+    num_2d: float = 0.5,
+    num_total: float = 1.0,
 ) -> Dict[str, Any]:
     # Legacy weights are accepted but ignored: this solver uses per-instance ILDW multipliers.
     _ = lam
@@ -244,7 +256,17 @@ def solve_lbfgsb_and_save(
         default_value=float(idw_default_value),
     )
     R_ildw_flat = np.asarray(R_ildw_grid, dtype=np.float64).reshape(prob.P)
-    mult = _compute_instance_multipliers(prob, R_ildw_flat=R_ildw_flat, t_p=t_p, t_q=t_q, t_r=t_r)
+    mult = _compute_instance_multipliers(
+        prob,
+        R_ildw_flat=R_ildw_flat,
+        t_p=t_p,
+        t_q=t_q,
+        t_r=t_r,
+        num_atten=float(num_atten),
+        num_1d=float(num_1d),
+        num_2d=float(num_2d),
+        num_total=float(num_total),
+    )
 
     fun, jac = make_objective(
         prob,
@@ -419,6 +441,10 @@ def solve_lbfgsb_and_save(
         meta_beta_1d=float(mult["beta_1d"]),
         meta_beta_2d=float(mult["beta_2d"]),
         meta_beta_total=float(mult["beta_total"]),
+        meta_num_atten=float(mult["num_atten"]),
+        meta_num_1d=float(mult["num_1d"]),
+        meta_num_2d=float(mult["num_2d"]),
+        meta_num_total=float(mult["num_total"]),
         meta_alpha_atten=float(mult["alpha_atten"]),
         meta_alpha_1d=float(mult["alpha_1d"]),
         meta_alpha_2d=float(mult["alpha_2d"]),

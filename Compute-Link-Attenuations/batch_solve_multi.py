@@ -166,6 +166,10 @@ def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: 
         "mu": float(opt.get("w_shrink", opt.get("mu", 1e-6))),
         "eps": float(opt.get("epsilon", opt.get("eps", 0.01))),
         "eta": float(opt.get("w_second_der", opt.get("eta", 0.0))),
+        "num_atten": float(opt.get("num_atten", 1.0)),
+        "num_1d": float(opt.get("num_1d", 1.0)),
+        "num_2d": float(opt.get("num_2d", 0.5)),
+        "num_total": float(opt.get("num_total", 1.0)),
         "j2_w": float(opt.get("w_shrink", opt.get("j2_w", opt.get("w_j2", 0.01)))),
         "j3_w": float(
             opt.get(

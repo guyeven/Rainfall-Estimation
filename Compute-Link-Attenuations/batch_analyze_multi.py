@@ -134,22 +134,6 @@ def objective_scaling_from_meta(meta: Dict[str, float]) -> str:
     return "N/A_BASELINE" if len(meta) == 0 else "UNKNOWN"
 
 
-def objective_importance_from_solver_cfg(solver_cfg: Dict[str, Any]) -> Dict[str, float]:
-    """
-    Read optional per-solver objective importance coefficients from analyze config.
-    Missing values default to 1.0.
-    """
-    oi = solver_cfg.get("objective_importance", {}) if isinstance(solver_cfg, dict) else {}
-    if not isinstance(oi, dict):
-        oi = {}
-    return {
-        "atten": float(oi.get("atten", 1.0)),
-        "j_1d": float(oi.get("j_1d", 1.0)),
-        "j_2d": float(oi.get("j_2d", 1.0)),
-        "total": float(oi.get("total", 1.0)),
-    }
-
-
 def solver_objective_formula_text(*, scaling: str, meta: Dict[str, float]) -> str:
     if scaling == "N/A_BASELINE":
         return "N/A (baseline interpolation; no optimization objective)."
@@ -3515,7 +3499,6 @@ def main() -> int:
         scaling_meta = objective_scaling_from_meta(meta_sample)
         scaling = scaling_cfg if scaling_cfg != "UNKNOWN" else scaling_meta
         solver_effective_scaling_by_label[label] = scaling
-        oi_cfg = objective_importance_from_solver_cfg(solver_cfg_by_label.get(label, {}))
         module_name = solver_module_by_label.get(label, "")
         if not module_name:
             module_name = "(not provided in analyze config)"
@@ -3526,10 +3509,6 @@ def main() -> int:
             objective_scaling=scaling,
             objective_formula=solver_objective_formula_text(scaling=scaling, meta=meta_sample),
             settings_summary=summarize_solver_settings(meta_sample),
-            cfg_importance_atten=float(oi_cfg["atten"]),
-            cfg_importance_j_1d=float(oi_cfg["j_1d"]),
-            cfg_importance_j_2d=float(oi_cfg["j_2d"]),
-            cfg_importance_total=float(oi_cfg["total"]),
             sol_dir=str(sol_dir),
             sol_prefix=sol_prefix,
             sample_solution_npz=(str(sample_npz) if sample_npz is not None else None),
