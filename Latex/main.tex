@@ -13,12 +13,15 @@
 \usepackage{url}
 \usepackage{xcolor}
 \usepackage{pdfpages}
-\usepackage{algorithm}
-\usepackage{algpseudocode}
+%\usepackage{algorithm}
+%\usepackage{algpseudocode}
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+\SetAlgoNoEnd
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 
-% Change only these lines to point the note at another rendered report.
+
+% Change only these lines to point the thesis at another rendered report.
 \input{main_paths.tex}
 
 \title{Rainfall Estimation}
@@ -27,150 +30,313 @@
 
 \begin{document}
 \maketitle
+\tableofcontents
+\clearpage
 
-\section*{Introduction}
-Inverse-distance weighting (IDW) and related interpolation rules are widely used as simple baselines for rainfall-field estimation from microwave-link data. Their appeal is practical: they are fast, easy to implement, and often produce visually plausible maps. However, these methods do not explicitly search for a rainfall field whose forward-model-implied link attenuations match the observed link attenuations. This note investigates whether a nonlinear optimization model can improve on IDW and on the link-aware ILDW baseline when the goal is not only to predict rainfall, but also to remain faithful to the measurements that generated the estimate.
+\section{Introduction}
+Inverse-distance weighting (IDW) and related interpolation rules are widely used as simple baselines for rainfall-field estimation from microwave-link data. Their appeal is practical: they are fast, easy to implement, and often produce visually plausible maps. However, these methods do not explicitly search for a rainfall field whose forward-model-implied link attenuations match the observed link attenuations. This study investigates whether a nonlinear optimization model can improve on IDW and on the link-aware ILDW baseline when the goal is not only to predict rainfall, but also to remain faithful to the measurements that generated the estimate.
 
-\section*{Methodology}
+\paragraph*{Contributions.} This note makes three main contributions: (i) it defines a benchmark of rainy-event OPERA patches with consistent microwave-link overlays, (ii) it introduces ILDW as a stronger link-aware interpolation baseline than midpoint IDW, and (iii) it evaluates a nonlinear optimization model against both baselines using map-level, distance-binned, and attenuation-consistency diagnostics.
+
+\section{Background}
+\textcolor{green}{[TODO: Write the Background section.]}
+
+\section{Methodology}
+\subsection{Data and Benchmark Construction}
 Our benchmark is built patch by patch. A \emph{patch} is a rectangular crop of an hourly rainfall accumulation map from the OPERA European weather-radar product, selected to capture a detected rain event while satisfying patch-width and patch-height constraints (in the present benchmark, between \SI{50}{km} and \SI{95}{km} in each dimension). For each patch in the benchmark list, we first extract the corresponding rainfall crop from the OPERA map. We then refine that crop from the native \SI{2}{km} grid to a finer \SI{125}{m} grid by subdividing each coarse OPERA pixel into smaller pixels that inherit its rainfall value, and smooth the refined field. This smoothed, refined rainfall map is the ground-truth field used both to synthesize link attenuations and to evaluate the solvers. The full microwave-link data set, obtained from the 4TU-NL link data, is then overlaid on each patch, and only links whose endpoints fall inside the patch are retained. Each retained link keeps the same underlying metadata as in the full data set, including endpoints, frequency, and polarization, but is used in the benchmark only when it lies within the spatial extent of the selected patch.
 
-A link is treated geometrically as a line segment between two endpoints. Given the ground-truth rainfall field, we compute the total attenuation of each link with the ITU-R P.838-3 forward model for rain-induced specific attenuation. In principle this is a path integral along the link. In the benchmark, and likewise for the methods we compare against, that forward model is evaluated in discretized form on the refined \SI{125}{m} grid: each link is traced through the grid cells it crosses, and the total attenuation is obtained by summing the attenuation contributions of those crossed cells. These synthetic attenuation values are then given to the inverse solvers. In this note we compare three such solvers: IDW, ILDW, and a nonlinear optimization model.
+\subsubsection{Geographic Distribution of the Benchmark Patches}
+\Cref{fig:patches_europe_overview} shows the geographic distribution of the 100 benchmark patches. Each rectangle marks the footprint of one selected patch over the underlying Europe basemap. The figure makes clear that the benchmark is not concentrated in a single country or climatological regime: the selected rainy-event patches are spread across northern, western, central, southern, and southeastern Europe.
 
-The motivation for the nonlinear model is twofold. First, we hypothesized that rainfall estimation posed as a nonlinear optimization problem could outperform interpolation-based baselines in regions that are weakly constrained by nearby links, that is, at pixels for which the distance to the third-closest link is large. Second, we expected the resulting rainfall field to explain the attenuation measurements more faithfully: when the same forward model is applied to the predicted rainfall field, the mismatch between predicted and observed link attenuations should be smaller than for IDW and ILDW. The first question is examined below through distance-binned pixelwise error summaries, while the second is connected to the attenuation-error and objective-based analyses developed later in the note. Finally, because the patch detector is designed to capture rainy events rather than dry background, the benchmark is rain-dominated: averaging over the 100 patch-level dry fractions gives a mean non-rainy proportion of about \SI{10.50}{\percent}, where non-rainy pixels are those with very little or no rainfall.
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\textwidth]{\patcheuropeoverview}
+  \caption{Geographic distribution of the 100 benchmark patches. Each patch is shown as a red outline rectangle over a Europe basemap. The figure visualizes the spatial spread of the selected rainy-event patches across the OPERA domain and provides geographic context for the benchmark used throughout the note.}
+  \label{fig:patches_europe_overview}
+\end{figure}
 
-\section*{IDW Baseline}
-Inverse-distance weighting (IDW) is one of the standard simple interpolation strategies used in commercial-microwave-link rainfall reconstruction. In the setting considered here, each link carries a total attenuation value together with its geometric path, frequency, and polarization. The underlying forward model is the ITU-R P.838-3 rain-attenuation relation along the link path. In continuous form this is a line integral of rain-specific attenuation along the segment. In the implementation used in this project, and likewise in the comparisons below, that integral is discretized on the refined \SI{125}{m} grid by tracing each link through the crossed cells and summing the attenuation contribution of each crossed cell.
+\subsubsection{Patch-Geometry Overview}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\textwidth]{\patchgeometryplot}
+\caption{Patch width versus patch height for the 100 patches, with one dot per patch.  Across patches, the mean patch area is 269,491 pixels with SD of 76,755 pixels (pixels are squares with side length $125$ m).}
+ % \caption{Patch width versus patch height, with one marker per patch. The footnote on the figure reports the average patch size in pixels and its standard deviation across patches.}
+\end{figure}
 
-The IDW baseline first converts each observed link attenuation into a single rain-rate estimate. If $L_\ell$ denotes the link length, $m_\ell$ the link midpoint, $(\kappa_\ell,\alpha_\ell)$ the ITU-R P.838-3 coefficients corresponding to the link frequency $f_\ell$, and $\mathrm{pol}_\ell$ the polarization of the link, then the link-level rain estimate is
+
+% This figure makes it easy to see whether the selected patches occupy a tight geometry range or whether the report is mixing very different patch extents.
+
+% \section{Link Count Distribution}
+% \begin{figure}[H]
+%   \centering
+%   \includegraphics[width=0.82\textwidth]{\linkhistplot}
+%   \caption{Histogram of the number of links per patch. The figure footnote also reports the average parallel-link ratio, defined here as the fraction of links in a patch that have at least one parallel partner.}
+% \end{figure}
+
+% This histogram summarizes how link density varies across the selected patches. The parallel-link ratio is included because the current expectation is that it should stay close to $1$ for this dataset.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Patch size (km) & \# links & 1-multiplicity & 2-multiplicity \\
+    \midrule
+    $50 \times 50$ & 939 & 99 & 420 \\
+    $62 \times 60$ & 1254 & 128 & 563  \\
+    $72 \times 70$ & 1507 & 157 & 675  \\
+    \bottomrule
+  \end{tabular}
+  \caption{Representative link multiplicities for three patch dimensions.
+The multiplicity of a link is defined as the number of frequencies assigned to it.
+The second column reports the total number of link–frequency pairs.
+In the data set, link multiplicities were either 1 or 2, with approximately $10\%$ of links having multiplicity 1.
+}
+
+\end{table}
+
+
+\subsection{Forward Model}
+\paragraph*{Forward model used by all inverse methods.} A link is treated geometrically as a line segment between two endpoints. Given the ground-truth rainfall field, we compute link attenuation using ITU-R P.838-3, the standard parameterization for rain-induced specific attenuation in microwave links. In this model, the specific attenuation (dB/km) is
+\[
+\gamma_R = \kappa(f,\mathrm{pol})\,R^{\alpha(f,\mathrm{pol})},
+\]
+where $R$ is rain rate (mm/h), and $(\kappa,\alpha)$ depend on link frequency and polarization. The total link attenuation is then the line integral of specific attenuation along the propagation path,
+\[
+A_\ell = \int_{\ell} \gamma_R\bigl(R(s)\bigr)\,\mathrm{d}s.
+\]
+In the benchmark, and likewise for the methods we compare against, this integral is evaluated in discretized form on the refined \SI{125}{m} grid: each link is traced through crossed grid cells, and attenuation is accumulated as a length-weighted sum of cellwise specific attenuations,
+\[
+A_\ell \approx \sum_{c\in\mathcal{C}(\ell)} \kappa_\ell\,R_c^{\alpha_\ell}\,\Delta s_{\ell,c},
+\]
+where $\mathcal{C}(\ell)$ is the set of crossed cells and $\Delta s_{\ell,c}$ is the path length of link $\ell$ inside cell $c$ (in km). These forward-model-generated attenuation values are then given to the inverse solvers. In this study we compare three such solvers: IDW, ILDW, and a nonlinear optimization model.
+
+The motivation for the nonlinear model is twofold. First, we hypothesized that rainfall estimation posed as a nonlinear optimization problem could outperform interpolation-based baselines in regions that are weakly constrained by nearby links, that is, at pixels for which the distance to the third-closest link is large. Second, we expected the resulting rainfall field to explain the attenuation measurements more faithfully: when the same forward model is applied to the predicted rainfall field, the mismatch between predicted and observed link attenuations should be smaller than for IDW and ILDW. The first question is examined below through distance-binned pixelwise error summaries, while the second is connected to the attenuation-error and objective-based analyses developed later in the manuscript. Finally, because the patch detector is designed to capture rainy events rather than dry background, the benchmark is rain-dominated: averaging over the 100 patch-level dry fractions gives a mean non-rainy proportion of about \SI{10.50}{\percent}, where non-rainy pixels are those with very little or no rainfall.
+
+\subsection{Inverse Methods}
+\subsubsection{IDW Baseline}
+Inverse-distance weighting (IDW) is one of the standard simple interpolation strategies used in commercial-microwave-link rainfall reconstruction \citep{chwala2019cml}. The input consists of a set of links, where each link carries a total attenuation value together with its geometric endpoints, frequency, and polarization.
+
+\paragraph*{IDW inversion approximation.}
+The IDW baseline first converts each observed link attenuation into a single link-level rain-rate estimate. If $L_\ell$ denotes the link length, $m_\ell$ the link midpoint, $(\kappa_\ell,\alpha_\ell)$ the ITU-R P.838-3 coefficients corresponding to the link frequency $f_\ell$, and $\mathrm{pol}_\ell$ the polarization of the link, then
 \[
 R_\ell \triangleq \left(\frac{A_\ell/L_\ell}{\kappa_\ell}\right)^{1/\alpha_\ell}.
 \]
-These link-level estimates are then treated as point observations located at the link midpoints. For a pixel $p$ with center $c_p$, midpoint IDW computes a weighted average of the nearby $R_\ell$ values, with weights proportional to $\|m_\ell-c_p\|_2^{-2}$ inside a prescribed search radius $r_{\max}$. If one or more midpoints fall directly inside the pixel, the estimate is taken to be the mean of those link-level values. This is the discretized midpoint-IDW baseline used throughout the note. {\color{green}TODO (Iv\'an): decide whether this explanatory paragraph should remain or be removed.}
 
+\paragraph*{Exact implementation choices.}
+These link-level estimates are treated as point observations located at link midpoints. For a pixel $p$ with center $c_p$, midpoint IDW computes a weighted average of nearby $R_\ell$ values, with weights proportional to $\|m_\ell-c_p\|_2^{-2}$ inside a prescribed search radius $r_{\max}$. If one or more midpoints fall directly inside the pixel, the estimate is taken to be the mean of those link-level values. This is the discretized midpoint-IDW baseline used throughout this manuscript.
+
+% Requires \usepackage[ruled,vlined,linesnumbered]{algorithm2e} and \SetAlgoNoEnd in the preamble.
 \begin{algorithm}[H]
-\caption{Discretized Midpoint IDW}
-\begin{algorithmic}[1]
-\Require links $(p_{\ell,1},p_{\ell,2},A_\ell,f_\ell,\mathrm{pol}_\ell)$, radius $r_{\max}$
-\For{each link $\ell$}
-\State $L_\ell \gets \|p_{\ell,2}-p_{\ell,1}\|_2$
-\State $(\kappa_\ell,\alpha_\ell) \gets \mathrm{ITU838}(f_\ell,\mathrm{pol}_\ell)$
-\State $R_\ell \gets \left(\dfrac{A_\ell/L_\ell}{\kappa_\ell}\right)^{1/\alpha_\ell}$
-\EndFor
-\For{each pixel $p$ with center $c_p$}
-\If{one or more link midpoints lie inside pixel $p$}
-\State $\hat R_p \gets$ mean of $R_\ell$ of those links
-\Else
-\State $N_p \gets \{\ell:\|m_\ell-c_p\|_2\le r_{\max}\}$
-\If{$N_p=\emptyset$}
-\State $\hat R_p \gets 0$
-\Else
-\State $\hat R_p \gets \sum_{\ell\in N_p}\dfrac{\|m_\ell-c_p\|_2^{-2}}{\sum_{j\in N_p}\|m_j-c_p\|_2^{-2}} R_\ell$
-\EndIf
-\EndIf
-\EndFor
-\State Return field $\hat R$
-\end{algorithmic}
+    \caption{Discretized Midpoint IDW. Each link is replaced with a virtual gauge located at the midpoint of the link. The rain rate at the gauge is set to the uniform rain rate that reproduces the input link attenuation under ITU-R P.838-3. IDW is then applied with respect to these virtual gauges.}
+    \DontPrintSemicolon
+    \KwData{link set $\mathcal{L}$ and patch with set of pixels $\mathcal{P}$}
+    \KwResult{field $\hat R$}
+
+    \ForEach{link $\ell \in \mathcal{L}$}{
+        $(\ell.\kappa,\ell.\alpha) \gets \mathrm{ITU838}(\ell.\mathrm{freq},\ell.\mathrm{polarization})$\;
+        $\ell.\mathrm{rainrate} \gets \left(\dfrac{\ell.\mathrm{attenuation}/\ell.\mathrm{length}}{\ell.\kappa}\right)^{1/\ell.\alpha}$\;
+    }
+
+    \ForEach{pixel $p \in \mathcal{P}$}{
+        $M_p \gets \{\ell \in \mathcal{L} : \ell.\mathrm{midpoint} \in p\}$\;
+        \eIf{$M_p \neq \emptyset$}{
+            $\hat R_p \gets \dfrac{1}{|M_p|}\sum_{\ell \in M_p} \ell.\mathrm{rainrate}$\;
+        }{
+            $N_p \gets \{\ell \in \mathcal{L} : \|\ell.\mathrm{midpoint}-p.\mathrm{center}\|_2 \le r_{\max}\}$\;
+            \eIf{$N_p = \emptyset$}{
+                $\hat R_p \gets 0$\;
+            }{
+                $\hat R_p \gets \sum_{\ell \in N_p}\dfrac{\|\ell.\mathrm{midpoint}-p.\mathrm{center}\|_2^{-2}}{\sum_{\ell' \in N_p}\|\ell'.\mathrm{midpoint}-p.\mathrm{center}\|_2^{-2}} \cdot \ell.\mathrm{rainrate}$\;
+            }
+        }
+    }
 \end{algorithm}
 
-\section*{ILDW Baseline}
-ILDW is the link-aware variant introduced in this project as a stronger interpolation baseline. It starts from the same link-level rain estimates $R_\ell$ obtained by inverting the discretized attenuation forward model link by link. The difference is geometric: instead of treating each link as if all of its information were concentrated at the midpoint, ILDW uses the full link segment when deciding which links should influence a pixel and how strongly they should do so.
+
+\subsubsection{ILDW Baseline}
+ILDW is the link-aware variant introduced in this project as a stronger interpolation baseline. It starts from the same per-link rain-rate values (denoted as $\ell.\mathrm{rainrate}$ in the pseudocode) obtained by inverting the discretized attenuation forward model link by link. The difference is geometric: instead of treating each link as if all of its information were concentrated at the midpoint, ILDW uses the full link segment when deciding which links should influence a pixel and how strongly they should do so.
 
 More precisely, for a pixel center $c_p$, ILDW replaces the midpoint distance $\|m_\ell-c_p\|_2$ by the point-to-segment distance
 \[
 \operatorname{dist}\bigl(c_p,[p_{\ell,1},p_{\ell,2}]\bigr).
 \]
-If one or more links cross the pixel, the estimate is taken to be the mean of the corresponding $R_\ell$ values. Otherwise, the estimate is a weighted average over nearby links within radius $r_{\max}$, with weights proportional to the inverse squared segment distance. We considered this baseline important because it preserves the same simple interpolation philosophy as IDW while respecting more of the measurement geometry of the links themselves.
+If one or more links cross the pixel, the estimate is taken to be the mean of the corresponding link rain-rate values. Otherwise, the estimate is a weighted average over nearby links within radius $r_{\max}$, with weights proportional to the inverse squared segment distance. We considered this baseline important because it preserves the same simple interpolation philosophy as IDW while respecting more of the measurement geometry of the links themselves.
 
 \begin{algorithm}[H]
-\caption{Segment-Distance ILDW}
-\begin{algorithmic}[1]
-\Require links $(p_{\ell,1},p_{\ell,2},A_\ell,f_\ell,\mathrm{pol}_\ell)$, radius $r_{\max}$
-\For{each link $\ell$}
-\State $L_\ell \gets \|p_{\ell,2}-p_{\ell,1}\|_2$
-\State $(\kappa_\ell,\alpha_\ell) \gets \mathrm{ITU838}(f_\ell,\mathrm{pol}_\ell)$
-\State $R_\ell \gets \left(\dfrac{A_\ell/L_\ell}{\kappa_\ell}\right)^{1/\alpha_\ell}$
-\EndFor
-\For{each pixel $p$ with center $c_p$}
-\If{one or more links cross pixel $p$}
-\State $\hat R_p \gets$ mean of $R_\ell$ of those links
-\Else
-\State $N_p \gets \{\ell : \mathrm{dist}(c_p,[p_{\ell,1},p_{\ell,2}]) \le r_{\max}\}$
-\If{$N_p=\emptyset$}
-\State $\hat R_p \gets 0$
-\Else
-\State $\hat R_p \gets \sum_{\ell\in N_p}\dfrac{\mathrm{dist}(c_p,[p_{\ell,1},p_{\ell,2}])^{-2}}{\sum_{j\in N_p}\mathrm{dist}(c_p,[p_{j,1},p_{j,2}])^{-2}} R_\ell$
-\EndIf
-\EndIf
-\EndFor
-\State Return field $\hat R$
-\end{algorithmic}
+    \caption{Segment-Distance ILDW. Each link is treated as a line segment rather than a midpoint-only virtual gauge.}
+    \DontPrintSemicolon
+    \KwData{link set $\mathcal{L}$ and patch with set of pixels $\mathcal{P}$}
+    \KwResult{field $\hat R$}
+
+    \ForEach{link $\ell \in \mathcal{L}$}{
+        $(\ell.\kappa,\ell.\alpha) \gets \mathrm{ITU838}(\ell.\mathrm{freq},\ell.\mathrm{polarization})$\;
+        $\ell.\mathrm{rainrate} \gets \left(\dfrac{\ell.\mathrm{attenuation}/\ell.\mathrm{length}}{\ell.\kappa}\right)^{1/\ell.\alpha}$\;
+    }
+
+    \ForEach{pixel $p \in \mathcal{P}$}{
+        $M_p \gets \{\ell \in \mathcal{L} : \ell \text{ crosses } p\}$\;
+        \eIf{$M_p \neq \emptyset$}{
+            $\hat R_p \gets \dfrac{1}{|M_p|}\sum_{\ell \in M_p} \ell.\mathrm{rainrate}$\;
+        }{
+            $N_p \gets \{\ell \in \mathcal{L} : \mathrm{dist}(p.\mathrm{center}, [\ell.\mathrm{endpoint1},\ell.\mathrm{endpoint2}]) \le r_{\max}\}$\;
+            \eIf{$N_p = \emptyset$}{
+                $\hat R_p \gets 0$\;
+            }{
+                $\hat R_p \gets \sum_{\ell \in N_p}\dfrac{\mathrm{dist}(p.\mathrm{center}, [\ell.\mathrm{endpoint1},\ell.\mathrm{endpoint2}])^{-2}}{\sum_{\ell' \in N_p}\mathrm{dist}(p.\mathrm{center}, [\ell'.\mathrm{endpoint1},\ell'.\mathrm{endpoint2}])^{-2}} \cdot \ell.\mathrm{rainrate}$\;
+            }
+        }
+    }
 \end{algorithm}
 
-\section*{Optimization Algorithm}
-The nonlinear optimizer is the method we introduced to address some of the limitations of IDW and ILDW. Both interpolation-based baselines first reduce each link to a link-level rain estimate and then spread that information spatially by geometric weighting. This is simple and often effective, but it does not explicitly search for a rainfall field whose forward-model-implied attenuations agree as well as possible with the observed link attenuations. Our working conjecture was that a nonlinear program could improve on these baselines, especially in regions that are farther from nearby links and therefore less directly constrained by local interpolation.
+\subsubsection{Nonlinear Optimization Method}
+The nonlinear optimizer is the method we introduced to address some of the limitations of IDW and ILDW. Both interpolation-based baselines first reduce each link to a link-level rain estimate and then spread that information spatially by geometric weighting. 
 
-The optimizer used in this note is L-BFGS-B, a limited-memory quasi-Newton method for smooth constrained optimization. In the present setting, the optimization variable is the rainfall value at every pixel of the patch, so the problem dimension is the number of pixels in the patch. Rather than storing a full Hessian matrix, L-BFGS-B builds a low-memory approximation to local curvature information from the most recent iterates and gradients, and uses that approximation to propose a descent direction. A line search is then carried out along that direction, and the process is repeated until the stopping criteria on iteration count, function reduction, or projected gradient norm are met. The suffix ``-B'' indicates that the method handles box constraints. Here those constraints enforce nonnegativity of the rainfall field, so every pixel estimate is required to remain in $[0,\infty)$. The optimizer is initialized from the ILDW estimate.
+The optimizer used in this study is L-BFGS-B, a limited-memory quasi-Newton method for smooth constrained optimization \citep{byrd1995limited,zhu1997algorithm}.  In the present setting, the optimization variable is the rainfall value at every pixel of the patch, so the problem dimension is the number of pixels in the patch. Rather than storing a full Hessian matrix, L-BFGS-B builds a low-memory approximation to local curvature information from the most recent iterates and gradients, and uses that approximation to propose a descent direction. A line search is then carried out along that direction, and the process is repeated until the stopping criteria on iteration count, function reduction, or projected gradient norm are met. The suffix ``-B'' indicates that the method handles box constraints. Here those constraints enforce nonnegativity of the rainfall field. The optimizer is initialized with the ILDW estimate, obtained from per-link rain rates inferred from the observed attenuations. This provides a data-informed initial rainfall field for the nonlinear optimization.
 
-\subsection*{Mathematical Formulation}
-For a patch $P$, let $x\in\mathbb{R}_{\ge 0}^{|\Omega(P)|}$ denote the unknown rainfall field written as a vector over pixels. The optimizer minimizes a weighted sum of four terms,
+\paragraph*{Mathematical Formulation}
+For each patch $P$, we identify $P$ with its set of pixels, and denote by $\mathcal{L}(P)$ the set of links contained in $P$. Let $r\in\mathbb{R}_{\ge 0}^{|P|}$ denote the unknown rainfall field written as a vector over pixels. The optimizer minimizes a weighted sum of four terms,
 \[
-J(x)\triangleq
-\alpha_{\mathrm{atten}} J_{\mathrm{atten}}(x)
+J(r)\triangleq
+\alpha_{\mathrm{atten}} J_{\mathrm{atten}}(r)
 \;+\;
-\alpha_{1d} J_{1d}(x)
+\alpha_{1d} J_{1d}(r)
 \;+\;
-\alpha_{2d} J_{2d}(x)
+\alpha_{2d} J_{2d}(r)
 \;+\;
-\alpha_{\mathrm{total}} J_{\mathrm{total}}(x).
+\alpha_{\mathrm{total}} J_{\mathrm{total}}(r).
 \]
 Here $J_{\mathrm{atten}}$ penalizes disagreement between observed and forward-model-predicted link attenuations, while $J_{1d}$, $J_{2d}$, and $J_{\mathrm{total}}$ are regularization terms that encourage the estimated field to remain spatially and physically well behaved. In the normalized solver studied here, the weights are chosen instance by instance from the corresponding ILDW objective values, namely
 \[
-\alpha_{\mathrm{atten}}=\frac{1}{J_{\mathrm{atten}}^{\mathrm{ILDW}}},\qquad
-\alpha_{1d}=\frac{1}{J_{1d}^{\mathrm{ILDW}}},\qquad
-\alpha_{2d}=\frac{1}{2\,J_{2d}^{\mathrm{ILDW}}},\qquad
-\alpha_{\mathrm{total}}=\frac{1}{J_{\mathrm{total}}^{\mathrm{ILDW}}}.
+\alpha_{\mathrm{atten}}=\frac{1}{J_{\mathrm{atten}}({\mathrm{ILDW}})},\qquad
+\alpha_{1d}=\frac{1}{J_{1d}({\mathrm{ILDW}})},\qquad
+\alpha_{2d}=\frac{1}{2} \cdot\frac{1}{J_{2d}({\mathrm{ILDW}})},\qquad
+\alpha_{\mathrm{total}}=\frac{1}{J_{\mathrm{total}}({\mathrm{ILDW}})}.
 \]
 More concretely, $J_{\mathrm{atten}}$ is the data-fidelity term:
 \[
-J_{\mathrm{atten}}(x)=\frac{1}{|\mathcal{L}(P)|}\sum_{\ell\in\mathcal{L}(P)}
-\frac{\bigl(\widehat{A}_\ell(x)-A_\ell^{\mathrm{obs}}\bigr)^2}{L_\ell},
+J_{\mathrm{atten}}(r)\triangleq\frac{1}{|\mathcal{L}(P)|}\sum_{\ell\in\mathcal{L}(P)}
+\frac{\bigl(\widehat{A}_\ell(r)-A_\ell^{\mathrm{obs}}\bigr)^2}{|\ell|},
 \]
-where $\widehat{A}_\ell(x)$ is the attenuation predicted by the forward model from the rainfall field $x$, $A_\ell^{\mathrm{obs}}$ is the observed attenuation of link $\ell$, and $L_\ell$ is the link length in km. Thus $J_{\mathrm{atten}}$ measures how far the forward-model-implied attenuations are from the observed attenuations, with a normalization by link length and by the number of links in the patch.
+where $\widehat{A}_\ell(r)$ is the attenuation predicted by the forward model from the rainfall field $r$, $A_\ell^{\mathrm{obs}}$ is the observed attenuation of link $\ell$, and $|\ell|$ is the link length in km. Thus $J_{\mathrm{atten}}$ measures how far the forward-model-implied attenuations are from the observed attenuations, with a normalization by link length and by the number of links in the patch.
 
 The term $J_{1d}$ is a first-difference penalty:
 \[
-J_{1d}(x)=\frac{1}{|\Omega(P)|}\sum_{(u,v)\in\mathcal{E}(P)}\bigl(x_u-x_v\bigr)^2,
+J_{1d}(r)\triangleq\frac{1}{|P|}\sum_{(u,v)\in\mathcal{E}(P)}\bigl(r_u-r_v\bigr)^2,
 \]
 where $\mathcal{E}(P)$ is the set of horizontally and vertically adjacent pixel pairs in patch $P$. This term sums squared differences between neighboring pixel values and therefore discourages abrupt pixel-to-pixel jumps in the estimated rainfall field.
 
 The term $J_{2d}$ is a second-difference penalty:
 \[
-J_{2d}(x)=\frac{1}{|\Omega(P)|}\sum_{(p,q,r)\in\mathcal{T}(P)}
-\bigl((x_q-x_p)-(x_r-x_q)\bigr)^2,
+J_{2d}(r)\triangleq\frac{1}{|P|}\sum_{(p,q,t)\in\mathcal{T}(P)}
+\bigl((r_q-r_p)-(r_t-r_q)\bigr)^2,
 \]
 where $\mathcal{T}(P)$ is the set of horizontal and vertical triples of collinear pixels in patch $P$. It penalizes changes in the first difference, so it discourages unnecessary curvature or oscillation along rows and columns.
 
 Finally, $J_{\mathrm{total}}$ is an $\ell_2$ shrinkage term on the rainfall field itself:
 \[
-J_{\mathrm{total}}(x)=\frac{1}{|\Omega(P)|}\sum_{p\in\Omega(P)}x_p^2.
+J_{\mathrm{total}}(r)\triangleq\frac{1}{|P|}\sum_{p\in P}r_p^2.
 \]
 This term biases the solution toward smaller overall rainfall values, except where larger values are needed to match the observed link attenuations.
 
-These four terms are added together only after weighting, so the optimizer balances attenuation fit against smoothness, curvature control, and shrinkage. The normalization above makes the different objective terms comparable in scale at the ILDW initialization and lets the optimizer refine that starting point by directly minimizing a measurement-aware objective instead of relying only on geometric interpolation. The cost-reduction plots in the qualitative case-study section show how this weighted objective decreases over successive L-BFGS-B iterations.
+These four terms are added together only after weighting, so the optimizer balances attenuation fit against smoothness, curvature control, and shrinkage.
 
-\section*{Results}
-We now turn to the empirical comparison of the three methods on the hundred-patch benchmark. The results are organized around three complementary questions. First, how does prediction quality vary with link proximity? To answer this, we group pixels into distance bins according to their distance to the third-closest link and summarize patch-level error statistics within each bin. We first examine rainy pixels through relative absolute error, and then examine non-rainy pixels through absolute error. Second, how well do the predicted rainfall fields explain the observed measurements? This is addressed through attenuation-error and objective-based summaries. Third, what do the three methods look like on individual rain events? This is illustrated through the qualitative case studies and the corresponding optimization traces shown later in the note.
+\section{Evaluation}
+\subsection{Evaluation Protocol}
+This section evaluates each solver from complementary angles: global map fidelity, error behavior as link distance increases, wet/dry classification behavior, and agreement with observed link attenuations under the shared forward model. We report patch-level summaries over the 100-patch benchmark and then provide qualitative case studies in the appendix.
 
-\section*{Relative Absolute Error Rainy-Pixel Distance Profile}
-For a patch $P$, let $\Omega(P)$ denote its pixel set, let $R_P : \Omega(P) \to \mathbb{R}_{\ge 0}$ be the ground-truth rainfall field, and let $\widehat{R}_{P,s} : \Omega(P) \to \mathbb{R}_{\ge 0}$ be the rainfall field predicted by solver $s$. We define a pixel $p$ to be rainy if $R_P(p) \ge 0.6$ mm/h, and we write
+\paragraph*{Key findings at a glance.} Across the benchmark, the nonlinear optimizer gives the strongest overall map fidelity and the best attenuation consistency. ILDW is consistently stronger than midpoint IDW, especially in geometry-sensitive settings, while preserving the same interpolation-style computational simplicity. Distance-conditioned analyses also show that all methods degrade as link support becomes weaker, but the optimizer and ILDW remain more robust than midpoint IDW in sparsely constrained regions.
+
+\subsection{Global Patch-Level Metrics}
+We now turn to the empirical comparison of the three methods on the hundred-patch benchmark. We begin with whole-patch summaries, then examine how errors vary with link proximity, and finally report attenuation-consistency diagnostics.
+
+Before turning to distance-binned diagnostics, it is useful to summarize each predicted rainfall map at the level of an entire patch. For a patch $P$ and solver $s$, we therefore compute three scalar metrics over all pixels in $P$: the root mean squared error
 \[
-\Omega_{\mathrm{rain}}(P)=\{p \in \Omega(P) : R_P(p)\ge 0.6\}.
+\mathrm{RMSE}_{P,s}\triangleq
+\sqrt{\frac{1}{|P|}\sum_{p\in P}\bigl(\widehat{R}_{P,s}(p)-R_P(p)\bigr)^2},
+\]
+the signed bias
+\[
+\mathrm{Bias}_{P,s}\triangleq
+\frac{1}{|P|}\sum_{p\in P}\bigl(\widehat{R}_{P,s}(p)-R_P(p)\bigr),
+\]
+and the Pearson correlation coefficient
+\[
+\mathrm{Corr}_{P,s}\triangleq
+\operatorname{corr}\bigl(\{\widehat{R}_{P,s}(p)\}_{p\in P},\{R_P(p)\}_{p\in P}\bigr).
+\]
+RMSE measures overall magnitude error, Bias measures systematic over- or underestimation, and Correlation measures how well the spatial structure of the field is reproduced independently of scale and offset.
+
+\begin{table}[!htbp]
+  \centering
+  \begin{tabular}{lccc}
+    \toprule
+    Solver & RMSE & Bias & Correlation \\
+    \midrule
+    IDW & $1.307 \pm 1.234$ & $0.034 \pm 0.296$ & $0.866 \pm 0.059$ \\
+    ILDW & $1.239 \pm 1.182$ & $0.047 \pm 0.261$ & $0.878 \pm 0.055$ \\
+    Nonlinear optimizer & $1.196 \pm 1.179$ & $-0.186 \pm 0.335$ & $0.901 \pm 0.055$ \\
+    \bottomrule
+  \end{tabular}
+  \caption{Patch-level summary of three global map metrics across the 100 evaluated patches. Each entry reports mean $\pm$ standard deviation across patches. Here RMSE and Bias are computed in the same rainfall units as $R_P$ and $\widehat{R}_{P,s}$, while Correlation is the Pearson correlation coefficient between the predicted and ground-truth rainfall fields within each patch. The corresponding RMSE ranges are $[0.247, 6.932]$ for IDW, $[0.229, 7.062]$ for ILDW, and $[0.176, 6.940]$ for the nonlinear optimizer.}
+  \label{tab:patch_map_metrics}
+\end{table}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\textwidth]{\patchmetricboxplot}
+  \caption{Patch-level distributions of RMSE, Bias, and Pearson correlation coefficient across the 100 evaluated patches. Each panel shows one metric, with one boxplot per solver. The RMSE panel summarizes overall magnitude error, the Bias panel summarizes signed over- or underestimation, and the Correlation panel summarizes how well each method reproduces the spatial rainfall pattern.}
+  \label{fig:patch_map_metrics}
+\end{figure}
+
+Overall, these global metrics indicate that the nonlinear optimizer best preserves patch-scale spatial structure while reducing aggregate map error.
+
+\subsubsection{Link-Consistency Objective ($J_{\mathrm{atten}}$)}
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    Solver & Mean $J_{\mathrm{atten}}$ (dB$^2$/km) & SD \\
+    \midrule
+    IDW & 0.01522 & 0.03808 \\
+    ILDW & 0.00289 & 0.00757 \\
+    Nonlinear Optimizer & 0.00020 & 0.00103 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Patch-level summary of $J_{\mathrm{atten}}$ across the 100 evaluated patches. For a given patch, $J_{\mathrm{atten}}$ is the attenuation-fit term $J_{\mathrm{atten}} = \frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left(\hat{A}_\ell - A_\ell^{\mathrm{obs}}\right)^2}{|\ell|}$, where $\hat{A}_\ell$ is the attenuation implied by the estimated rainfall field on link $\ell$, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. The table reports the mean and standard deviation of this per-patch quantity for each solver. Lower values indicate better agreement with the observed link attenuations.}
+\end{table}
+
+\subsubsection{Absolute Attenuation Error per Kilometer}
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    Solver & Mean (dB/km) & SD \\
+    \midrule
+    IDW & 0.05034 & 0.03413 \\
+    ILDW & 0.01356 & 0.00948 \\
+    Nonlinear Optimizer & 0.00230 & 0.00437 \\
+    \bottomrule
+  \end{tabular}
+\caption{Patch-level summary of the mean absolute attenuation error per km. For a given patch, we compute $\frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left|\hat{A}_\ell - A_\ell^{\mathrm{obs}}\right|}{|\ell|}$, where $\hat{A}_\ell$ is the attenuation induced by the estimated rainfall field on link $\ell$, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. Thus, the absolute attenuation error of every link is normalized by the link's length. The table reports the mean and standard deviation of this quantity across the $100$ evaluated patches for each solver. Lower values indicate better agreement with the observed link attenuations.
+  }
+\end{table}
+
+Together, the attenuation-based diagnostics show that the nonlinear optimizer most consistently matches the measured link attenuations under the shared forward model.
+
+
+\subsection{Distance-Conditioned Error Analysis}
+We next ask how prediction quality varies with link proximity and how well the predicted rainfall fields explain the observed link measurements. To answer these questions, we first group pixels into distance bins according to their distance to the third-closest link and summarize patch-level error statistics within each bin. We first examine rainy pixels through relative absolute error, and then examine non-rainy pixels through absolute error. In this subsection we focus exclusively on distance-conditioned pixelwise diagnostics.
+
+\subsubsection{Rainy Pixel Relative Absolute Error vs. Link Distance}
+For a patch $P$, let $R_P : P \to \mathbb{R}_{\ge 0}$ be the ground-truth rainfall field, and let $\widehat{R}_{P,s} : P \to \mathbb{R}_{\ge 0}$ be the rainfall field predicted by solver $s$. We define a pixel $p$ to be rainy if $R_P(p) \ge 0.6$ mm/h, and we write
+\[
+P_{\mathrm{rain}}=\{p \in P : R_P(p)\ge 0.6\}.
 \]
 For a rainy pixel $p$, the relative absolute error with respect to solver $s$ is
 \[
 \mathrm{RAE}_{P,s}(p)\triangleq\frac{|R_P(p)-\widehat{R}_{P,s}(p)|}{R_P(p)}.
 \]
-To study how prediction quality changes with link proximity, we group pixels by distance to the third-closest link. Let $\mathcal{L}(P)$ denote the set of links contained in patch $P$. For a pixel $p\in\Omega(P)$, let $c(p)\in\mathbb{R}^2$ denote the center of pixel $p$. For a link $\ell\in\mathcal{L}(P)$, viewed geometrically as a line segment, let
+To study how prediction quality changes with link proximity, we group pixels by distance to the third-closest link. For a pixel $p\in P$, let $c(p)\in\mathbb{R}^2$ denote the center of pixel $p$. For a link $\ell\in\mathcal{L}(P)$, viewed geometrically as a line segment, let
 \[
 \operatorname{dist}(p,\ell)\triangleq \operatorname{dist}\bigl(c(p),\ell\bigr)
 \]
@@ -186,7 +352,7 @@ For each patch $P$, solver $s$, and distance bin $B_i$, we then collect the rain
 \[
 m_{s,i}^{\mathrm{rain}}(P)\triangleq
 \operatorname{median}\bigl\{\mathrm{RAE}_{P,s}(p): p\in 
-\Omega_{\mathrm{rain}}(P),\ d_3(p)\in B_i
+P_{\mathrm{rain}},\ d_3(p)\in B_i
 \bigr\}\;.
 \]
 
@@ -216,7 +382,7 @@ denote the sequence of patch-level rainy-pixel median RAE values across patches.
                   l
                   S[table-format=5.1]}
     \toprule
-    {Distance to third closest link (m)} & {Wet mean count (\% of total)} & {SD} \\
+    {Distance to third closest link (m)} & {Rainy mean count (\% of total)} & {SD} \\
     \midrule
     $[0,125]$       & 4267.0 (1.79\%) &   960.4 \\
     $(125,375]$     & 16737.7 (7.01\%) &  3803.2 \\
@@ -234,10 +400,10 @@ denote the sequence of patch-level rainy-pixel median RAE values across patches.
   \label{tab:rainy_counts}
 \end{table}
 
-\section*{Absolute Error Non-Rainy-Pixel Distance Profile}
+\subsubsection{Non-Rainy Pixel Absolute Error vs. Link Distance}
 For the dry-pixel analysis, we focus on pixels whose ground-truth rainfall falls below the wet threshold. We therefore define the non-rainy pixel set by
 \[
-\Omega_{\mathrm{nonrain}}(P)=\{p \in \Omega(P) : R_P(p)<0.6\}.
+P_{\mathrm{nonrain}}=\{p \in P : R_P(p)<0.6\}.
 \]
 For these pixels, relative normalization by $R_P(p)$ is not appropriate because the denominator may be zero or very small. We therefore measure prediction quality by absolute error rather than relative absolute error:
 \[
@@ -246,7 +412,7 @@ For these pixels, relative normalization by $R_P(p)$ is not appropriate because 
 Using the same definition of the third-closest-link distance $d_3(p)$ introduced above, and the same distance bins $B_i$ as in the rainy-pixel analysis, we compute for each patch $P$, solver $s$, and distance bin $B_i$
 \[
 m_{s,i}^{\mathrm{nonrain}}(P)\triangleq
-\operatorname{median}\bigl\{\mathrm{AE}_{P,s}(p): p\in \Omega_{\mathrm{nonrain}}(P),\ d_3(p)\in B_i\bigr\},
+\operatorname{median}\bigl\{\mathrm{AE}_{P,s}(p): p\in P_{\mathrm{nonrain}},\ d_3(p)\in B_i\bigr\},
 \]
 and, for fixed $s$ and $i$, the corresponding box-and-whisker plot summarizes the sequence
 \[
@@ -256,7 +422,8 @@ of patch-level non-rainy-pixel median AE values across patches. Thus the rainy a
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{\nonrainydistanceboxplot }
+  \includegraphics[width=\textwidth]{
+\nonrainydistanceboxplot }
   \caption{Non-rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median non-rainy-pixel absolute error value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. Here, a non-rainy pixel is a pixel whose ground-truth rainfall is below the configured wet threshold (set to 0.6 mm/h), and the absolute error for a non-rainy pixel $p$ by solver $s$ is defined as $|R_P(p)-\widehat{R}_{P,s}(p)|$. The corresponding non-rainy-pixel counts per bin are reported in \Cref{tab:nonrain_counts}.}
   \label{fig:AE}
 \end{figure}
@@ -267,7 +434,7 @@ of patch-level non-rainy-pixel median AE values across patches. Thus the rainy a
                   l
                   S[table-format=5.1]}
     \toprule
-    {Distance to third closest link (m)} & {Dry mean count (\% of total)} & {SD} \\
+    {Distance to third closest link (m)} & {Non-rainy mean count (\% of total)} & {SD} \\
     \midrule
     $[0,125]$       & 563.6 (1.84\%) & 777.6 \\
     $(125,375]$     & 2261.1 (7.40\%) & 3093.5 \\
@@ -285,7 +452,9 @@ of patch-level non-rainy-pixel median AE values across patches. Thus the rainy a
   \label{tab:nonrain_counts}
 \end{table}
 
-\section*{Largest-Patch Link Geometry}
+Across distance bins, performance differences widen as pixels become less constrained by nearby links, which motivates the geometry-focused context shown next.
+
+\subsubsection{Largest Patch: Link-Geometry Context}
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.88\textwidth]{\largestpatchbinsplot}
@@ -421,7 +590,7 @@ The same largest patch is also useful for describing the structure of the underl
   \caption{Tabulated distributions for the largest-patch link network. The first panel counts links by path-length interval, the second counts links by carrier-frequency interval, and the third counts unique endpoint nodes by their graph degree.}
 \end{table}
 
-\section*{Confusion Matrix}
+\subsubsection{Confusion Matrix}
 \begin{table}[H]
   \centering
   \begin{minipage}[t]{0.31\textwidth}
@@ -478,91 +647,96 @@ The same largest patch is also useful for describing the structure of the underl
 \end{table}
 
 
-\section*{Patch Geometry Overview}
+
+\section{Related Work}
+\textcolor{green}{[TODO: Write the Related Work section.]}
+
+\section{Conclusion and Outlook}
+\textcolor{green}{[TODO: Write the Conclusion and Outlook section.]}
+
+\section{Appendix}
+\subsection{Case Study Figures and Optimizer Traces}
+The five case studies below pair a geographic view of the selected patch with the corresponding rainy-pixel solver outputs. The timestamp in each caption identifies the radar scene, and patch 0 denotes the selected patch within that scene. This layout is intended to keep the geographic context and the solver behavior visually tied to one another.
+
+These five cases were selected to span distinct rainfall morphologies and link-coverage configurations, so that qualitative comparisons can reveal where each method tends to oversmooth, displace, or better preserve localized rain structures.
+
+The optimizer-trace plots included below show, for each selected case study, how the weighted objective and its weighted constituent terms decrease over the optimization iterations.
+
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.82\textwidth]{\patchgeometryplot}
-\caption{Patch width versus patch height for the 100 patches, with one dot per patch.  Across patches, the mean patch area is 269,491 pixels with SD of 76,755 pixels (pixels are squares with side length $125$m).}
- % \caption{Patch width versus patch height, with one marker per patch. The footnote on the figure reports the average patch size in pixels and its standard deviation across patches.}
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\contextscreenshotorigone}
+    \caption{Map of the area of the rain event}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\idwcaseorigone}
+    \caption{IDW}
+  \end{subfigure}
+
+  \vspace{0.5em}
+
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\ildwcaseorigone}
+    \caption{ILDW}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\optcaseorigone}
+    \caption{Nonlinear optimizer}
+  \end{subfigure}
+  \caption{Case study for a rain event observed on January 28, 2023 at 09:00. The map on the left shows the selected patch footprint in geographic context. The three rainy-pixel solver panels correspond to that same patch and show, for each solver, the ground truth field $R_P$, the estimate $\widehat{R}_{P,s}$, the signed relative error $(R_P-\widehat{R}_{P,s})/R_P$, and the absolute relative error $|R_P-\widehat{R}_{P,s}|/R_P$.}
+  \label{fig:case_202301280900}
 \end{figure}
 
-
-% This figure makes it easy to see whether the selected patches occupy a tight geometry range or whether the report is mixing very different patch extents.
-
-% \section*{Link Count Distribution}
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=0.82\textwidth]{\linkhistplot}
-%   \caption{Histogram of the number of links per patch. The figure footnote also reports the average parallel-link ratio, defined here as the fraction of links in a patch that have at least one parallel partner.}
-% \end{figure}
-
-% This histogram summarizes how link density varies across the selected patches. The parallel-link ratio is included because the current expectation is that it should stay close to $1$ for this dataset.
-
-\begin{table}[H]
+\begin{figure}[H]
   \centering
-  \begin{tabular}{lrrrrr}
-    \toprule
-    Patch size (km) & \# links & 1-multiplicity & 2-multiplicity \\
-    \midrule
-    $50 \times 50$ & 939 & 99 & 420 \\
-    $62 \times 60$ & 1254 & 128 & 563  \\
-    $72 \times 70$ & 1507 & 157 & 675  \\
-    \bottomrule
-  \end{tabular}
-  \caption{Representative link multiplicities for three patch dimensions.
-The multiplicity of a link is defined as the number of frequencies assigned to it.
-The second column reports the total number of link–frequency pairs.
-In the data set, link multiplicities were either 1 or 2, with approximately $10\%$ of links having multiplicity 1.
-}
+  \includegraphics[width=0.72\textwidth]{\jcaseorigone}
+  \caption{Optimizer trace for the January 28, 2023 case study at 09:00. The plot shows the reduction of the weighted objective $J_{\mathrm{weighted\ sum}}$ and of the weighted constituent terms over L-BFGS-B iterations.}
+  \label{fig:jtrace_202301280900}
+\end{figure}
 
-\end{table}
-
-\section*{$J_{\mathrm{atten}}$ Summary}
-\begin{table}[H]
+\begin{figure}[H]
   \centering
-  \begin{tabular}{lcc}
-    \toprule
-    Solver & Mean $J_{\mathrm{atten}}$ (dB$^2$/km) & SD \\
-    \midrule
-    IDW & 0.01522 & 0.03808 \\
-    ILDW & 0.00289 & 0.00757 \\
-    Nonlinear Optimizer & 0.00020 & 0.00103 \\
-    \bottomrule
-  \end{tabular}
-  \caption{Patch-level summary of $J_{\mathrm{atten}}$ across the 100 evaluated patches. For a given patch, $J_{\mathrm{atten}}$ is the attenuation-fit term $J_{\mathrm{atten}} = \frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left(\hat{A}_\ell - A_\ell^{\mathrm{obs}}\right)^2}{|\ell|}$, where $\hat{A}_\ell$ is the attenuation implied by the estimated rainfall field on link $\ell$, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. The table reports the mean and standard deviation of this per-patch quantity for each solver. Lower values indicate better agreement with the observed link attenuations.}
-\end{table}
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\contextscreenshotorigtwo}
+    \caption{Map of the area of the rain event}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\idwcaseorigtwo}
+    \caption{IDW}
+  \end{subfigure}
 
-\section*{Absolute Attenuation Error per km}
-\begin{table}[H]
+  \vspace{0.5em}
+
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\ildwcaseorigtwo}
+    \caption{ILDW}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{\optcaseorigtwo}
+    \caption{Nonlinear optimizer}
+  \end{subfigure}
+  \caption{Case study for a rain event observed on January 31, 2023 at 09:00. The map on the left identifies the selected patch in geographic context, and the three solver panels show the same rainy-pixel diagnostic decomposition as above for IDW, ILDW, and the nonlinear optimizer: $R_P$, $\widehat{R}_{P,s}$, $(R_P-\widehat{R}_{P,s})/R_P$, and $|R_P-\widehat{R}_{P,s}|/R_P$.}
+  \label{fig:case_202301310900}
+\end{figure}
+
+\begin{figure}[H]
   \centering
-  \begin{tabular}{lcc}
-    \toprule
-    Solver & Mean (dB/km) & SD \\
-    \midrule
-    IDW & 0.05034 & 0.03413 \\
-    ILDW & 0.01356 & 0.00948 \\
-    Nonlinear Optimizer & 0.00230 & 0.00437 \\
-    \bottomrule
-  \end{tabular}
-\caption{Patch-level summary of the mean absolute attenuation error per km. For a given patch, we compute $\frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left|\hat{A}_\ell - A_\ell^{\mathrm{obs}}\right|}{|\ell|}$, where $\hat{A}_\ell$ is the attenuation induced by the estimated rainfall field on link $\ell$, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. Thus, the absolute attenuation error of every link is normalized by the link's length. The table reports the mean and standard deviation of this quantity across the $100$ evaluated patches for each solver. Lower values indicate better agreement with the observed link attenuations.
-  }
-\end{table}
-
-\section*{Qualitative Case Studies}
-The three case studies below pair a geographic view of the selected patch with the corresponding rainy-pixel solver outputs. The timestamp in each caption identifies the radar scene, and patch 0 denotes the selected patch within that scene. This layout is intended to keep the geographic context and the solver behavior visually tied to one another.
-
-For the nonlinear optimizer, the estimated rainfall field is computed with the L-BFGS-B algorithm, initialized from the ILDW field and constrained to remain nonnegative at every pixel. The objective minimized by the optimizer is a weighted sum of four terms,
-\[
-\alpha_{\mathrm{atten}} J_{\mathrm{atten}} + \alpha_{1d} J_{1d} + \alpha_{2d} J_{2d} + \alpha_{\mathrm{total}} J_{\mathrm{total}},
-\]
-where the instance-specific weights are chosen from the corresponding ILDW objective values, namely
-\[
-\alpha_{\mathrm{atten}}=\frac{1}{J_{\mathrm{atten}}^{\mathrm{ILDW}}},\qquad
-\alpha_{1d}=\frac{1}{J_{1d}^{\mathrm{ILDW}}},\qquad
-\alpha_{2d}=\frac{1}{2\,J_{2d}^{\mathrm{ILDW}}},\qquad
-\alpha_{\mathrm{total}}=\frac{1}{J_{\mathrm{total}}^{\mathrm{ILDW}}}.
-\]
-The optimizer-trace plots included below show, for each selected case study, how the weighted objective and its weighted constituent terms decrease over the optimization iterations.
+  \includegraphics[width=0.72\textwidth]{\jcaseorigtwo}
+  \caption{Optimizer trace for the January 31, 2023 case study at 09:00. The plot reports the iteration-by-iteration decrease of the weighted objective and its weighted constituent terms.}
+  \label{fig:jtrace_202301310900}
+\end{figure}
 
 \begin{figure}[H]
   \centering
@@ -591,13 +765,15 @@ The optimizer-trace plots included below show, for each selected case study, how
     \includegraphics[width=\linewidth]{\optcaseone}
     \caption{Nonlinear optimizer}
   \end{subfigure}
-  \caption{Case study for a rain event registered on January 28th, 2023. The map on the left shows the selected patch footprint in geographic context. The three rainy-pixel solver panels correspond to that same patch and show, for each solver, the ground truth field $R_P$, the estimate $\widehat{R}_{P,s}$, the signed relative error $(R_P-\widehat{R}_{P,s})/R_P$, and the absolute relative error $|R_P-\widehat{R}_{P,s}|/R_P$. This layout keeps the location of the event visually tied to the reconstruction quality of each solver.}
+  \caption{Case study for a rain event observed on January 28, 2023 at 21:00. The map on the left shows the selected patch footprint in geographic context. The three rainy-pixel solver panels correspond to that same patch and show, for each solver, the ground truth field $R_P$, the estimate $\widehat{R}_{P,s}$, the signed relative error $(R_P-\widehat{R}_{P,s})/R_P$, and the absolute relative error $|R_P-\widehat{R}_{P,s}|/R_P$. This layout keeps the location of the event visually tied to the reconstruction quality of each solver.}
+  \label{fig:case_202301282100}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.72\textwidth]{\jcaseone}
-  \caption{Optimizer trace for the January 28th, 2023 case study. The plot shows the reduction of the weighted objective $J_{\mathrm{weighted\ sum}}$ and of the weighted constituent terms over L-BFGS-B iterations.}
+  \caption{Optimizer trace for the January 28, 2023 case study at 21:00. The plot shows the reduction of the weighted objective $J_{\mathrm{weighted\ sum}}$ and of the weighted constituent terms over L-BFGS-B iterations.}
+  \label{fig:jtrace_202301282100}
 \end{figure}
 
 
@@ -628,13 +804,15 @@ The optimizer-trace plots included below show, for each selected case study, how
     \includegraphics[width=\linewidth]{\optcasetwo}
     \caption{Nonlinear optimizer}
   \end{subfigure}
-  \caption{Case study for a rain event registered on January 31st, 2023. The left panel provides the map view of the selected patch, while the three solver panels show, for IDW, ILDW, and the nonlinear optimizer, the rainy-pixel ground truth field $R_P$, the estimate $\widehat{R}_{P,s}$, the signed relative error $(R_P-\widehat{R}_{P,s})/R_P$, and the absolute relative error $|R_P-\widehat{R}_{P,s}|/R_P$. The common layout makes it easier to compare smoothing, displacement, and error localization across methods for the same event.}
+  \caption{Case study for a rain event observed on January 31, 2023 at 02:00. The left panel provides the map view of the selected patch, while the three solver panels show, for IDW, ILDW, and the nonlinear optimizer, the rainy-pixel ground truth field $R_P$, the estimate $\widehat{R}_{P,s}$, the signed relative error $(R_P-\widehat{R}_{P,s})/R_P$, and the absolute relative error $|R_P-\widehat{R}_{P,s}|/R_P$. The common layout makes it easier to compare smoothing, displacement, and error localization across methods for the same event.}
+  \label{fig:case_202301310200}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.72\textwidth]{\jcasetwo}
-  \caption{Optimizer trace for the January 31st, 2023 case study at 02:00. As above, the plot reports the iteration-by-iteration decrease of the weighted objective and its weighted constituent terms.}
+  \caption{Optimizer trace for the January 31, 2023 case study at 02:00. The plot reports the iteration-by-iteration decrease of the weighted objective and its weighted constituent terms.}
+  \label{fig:jtrace_202301310200}
 \end{figure}
 
 \begin{figure}[H]
@@ -664,13 +842,15 @@ The optimizer-trace plots included below show, for each selected case study, how
     \includegraphics[width=\linewidth]{\optcasethree}
     \caption{Nonlinear optimizer}
   \end{subfigure}
-  \caption{Case study for a rain event registered on January 31st, 2023. The map on the left identifies the patch location and footprint, and the three solver panels show the same rainy-pixel diagnostic decomposition as above for IDW, ILDW, and the nonlinear optimizer: $R_P$, $\widehat{R}_{P,s}$, $(R_P-\widehat{R}_{P,s})/R_P$, and $|R_P-\widehat{R}_{P,s}|/R_P$. Together with the previous two figures, this case gives a compact qualitative comparison of solver behavior across distinct rainfall scenes.}
+  \caption{Case study for a rain event observed on January 31, 2023 at 16:00. The map on the left identifies the patch location and footprint, and the three solver panels show the same rainy-pixel diagnostic decomposition as above for IDW, ILDW, and the nonlinear optimizer: $R_P$, $\widehat{R}_{P,s}$, $(R_P-\widehat{R}_{P,s})/R_P$, and $|R_P-\widehat{R}_{P,s}|/R_P$. Together with the previous two figures, this case gives a compact qualitative comparison of solver behavior across distinct rainfall scenes.}
+  \label{fig:case_202301311600}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.72\textwidth]{\jcasethree}
-  \caption{Optimizer trace for the January 31st, 2023 case study at 16:00. The weighted objective and weighted component terms are shown over the L-BFGS-B iterations for the same patch displayed in the spatial case-study panels above.}
+  \caption{Optimizer trace for the January 31, 2023 case study at 16:00. The weighted objective and weighted component terms are shown over the L-BFGS-B iterations for the same patch displayed in the spatial case-study panels above.}
+  \label{fig:jtrace_202301311600}
 \end{figure}
 
 % \begin{table}[H]

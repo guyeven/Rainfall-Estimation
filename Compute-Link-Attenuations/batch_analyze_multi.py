@@ -1320,6 +1320,24 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
     gt = gt.astype(np.float64)
     pred = pred.astype(np.float64)
 
+    finite_mask = np.isfinite(gt) & np.isfinite(pred)
+    gt_flat = gt[finite_mask].ravel()
+    pred_flat = pred[finite_mask].ravel()
+    if gt_flat.size == 0:
+        rmse_mmph = None
+        bias_mmph = None
+        pearson_corr = None
+    else:
+        diff_flat = pred_flat - gt_flat
+        rmse_mmph = float(np.sqrt(np.mean(diff_flat * diff_flat)))
+        bias_mmph = float(np.mean(diff_flat))
+        gt_std = float(np.std(gt_flat, ddof=0))
+        pred_std = float(np.std(pred_flat, ddof=0))
+        if gt_flat.size >= 2 and gt_std > 0.0 and pred_std > 0.0:
+            pearson_corr = float(np.corrcoef(gt_flat, pred_flat)[0, 1])
+        else:
+            pearson_corr = None
+
     rainy = gt >= thr
     gt_wet = gt >= thr
     pred_wet = pred >= thr
@@ -1676,6 +1694,12 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
 
     return dict(
         patch_key=key,
+        map_metrics=dict(
+            rmse_mmph=rmse_mmph,
+            bias_mmph=bias_mmph,
+            pearson_corr=pearson_corr,
+            n_pixels=int(gt_flat.size),
+        ),
         stop_row=stop_row,
         dry_fp_rate=dry_fp_rate,
         dry_fn_rate=dry_fn_rate,
@@ -1999,6 +2023,35 @@ def write_workbook(
                 "n_patches",
                 "metric",
                 "definition",
+            ])
+
+        if sheet_name == "PatchMapMetrics_ByPatch":
+            return _ordered([
+                "patch_key",
+                "solver",
+                "solver_name",
+                "rmse_mmph",
+                "bias_mmph",
+                "pearson_corr",
+                "n_pixels",
+            ])
+
+        if sheet_name == "PatchMapMetrics_BySolver":
+            return _ordered([
+                "solver",
+                "rmse_mmph_mean",
+                "rmse_mmph_std",
+                "rmse_mmph_min",
+                "rmse_mmph_max",
+                "bias_mmph_mean",
+                "bias_mmph_std",
+                "bias_mmph_min",
+                "bias_mmph_max",
+                "pearson_corr_mean",
+                "pearson_corr_std",
+                "pearson_corr_min",
+                "pearson_corr_max",
+                "n_patches",
             ])
 
         if (
@@ -3476,6 +3529,8 @@ def main() -> int:
     j_behavior_plots: List[Dict[str, Any]] = []
     rae_hist_plots: List[Dict[str, Any]] = []
     patch_plot_jobs: List[Dict[str, Any]] = []
+    patch_map_metric_rows: List[Dict[str, Any]] = []
+    patch_map_metrics_by_solver: Dict[str, Dict[str, List[float]]] = {}
     gtbin_counts_global: Dict[str, Dict[str, int]] = {lab: {} for _, _, lab in rainy_intervals}
     gtbin_rel_patch_means: Dict[str, Dict[str, List[float]]] = {}
     gtbin_abs_patch_means: Dict[str, Dict[str, List[float]]] = {}
@@ -3487,6 +3542,11 @@ def main() -> int:
     for name, label, sol_dir, sol_prefix, sol_key_pref in progress_iter(
         solvers, total=len(solvers), desc="Solvers"
     ):
+        patch_map_metrics_by_solver[label] = {
+            "rmse_mmph": [],
+            "bias_mmph": [],
+            "pearson_corr": [],
+        }
         sol_files = list_npz(sol_dir, sol_prefix)
         sol_by_key = {patch_key_from_filename(p.name): p for p in sol_files}
 
@@ -3635,6 +3695,25 @@ def main() -> int:
         for res in patch_results:
             key = str(res["patch_key"])
             stop_rows.append(dict(res["stop_row"]))
+
+            map_metrics = res.get("map_metrics", None)
+            if isinstance(map_metrics, dict):
+                map_row = dict(
+                    patch_key=key,
+                    solver=label,
+                    solver_name=name,
+                    rmse_mmph=map_metrics.get("rmse_mmph", None),
+                    bias_mmph=map_metrics.get("bias_mmph", None),
+                    pearson_corr=map_metrics.get("pearson_corr", None),
+                    n_pixels=int(map_metrics.get("n_pixels", 0)),
+                )
+                patch_map_metric_rows.append(map_row)
+                for metric_name in ("rmse_mmph", "bias_mmph", "pearson_corr"):
+                    metric_value = map_row.get(metric_name, None)
+                    if metric_value is not None:
+                        metric_value_f = float(metric_value)
+                        if np.isfinite(metric_value_f):
+                            patch_map_metrics_by_solver[label][metric_name].append(metric_value_f)
 
             fp_rate = res.get("dry_fp_rate", None)
             fn_rate = res.get("dry_fn_rate", None)
@@ -4139,6 +4218,50 @@ def main() -> int:
         sheets["AttenuationErrorPerKm_BySolver"] = attenuation_error_rows
         sheet_order.append("AttenuationErrorPerKm_BySolver")
 
+    patch_map_metric_summary_rows: List[Dict[str, Any]] = []
+    for solver_label in [label for _, label, _, _, _ in solvers]:
+        vals = patch_map_metrics_by_solver.get(solver_label, {})
+        rmse_vals = np.asarray(vals.get("rmse_mmph", []), dtype=np.float64)
+        bias_vals = np.asarray(vals.get("bias_mmph", []), dtype=np.float64)
+        corr_vals = np.asarray(vals.get("pearson_corr", []), dtype=np.float64)
+
+        def _mean(arr: np.ndarray) -> Optional[float]:
+            return float(np.mean(arr)) if arr.size else None
+
+        def _std(arr: np.ndarray) -> Optional[float]:
+            return float(np.std(arr, ddof=0)) if arr.size else None
+
+        def _min(arr: np.ndarray) -> Optional[float]:
+            return float(np.min(arr)) if arr.size else None
+
+        def _max(arr: np.ndarray) -> Optional[float]:
+            return float(np.max(arr)) if arr.size else None
+
+        patch_map_metric_summary_rows.append(
+            dict(
+                solver=solver_label,
+                rmse_mmph_mean=_mean(rmse_vals),
+                rmse_mmph_std=_std(rmse_vals),
+                rmse_mmph_min=_min(rmse_vals),
+                rmse_mmph_max=_max(rmse_vals),
+                bias_mmph_mean=_mean(bias_vals),
+                bias_mmph_std=_std(bias_vals),
+                bias_mmph_min=_min(bias_vals),
+                bias_mmph_max=_max(bias_vals),
+                pearson_corr_mean=_mean(corr_vals),
+                pearson_corr_std=_std(corr_vals),
+                pearson_corr_min=_min(corr_vals),
+                pearson_corr_max=_max(corr_vals),
+                n_patches=int(max(rmse_vals.size, bias_vals.size, corr_vals.size)),
+            )
+        )
+    if patch_map_metric_rows:
+        sheets["PatchMapMetrics_ByPatch"] = patch_map_metric_rows
+        sheet_order.append("PatchMapMetrics_ByPatch")
+    if patch_map_metric_summary_rows:
+        sheets["PatchMapMetrics_BySolver"] = patch_map_metric_summary_rows
+        sheet_order.append("PatchMapMetrics_BySolver")
+
     # Enrich LinkStats sheets (non-baseline solvers) with J_atten comparisons vs IDW/ILDW.
     enrich_linkstats_with_baseline_jatten(sheets)
     # Enrich Coverage/Distance/Overall per-solver tabs with ALG-vs-baseline ratios.
@@ -4301,6 +4424,13 @@ def main() -> int:
         "largest_patch_plot_payload": largest_patch_plot_payload,
         "link_ratio_entries": link_ratio_entries,
         "gtbin_plot_data": gtbin_plot_data,
+        "patch_map_metrics_plot_data": {
+            solver_label: {
+                metric_name: list(values)
+                for metric_name, values in metric_dict.items()
+            }
+            for solver_label, metric_dict in patch_map_metrics_by_solver.items()
+        },
     }
     write_report_cache(cache_path, cache)
     print(f"Wrote cache: {cache_path}")

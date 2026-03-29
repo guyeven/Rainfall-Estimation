@@ -299,6 +299,78 @@ def plot_box_whisker(
     plt.close(fig)
 
 
+def plot_patch_map_metrics_boxplots(
+    out_png: Path,
+    *,
+    title: str,
+    data_by_solver: Dict[str, Dict[str, List[float]]],
+    solver_order: List[str],
+    corr_ylim: Optional[Tuple[float, float]] = (-1.0, 1.0),
+    dpi: int = 150,
+) -> None:
+    import matplotlib.pyplot as plt  # type: ignore
+
+    metrics = [
+        ("rmse_mmph", "RMSE"),
+        ("bias_mmph", "Bias"),
+        ("pearson_corr", "Correlation"),
+    ]
+    display_labels = [
+        "Nonlinear\noptimizer" if solver_label == "Nonlinear optimizer" else solver_label
+        for solver_label in solver_order
+    ]
+    fig, axes = plt.subplots(1, 3, figsize=(12.6, 4.8), dpi=dpi)
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    colors = [color_cycle[i % max(1, len(color_cycle))] for i in range(len(solver_order))]
+
+    for ax, (metric_key, metric_title) in zip(axes, metrics):
+        values_per_solver: List[np.ndarray] = []
+        positions: List[int] = []
+        colors_used: List[str] = []
+        for idx, solver_label in enumerate(solver_order, start=1):
+            vals = np.asarray(data_by_solver.get(solver_label, {}).get(metric_key, []), dtype=np.float64)
+            vals = vals[np.isfinite(vals)]
+            if vals.size == 0:
+                continue
+            values_per_solver.append(vals)
+            positions.append(idx)
+            colors_used.append(colors[idx - 1])
+
+        if values_per_solver:
+            bp = ax.boxplot(
+                values_per_solver,
+                positions=positions,
+                widths=0.58,
+                patch_artist=True,
+                showfliers=False,
+                whis=(0, 100),
+            )
+            for patch, color in zip(bp["boxes"], colors_used):
+                patch.set_facecolor(color)
+                patch.set_alpha(0.45)
+            for median in bp["medians"]:
+                median.set_color("black")
+                median.set_linewidth(1.4)
+            for whisker in bp["whiskers"]:
+                whisker.set_color("#444444")
+                whisker.set_linewidth(1.0)
+            for cap in bp["caps"]:
+                cap.set_color("#444444")
+                cap.set_linewidth(1.0)
+        ax.set_title(metric_title)
+        ax.set_xticks(positions if positions else list(range(1, len(solver_order) + 1)))
+        ax.set_xticklabels(display_labels[: len(positions)] if positions else display_labels, rotation=0, ha="center")
+        ax.grid(axis="y", alpha=0.28, linestyle="-", linewidth=0.7)
+        if metric_key == "pearson_corr" and corr_ylim is not None:
+            ax.set_ylim(*corr_ylim)
+
+    fig.suptitle(title)
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.95))
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
 def merge_distance_tail_bin(
     dist_labels: List[str],
     counts_by_label: Dict[str, List[float]],
@@ -1392,6 +1464,7 @@ def render_report_from_cache(
     fpfn_rows = ordered_sheets.get("FPFN_ByThreshold", [])
     link_ratio_entries = cache.get("link_ratio_entries", []) or []
     gtbin = cache.get("gtbin_plot_data", None)
+    patch_map_metrics_plot_data = cache.get("patch_map_metrics_plot_data", {}) or {}
     patch_overview_rows = collect_patch_overview_rows(analysis_config=analysis_config, cfg_path=cfg_path_resolved)
 
     major_steps: List[Tuple[str, bool]] = [
@@ -1406,6 +1479,7 @@ def render_report_from_cache(
         ("Distance-profile plots", render_bool(render_config, "plots.distance_profiles", True) or render_bool(render_config, "plots.p90_profiles", True) or render_bool(render_config, "plots.distance_profiles_relative", True)),
         ("J_atten plots", render_bool(render_config, "plots.jatten_profiles", True) or render_bool(render_config, "plots.jatten_profiles_relative", True)),
         ("Link-ratio summary plot", bool(link_ratio_entries) and render_bool(render_config, "plots.link_ratio_summary", True)),
+        ("Patch-map metrics plot", bool(patch_map_metrics_plot_data) and render_bool(render_config, "plots.patch_map_metrics", True)),
         ("GT-binned patch-average plots", bool(gtbin) and render_bool(render_config, "plots.gt_binned_patchavg", True)),
     ]
     major_state = {"completed": 0, "total": sum(1 for _, enabled in major_steps if enabled)}
@@ -1882,6 +1956,27 @@ def render_report_from_cache(
             dpi=dpi,
         )
         finish_major("link-ratio summary plot")
+
+    if patch_map_metrics_plot_data and render_bool(render_config, "plots.patch_map_metrics", True):
+        start_major("Patch-map metrics plot")
+        log_progress("Rendering patch-level RMSE / bias / correlation boxplots")
+        plot_patch_map_metrics_boxplots(
+            summary_img_dir / "patch_map_metrics_boxplots.png",
+            title="Patch-level map metrics across the benchmark",
+            data_by_solver=remap_solver_dict(patch_map_metrics_plot_data, display_map),
+            solver_order=solver_order_display,
+            corr_ylim=(-1.0, 1.0),
+            dpi=dpi,
+        )
+        plot_patch_map_metrics_boxplots(
+            summary_img_dir / "patch_map_metrics_boxplots_readable_corr.png",
+            title="Patch-level map metrics across the benchmark",
+            data_by_solver=remap_solver_dict(patch_map_metrics_plot_data, display_map),
+            solver_order=solver_order_display,
+            corr_ylim=(0.65, 1.0),
+            dpi=dpi,
+        )
+        finish_major("Patch-map metrics plot")
 
     if gtbin and render_bool(render_config, "plots.gt_binned_patchavg", True):
         labels_to_plot = [str(v) for v in gtbin.get("labels_to_plot", [])]
