@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -23,6 +25,8 @@ from batch_analyze_multi import (
     save_png_2x2,
     write_workbook,
 )
+
+_PATCH_CATALOG_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 def render_bool(cfg: Dict[str, Any], path: str, default: bool) -> bool:
@@ -108,6 +112,26 @@ def resolve_render_config_path(
         if candidate.exists():
             return candidate
     return None
+
+
+def load_patch_catalog() -> Dict[str, Dict[str, Any]]:
+    global _PATCH_CATALOG_CACHE
+    if _PATCH_CATALOG_CACHE is not None:
+        return _PATCH_CATALOG_CACHE
+    catalog_path = Path(__file__).resolve().parent / "JSON-files" / "benchmark-500-files-758-patches.local.jsonl"
+    catalog: Dict[str, Dict[str, Any]] = {}
+    if catalog_path.exists():
+        with catalog_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                patch_id = str(row.get("id") or row.get("patch_id") or "").strip()
+                if patch_id:
+                    catalog[patch_id] = row
+    _PATCH_CATALOG_CACHE = catalog
+    return catalog
 
 
 def compute_relative_distribution_profile(
@@ -603,6 +627,135 @@ def render_patch_error_maps_from_job(
         dpi=plot_dpi,
         show=False,
     )
+
+
+def render_combined_patch_error_map(
+    patch_key: str,
+    jobs: List[Dict[str, Any]],
+    *,
+    img_dir: Path,
+    render_cfg: Dict[str, Any],
+    display_map: Dict[str, str],
+) -> None:
+    import matplotlib.pyplot as plt  # type: ignore
+    from matplotlib.gridspec import GridSpec  # type: ignore
+
+    if not jobs:
+        return
+
+    jobs_sorted = sorted(jobs, key=lambda j: apply_solver_display(str(j["solver_label"]), display_map))
+    gt = load_npz_first_key(Path(str(jobs_sorted[0]["gt_path"])), list(jobs_sorted[0]["gt_key_pref"])).astype(np.float64)
+    thr = float(render_cfg["threshold_mmph"])
+    plot_dpi = int(render_cfg["dpi"])
+    cmap_gt = str(render_cfg["cmap_gt"])
+    cmap_sol = str(render_cfg["cmap_sol"])
+    cmap_rel = str(render_cfg["cmap_rel"])
+    include_map = bool(render_cfg.get("include_map", False))
+
+    rainy = gt >= thr
+    solver_payloads: List[Tuple[str, np.ndarray, np.ndarray]] = []
+    finite_gt_sol = [gt[np.isfinite(gt)]]
+    rel_arrays: List[np.ndarray] = []
+
+    for job in jobs_sorted:
+        pred = load_npz_first_key(Path(str(job["sol_path"])), list(job["sol_key_pref"])).astype(np.float64)
+        if pred.shape != gt.shape:
+            raise ValueError(f"Shape mismatch for combined patch plot {patch_key}: GT {gt.shape} vs SOL {pred.shape}")
+        rel_full = np.full_like(gt, np.nan, dtype=np.float64)
+        valid_rel = rainy & np.isfinite(gt) & np.isfinite(pred) & (gt != 0.0)
+        rel_full[valid_rel] = (pred[valid_rel] - gt[valid_rel]) / gt[valid_rel]
+        solver_payloads.append((apply_solver_display(str(job["solver_label"]), display_map), pred, rel_full))
+        finite_gt_sol.append(pred[np.isfinite(pred)])
+        rel_arrays.append(rel_full[np.isfinite(rel_full)])
+
+    finite_gt_sol_arr = np.concatenate([arr for arr in finite_gt_sol if arr.size > 0]) if any(arr.size > 0 for arr in finite_gt_sol) else np.array([0.0])
+    rmax = float(np.max(finite_gt_sol_arr)) if finite_gt_sol_arr.size else 1.0
+    rmax = max(rmax, 1e-9)
+    finite_rel = np.concatenate([arr for arr in rel_arrays if arr.size > 0]) if any(arr.size > 0 for arr in rel_arrays) else np.array([0.0])
+    rel_max = float(np.max(np.abs(finite_rel))) if finite_rel.size else 1.0
+    rel_max = max(rel_max, 1e-9)
+
+    n_solver = len(solver_payloads)
+    n_cols = n_solver + 1 + (1 if include_map else 0)
+    width_ratios = ([1.45] if include_map else []) + [1.35] + [1.0] * n_solver
+    fig = plt.figure(figsize=(4.8 * n_cols, 8.6), dpi=plot_dpi)
+    gs = GridSpec(2, n_cols, width_ratios=width_ratios, hspace=0.14, wspace=0.28)
+
+    next_col = 0
+    if include_map:
+        catalog = load_patch_catalog()
+        patch_meta = catalog.get(str(patch_key))
+        if patch_meta is None:
+            raise RuntimeError(
+                f"Patch metadata for {patch_key} not found in benchmark patch catalog; cannot render map panel."
+            )
+        try:
+            import contextily as ctx  # type: ignore
+            import geopandas as gpd  # type: ignore
+            from shapely.geometry import box  # type: ignore
+        except Exception as exc:
+            raise RuntimeError(
+                "patch_error_maps_include_map requires contextily, geopandas, and shapely in the rendering environment."
+            ) from exc
+
+        lon = float(patch_meta["center_lon"])
+        lat = float(patch_meta["center_lat"])
+        width_km = float(patch_meta["width_km"])
+        height_km = float(patch_meta["height_km"])
+        half_h_deg = (height_km / 2.0) / 111.32
+        cos_lat = max(1e-6, math.cos(math.radians(lat)))
+        half_w_deg = (width_km / 2.0) / (111.32 * cos_lat)
+        patch_poly = box(lon - half_w_deg, lat - half_h_deg, lon + half_w_deg, lat + half_h_deg)
+        gdf = gpd.GeoDataFrame({"patch_key": [patch_key]}, geometry=[patch_poly], crs="EPSG:4326").to_crs(epsg=3857)
+        xmin, ymin, xmax, ymax = gdf.total_bounds
+        xpad = 4.0 * (xmax - xmin)
+        ypad = 4.0 * (ymax - ymin)
+
+        ax_map = fig.add_subplot(gs[:, next_col])
+        ax_map.set_xlim(xmin - xpad, xmax + xpad)
+        ax_map.set_ylim(ymin - ypad, ymax + ypad)
+        ctx.add_basemap(
+            ax_map,
+            source=ctx.providers.OpenStreetMap.Mapnik,
+            attribution=False,
+            zoom="auto",
+            zorder=1,
+        )
+        gdf.boundary.plot(ax=ax_map, color="#c71f17", linewidth=1.8, alpha=0.9, zorder=3)
+        ax_map.set_title("Map", fontsize=12)
+        ax_map.set_xticks([])
+        ax_map.set_yticks([])
+        next_col += 1
+
+    ax_gt = fig.add_subplot(gs[:, next_col])
+    gt_im = ax_gt.imshow(gt, cmap=cmap_gt, vmin=0.0, vmax=rmax)
+    ax_gt.set_title("Ground Truth", fontsize=12)
+    ax_gt.set_xticks([])
+    ax_gt.set_yticks([])
+    fig.colorbar(gt_im, ax=ax_gt, fraction=0.046, pad=0.03)
+
+    for idx, (solver_title, pred, rel_full) in enumerate(solver_payloads, start=next_col + 1):
+        ax_top = fig.add_subplot(gs[0, idx])
+        ax_bot = fig.add_subplot(gs[1, idx])
+
+        pred_im = ax_top.imshow(pred, cmap=cmap_sol, vmin=0.0, vmax=rmax)
+        ax_top.set_title(f"{solver_title}\nprediction", fontsize=12)
+        ax_top.set_xticks([])
+        ax_top.set_yticks([])
+        fig.colorbar(pred_im, ax=ax_top, fraction=0.046, pad=0.03)
+
+        rel_im = ax_bot.imshow(rel_full, cmap=cmap_rel, vmin=-rel_max, vmax=rel_max)
+        ax_bot.set_title("Predicted - observed, relative to observed\n(rainy pixels)", fontsize=12)
+        ax_bot.set_xticks([])
+        ax_bot.set_yticks([])
+        fig.colorbar(rel_im, ax=ax_bot, fraction=0.046, pad=0.03)
+
+    fig.suptitle(f"{patch_key} | Ground Truth, solver predictions, and rainy-pixel signed relative error", fontsize=14)
+    out_path = img_dir / "combined" / f"{safe_path_token(str(patch_key))}.png"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout(rect=(0.01, 0.01, 0.99, 0.95))
+    fig.savefig(out_path)
+    plt.close(fig)
 
 
 def plot_ratio_box_whisker(
@@ -1356,6 +1509,7 @@ def render_report_from_cache(
     largest_patch_img_dir = img_dir / "largest_patch_distance_bins"
     j_behavior_img_dir = img_dir / "j_behavior"
     patch_error_maps_img_dir = img_dir / "patch_error_maps"
+    old_patch_error_maps_img_dir = img_dir / "old_patch_error_maps"
     rae_hist_img_dir = img_dir / "rae_histograms"
     threshold_img_dir = img_dir / "threshold_sweeps"
     distance_iqr_img_dir = img_dir / "distance_profiles_iqr"
@@ -1447,6 +1601,7 @@ def render_report_from_cache(
         "cmap_abs_diff": str(render_value(render_config, "patch_error_maps.cmap_abs_diff", render_value(analysis_config, "plots.cmap_abs_diff", "magma"))),
         "cmap_rel": str(render_value(render_config, "patch_error_maps.cmap_rel", render_value(analysis_config, "plots.cmap_rel", "seismic"))),
         "cmap_abs_rel": str(render_value(render_config, "patch_error_maps.cmap_abs_rel", render_value(analysis_config, "plots.cmap_abs_rel", "magma"))),
+        "include_map": bool(render_value(render_config, "plots.patch_error_maps_include_map", False)),
     }
 
     labels = cache["labels"]
@@ -1528,14 +1683,34 @@ def render_report_from_cache(
                 log_progress(f"J-behavior plots: {idx}/{len(j_behavior_plots)}")
         finish_major("J-behavior plots")
 
-    if patch_plot_jobs and render_bool(render_config, "plots.patch_error_maps", True):
-        start_major("patch error maps")
-        log_progress(f"Rendering patch error maps ({len(patch_plot_jobs)} jobs)")
+    if patch_plot_jobs and render_bool(render_config, "plots.old_patch_error_maps", False):
+        start_major("old patch error maps")
+        log_progress(f"Rendering old patch error maps ({len(patch_plot_jobs)} jobs)")
         interval = progress_interval(len(patch_plot_jobs))
         for idx, patch_plot_job in enumerate(patch_plot_jobs, start=1):
-            render_patch_error_maps_from_job(patch_plot_job, img_dir=patch_error_maps_img_dir, render_cfg=patch_map_render_cfg)
+            render_patch_error_maps_from_job(patch_plot_job, img_dir=old_patch_error_maps_img_dir, render_cfg=patch_map_render_cfg)
             if idx == len(patch_plot_jobs) or idx % interval == 0:
-                log_progress(f"Patch error maps: {idx}/{len(patch_plot_jobs)}")
+                log_progress(f"Old patch error maps: {idx}/{len(patch_plot_jobs)}")
+        finish_major("old patch error maps")
+
+    if patch_plot_jobs and render_bool(render_config, "plots.patch_error_maps", True):
+        start_major("patch error maps")
+        jobs_by_patch: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for patch_plot_job in patch_plot_jobs:
+            jobs_by_patch[str(patch_plot_job["patch_key"])].append(patch_plot_job)
+        patch_keys = sorted(jobs_by_patch.keys())
+        log_progress(f"Rendering combined patch error maps ({len(patch_keys)} patches)")
+        interval = progress_interval(len(patch_keys))
+        for idx, patch_key in enumerate(patch_keys, start=1):
+            render_combined_patch_error_map(
+                patch_key,
+                jobs_by_patch[patch_key],
+                img_dir=patch_error_maps_img_dir,
+                render_cfg=patch_map_render_cfg,
+                display_map=display_map,
+            )
+            if idx == len(patch_keys) or idx % interval == 0:
+                log_progress(f"Combined patch error maps: {idx}/{len(patch_keys)}")
         finish_major("patch error maps")
 
     if rae_hist_plots and render_bool(render_config, "plots.rae_histograms", True):
