@@ -1,0 +1,39 @@
+excel:
+  enabled: true
+
+output:
+  images_subdir: "images"
+  excel_filename: "stats_multi_new_solver.xlsx"
+
+labels:
+  solver_overrides:
+    OPT_NORM_ILDW_MULT_ILDW_INIT: "ILDW-initialized Nonlinear Optimizer"
+    OPT_NORM_ILDW_MULT_IDW_INIT: "IDW-initialized Nonlinear Optimizer"
+    OPT_NORM_ILDW_MULT_CONST_INIT: "0.6-initialized Nonlinear Optimizer"
+
+style:
+  dpi: 150
+  bin_spacing: 1.35
+  prune_bins_enabled: true
+  prune_bins_zero_frac: 0.5
+
+plots:
+  largest_patch_distance_bins: true
+  patch_overview: true
+  j_behavior: true
+  patch_error_maps: true
+  patch_error_maps_include_map: true
+  old_patch_error_maps: false
+  rae_histograms: false
+  fp_fn_vs_threshold: false
+  distance_profiles: true
+  distance_profiles_relative: true
+  p90_profiles: false
+  jatten_profiles: false
+  jatten_profiles_relative: false
+  link_ratio_summary: false
+  gt_binned_patchavg: false
+
+filters:
+  k_values: [1, 2, 3]
+  jatten_k_values: [2, 3]
