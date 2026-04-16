@@ -1090,18 +1090,72 @@ def plot_j_behavior(
             return series(raw_key)
         return vals
 
+    def finite_values(vals: Sequence[float]) -> np.ndarray:
+        arr = np.asarray(vals, dtype=np.float64)
+        return arr[np.isfinite(arr)]
+
+    j_series: List[Tuple[str, List[float], float]] = [
+        (r"$J_{\mathrm{weighted\ sum}}$", series("J_weighted_sum"), 1.0),
+        (r"$\alpha_{\mathrm{atten}} \cdot J_{\mathrm{atten}}$", weighted_or_raw("weighted_J_atten", "J_atten"), 0.9),
+        (r"$\alpha_{1d} \cdot J_{1d}$", weighted_or_raw("weighted_J_1d", "J_1d"), 0.9),
+        (r"$\alpha_{\mathrm{total}} \cdot J_{\mathrm{total}}$", weighted_or_raw("weighted_J_total", "J_total"), 0.9),
+        (r"$\alpha_{2d} \cdot J_{2d}$", weighted_or_raw("weighted_J_2d", "J_2d"), 0.9),
+    ]
+    weighted_sum = j_series[0][1]
+    if not weighted_sum or all(math.isnan(v) for v in weighted_sum):
+        j_series[0] = (r"$J_{\mathrm{weighted\ sum}}$", series("J_native_total"), 1.0)
+
+    all_finite = np.concatenate([finite_values(vals) for _, vals, _ in j_series] or [np.array([], dtype=np.float64)])
+    y_break = 5.0
+    use_broken_y = bool(all_finite.size) and float(np.max(all_finite)) > y_break
+
+    def draw_series(ax: Any) -> None:
+        for label, vals, linewidth in j_series:
+            ax.plot(xs, vals, marker="o", markersize=2.0, linewidth=linewidth, label=label)
+
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(8.5, 4.8), dpi=dpi)
-    ax.plot(xs, series("J_native_total"), marker="o", markersize=2.0, linewidth=1.0, label=r"$J_{\mathrm{weighted\ sum}}$")
-    ax.plot(xs, weighted_or_raw("weighted_J_atten", "J_atten"), marker="o", markersize=2.0, linewidth=0.9, label=r"$\alpha_{\mathrm{atten}} \cdot J_{\mathrm{atten}}$")
-    ax.plot(xs, weighted_or_raw("weighted_J_1d", "J_1d"), marker="o", markersize=2.0, linewidth=0.9, label=r"$\alpha_{1d} \cdot J_{1d}$")
-    ax.plot(xs, weighted_or_raw("weighted_J_total", "J_total"), marker="o", markersize=2.0, linewidth=0.9, label=r"$\alpha_{\mathrm{total}} \cdot J_{\mathrm{total}}$")
-    ax.plot(xs, weighted_or_raw("weighted_J_2d", "J_2d"), marker="o", markersize=2.0, linewidth=0.9, label=r"$\alpha_{2d} \cdot J_{2d}$")
-    ax.set_title(title)
+    if use_broken_y:
+        fig, (ax_top, ax) = plt.subplots(
+            2,
+            1,
+            sharex=True,
+            figsize=(8.5, 6.0),
+            dpi=dpi,
+            gridspec_kw={"height_ratios": [1.0, 2.4], "hspace": 0.05},
+        )
+        draw_series(ax_top)
+        draw_series(ax)
+        y_top = float(np.max(all_finite))
+        high_vals = all_finite[all_finite > y_break]
+        upper_start = max(y_break * 1.02, float(np.min(high_vals)) * 0.98 if high_vals.size else y_break * 1.02)
+        if upper_start >= y_top:
+            upper_start = y_break * 1.02
+        ax.set_ylim(0.0, y_break)
+        ax_top.set_ylim(upper_start, y_top * 1.03)
+        ax_top.spines["bottom"].set_visible(False)
+        ax.spines["top"].set_visible(False)
+        ax_top.tick_params(labeltop=False, bottom=False)
+        d = 0.015
+        kwargs = dict(transform=ax_top.transAxes, color="k", clip_on=False, linewidth=0.8)
+        ax_top.plot((-d, +d), (-d, +d), **kwargs)
+        ax_top.plot((1 - d, 1 + d), (-d, +d), **kwargs)
+        kwargs.update(transform=ax.transAxes)
+        ax.plot((-d, +d), (1 - d, 1 + d), **kwargs)
+        ax.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
+        ax_top.set_title(title)
+        ax_top.legend(loc="best", fontsize=8)
+        axes = [ax_top, ax]
+    else:
+        fig, ax = plt.subplots(figsize=(8.5, 4.8), dpi=dpi)
+        draw_series(ax)
+        ax.set_title(title)
+        ax.legend(loc="best", fontsize=8)
+        axes = [ax]
+
     ax.set_xlabel("Iteration")
     ax.set_ylabel("Weighted objective contribution")
-    ax.grid(axis="y", alpha=0.25)
-    ax.legend(loc="best", fontsize=8)
+    for axis in axes:
+        axis.grid(axis="y", alpha=0.25)
     fig.tight_layout()
     fig.savefig(out_png, dpi=dpi)
     plt.close(fig)

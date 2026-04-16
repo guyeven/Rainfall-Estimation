@@ -139,23 +139,23 @@ def solver_objective_formula_text(*, scaling: str, meta: Dict[str, float]) -> st
         return "N/A (baseline interpolation; no optimization objective)."
     if scaling == "NORMALIZED":
         return (
-            "J_native_total = J_atten + w_1d*J_1d + w_total*J_total + w_2d*J_2d; "
+            "J_weighted_sum = J_atten + w_1d*J_1d + w_total*J_total + w_2d*J_2d; "
             "J_atten is normalized by #valid_links; J_1d, J_total, J_2d are normalized by #pixels."
         )
     if scaling == "CONSTRAINED_NORMALIZED":
         has_alpha_atten = "meta_alpha_atten" in meta
         if has_alpha_atten:
             return (
-                "J_native_total = w_atten*J_atten + w_1d*J_1d + w_total*J_total + w_2d*J_2d; "
+                "J_weighted_sum = w_atten*J_atten + w_1d*J_1d + w_total*J_total + w_2d*J_2d; "
                 "for ILDW-multiplier solvers these w_* are per-instance alpha_*."
             )
         return (
-            "J_native_total = w_1d*J_1d + w_2d*J_2d + w_total*J_total, "
+            "J_weighted_sum = w_1d*J_1d + w_2d*J_2d + w_total*J_total, "
             "with attenuation fit J_atten handled as a constraint."
         )
     if scaling == "UNNORMALIZED":
         return (
-            "J_native_total = J_atten + w_1d*J_1d + w_total*J_total + w_2d*J_2d "
+            "J_weighted_sum = J_atten + w_1d*J_1d + w_total*J_total + w_2d*J_2d "
             "(some solver variants may omit terms). Terms are raw sums (not normalized)."
         )
     return "Unknown objective form (insufficient metadata)."
@@ -966,10 +966,10 @@ def append_native_objective_definition_rows(rows: List[Dict[str, Any]]) -> List[
     defs: List[Dict[str, Any]] = [
         dict(
             patch_key="DEFINITION",
-            solver="J_native_total",
+            solver="J_weighted_sum",
             definition=(
-                "Native objective value reported in this sheet. For constrained solvers, "
-                "J_atten is reported as a constraint metric while J_native_total uses only regularization terms."
+                "Weighted sum objective value reported in this sheet. For constrained solvers, "
+                "J_atten is reported as a constraint metric while J_weighted_sum uses only regularization terms."
             ),
         ),
         dict(
@@ -2186,7 +2186,7 @@ def write_workbook(
                 "n_valid_links",
                 "n_pixels",
                 "solver",
-                "J_native_total",
+                "J_weighted_sum",
                 "J_atten",
                 "J_1d",
                 "J_total",
@@ -2891,7 +2891,9 @@ def plot_j_behavior(
                     out.append(float("nan"))
         return out
 
-    y_total = _series("J_native_total")
+    y_total = _series("J_weighted_sum")
+    if all(np.isnan(v) for v in y_total):
+        y_total = _series("J_native_total")
     y_atten = _series("J_atten")
     y_1d = _series("J_1d")
     y_total_term = _series("J_total")
@@ -2899,7 +2901,7 @@ def plot_j_behavior(
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(8.5, 4.8), dpi=dpi)
-    ax.plot(xs, y_total, marker="o", markersize=2.0, linewidth=1.0, label="J_weighted_sum (J_native_total)")
+    ax.plot(xs, y_total, marker="o", markersize=2.0, linewidth=1.0, label="J_weighted_sum")
     ax.plot(xs, y_atten, marker="o", markersize=2.0, linewidth=0.9, label="J_atten")
     ax.plot(xs, y_1d, marker="o", markersize=2.0, linewidth=0.9, label="J_1d")
     ax.plot(xs, y_total_term, marker="o", markersize=2.0, linewidth=0.9, label="J_total")
@@ -3812,20 +3814,20 @@ def main() -> int:
 
                 if str(native_row.get("objective_scaling", "")) == "CONSTRAINED_NORMALIZED":
                     if "w_atten" in native_row:
-                        native_row["J_native_total"] = (
+                        native_row["J_weighted_sum"] = (
                             float(native_row["weighted_J_atten"])
                             + float(native_row["weighted_J_1d"])
                             + float(native_row["weighted_J_total"])
                             + float(native_row["weighted_J_2d"])
                         )
                     else:
-                        native_row["J_native_total"] = (
+                        native_row["J_weighted_sum"] = (
                             float(native_row["weighted_J_1d"])
                             + float(native_row["weighted_J_total"])
                             + float(native_row["weighted_J_2d"])
                         )
                 else:
-                    native_row["J_native_total"] = (
+                    native_row["J_weighted_sum"] = (
                         float(native_row["weighted_J_atten"])
                         + float(native_row["weighted_J_1d"])
                         + float(native_row["weighted_J_total"])
@@ -3855,7 +3857,7 @@ def main() -> int:
                     native_row["weighted_J_1d"] = float(native_row["J_1d"])
                     native_row["weighted_J_total"] = float(native_row["J_total"])
                     native_row["weighted_J_2d"] = float(native_row["J_2d"])
-                    native_row["J_native_total"] = (
+                    native_row["J_weighted_sum"] = (
                         float(native_row["weighted_J_atten"])
                         + float(native_row["weighted_J_1d"])
                         + float(native_row["weighted_J_total"])
@@ -3897,7 +3899,7 @@ def main() -> int:
                     gt_row["weighted_J_1d"] = float(gt_row["J_1d"])
                     gt_row["weighted_J_total"] = float(gt_row["J_total"])
                     gt_row["weighted_J_2d"] = float(gt_row["J_2d"])
-                    gt_row["J_native_total"] = (
+                    gt_row["J_weighted_sum"] = (
                         float(gt_row["weighted_J_atten"])
                         + float(gt_row["weighted_J_1d"])
                         + float(gt_row["weighted_J_total"])
@@ -3956,9 +3958,21 @@ def main() -> int:
                 feasible_n = int(sum(1 for it in iter_entries if bool(it.get("feasible", False))))
                 total_n = int(len(iter_entries))
                 infeasible_n = int(total_n - feasible_n)
-                best_iter = int(iter_summary.get("best_iteration_by_native_total", -1))
+                best_iter = int(
+                    iter_summary.get(
+                        "best_iteration_by_weighted_sum",
+                        iter_summary.get("best_iteration_by_native_total", -1),
+                    )
+                )
                 if best_iter < 0:
-                    best_idx = int(np.argmin([float(it.get("J_native_total", np.inf)) for it in iter_entries]))
+                    best_idx = int(
+                        np.argmin(
+                            [
+                                float(it.get("J_weighted_sum", it.get("J_native_total", np.inf)))
+                                for it in iter_entries
+                            ]
+                        )
+                    )
                     best_iter = int(iter_entries[best_idx].get("iter", best_idx + 1))
                 iter_feas_rows.append(
                     dict(
@@ -3968,7 +3982,7 @@ def main() -> int:
                         total_iterations=total_n,
                         feasible_iterations=feasible_n,
                         infeasible_iterations=infeasible_n,
-                        best_iteration_by_native_total=best_iter,
+                        best_iteration_by_weighted_sum=best_iter,
                         itertrace_json=itertrace_path,
                     )
                 )
