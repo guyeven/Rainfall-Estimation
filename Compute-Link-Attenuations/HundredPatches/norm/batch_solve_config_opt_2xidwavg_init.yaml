@@ -1,0 +1,40 @@
+input:
+  est_dir: "../est_dir"
+  file_pattern: "est_input_*.json"
+  recursive: false
+
+parallel:
+  solver_workers: 1
+
+solvers:
+  opt_norm_ildw_mult_2x_idwavg_init:
+    name: "opt_norm_ildw_mult_2x_idwavg_init"
+    label: "OPT_NORM_ILDW_MULT_2x_IDWAVG_INIT"
+    type: "lbfgsb"
+    module: "solve_rain_lbfgsb_normalized_ildw_multipliers"
+    out_dir: "sol_dir_opt_norm_ildw_mult_2x_idwavg_init"
+
+    optimization:
+      epsilon: 0.01
+      maxiter: 300
+      rain_init:
+        mode: idw_mean
+        value: 0.6
+        multiplier: 2.0
+      R0_from_ILDW: false
+      R0_from_IDW: false
+      num_atten: 1.0
+      num_1d: 1.0
+      num_2d: 0.5
+      num_total: 1.0
+
+    tolerances:
+      ftol: 1.0e-06
+      gtol: 1.0e-06
+      maxls: 20
+
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
