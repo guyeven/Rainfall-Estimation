@@ -224,6 +224,13 @@ def summarize_solver_settings(meta: Dict[str, float]) -> str:
 
     if "meta_eps" in meta and not bool(meta.get("meta_use_linear_j3", False)):
         parts.append(f"eps={float(meta['meta_eps'])}")
+    rain_init_mode = str(meta.get("meta_rain_init_mode", "")) if "meta_rain_init_mode" in meta else ""
+    if rain_init_mode:
+        parts.append(f"rain_init.mode={rain_init_mode}")
+    if "meta_rain_init_value" in meta and rain_init_mode in {"", "fixed"}:
+        parts.append(f"rain_init.value={float(meta['meta_rain_init_value'])}")
+    if "meta_rain_init_multiplier" in meta and rain_init_mode == "idw_mean":
+        parts.append(f"rain_init.multiplier={float(meta['meta_rain_init_multiplier'])}")
     if "meta_R0" in meta:
         parts.append(f"R0={float(meta['meta_R0'])}")
     if "meta_R0_from_IDW" in meta:

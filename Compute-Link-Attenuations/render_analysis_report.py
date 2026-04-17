@@ -1104,14 +1104,41 @@ def plot_j_behavior(
     weighted_sum = j_series[0][1]
     if not weighted_sum or all(math.isnan(v) for v in weighted_sum):
         j_series[0] = (r"$J_{\mathrm{weighted\ sum}}$", series("J_native_total"), 1.0)
+    weighted_sum = j_series[0][1]
 
     all_finite = np.concatenate([finite_values(vals) for _, vals, _ in j_series] or [np.array([], dtype=np.float64)])
     y_break = 5.0
     use_broken_y = bool(all_finite.size) and float(np.max(all_finite)) > y_break
 
-    def draw_series(ax: Any) -> None:
+    def draw_series(ax: Any, *, lower_only: bool = False, upper_only: bool = False, cutoff: Optional[float] = None) -> None:
         for label, vals, linewidth in j_series:
-            ax.plot(xs, vals, marker="o", markersize=2.0, linewidth=linewidth, label=label)
+            arr = np.asarray(vals, dtype=np.float64)
+            if cutoff is not None:
+                if lower_only:
+                    arr = np.where(arr <= cutoff, arr, np.nan)
+                elif upper_only:
+                    arr = np.where(arr > cutoff, arr, np.nan)
+            ax.plot(xs, arr, marker="o", markersize=2.0, linewidth=linewidth, label=label)
+
+    def add_final_weighted_sum_marker(ax: Any, final_value: float) -> None:
+        ymin, ymax = ax.get_ylim()
+        if not (ymin <= final_value <= ymax):
+            return
+        existing_ticks = list(ax.get_yticks())
+        ticks = sorted(existing_ticks + [final_value])
+        deduped: List[float] = []
+        for tick in ticks:
+            if not deduped or abs(tick - deduped[-1]) > 1e-9:
+                deduped.append(float(tick))
+        ax.set_yticks(deduped)
+        labels: List[str] = []
+        for tick in deduped:
+            if abs(tick - final_value) <= 1e-9:
+                labels.append(f"{final_value:.6g}")
+            else:
+                labels.append(f"{tick:g}")
+        ax.set_yticklabels(labels)
+        ax.axhline(final_value, color="#666666", linestyle=":", linewidth=0.8, alpha=0.45, zorder=0)
 
     out_png.parent.mkdir(parents=True, exist_ok=True)
     if use_broken_y:
@@ -1123,8 +1150,8 @@ def plot_j_behavior(
             dpi=dpi,
             gridspec_kw={"height_ratios": [1.0, 2.4], "hspace": 0.05},
         )
-        draw_series(ax_top)
-        draw_series(ax)
+        draw_series(ax_top, upper_only=True, cutoff=y_break)
+        draw_series(ax, lower_only=True, cutoff=y_break)
         y_top = float(np.max(all_finite))
         high_vals = all_finite[all_finite > y_break]
         upper_start = max(y_break * 1.02, float(np.min(high_vals)) * 0.98 if high_vals.size else y_break * 1.02)
@@ -1144,12 +1171,20 @@ def plot_j_behavior(
         ax.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
         ax_top.set_title(title)
         ax_top.legend(loc="best", fontsize=8)
+        finite_weighted_sum = finite_values(weighted_sum)
+        if finite_weighted_sum.size:
+            final_weighted_sum = float(finite_weighted_sum[-1])
+            add_final_weighted_sum_marker(ax, final_weighted_sum)
+            add_final_weighted_sum_marker(ax_top, final_weighted_sum)
         axes = [ax_top, ax]
     else:
         fig, ax = plt.subplots(figsize=(8.5, 4.8), dpi=dpi)
         draw_series(ax)
         ax.set_title(title)
         ax.legend(loc="best", fontsize=8)
+        finite_weighted_sum = finite_values(weighted_sum)
+        if finite_weighted_sum.size:
+            add_final_weighted_sum_marker(ax, float(finite_weighted_sum[-1]))
         axes = [ax]
 
     ax.set_xlabel("Iteration")

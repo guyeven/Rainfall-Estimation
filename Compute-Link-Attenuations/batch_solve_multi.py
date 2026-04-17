@@ -149,7 +149,8 @@ def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: 
 
     Expected signature (yours):
       solve_lbfgsb_and_save(est_input_json, *, lam, mu, eps, R0, maxiter, ftol, gtol, maxls, npz_out, warn,
-                            R0_from_IDW, idw_r_max_m, idw_power, idw_eps_m, idw_default_value)
+                            R0_from_IDW, idw_r_max_m, idw_power, idw_eps_m, idw_default_value,
+                            rain_init_mode, rain_init_value, rain_init_multiplier)
     """
     if not hasattr(mod, "solve_lbfgsb_and_save"):
         raise AttributeError("module has no solve_lbfgsb_and_save()")
@@ -159,6 +160,7 @@ def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: 
     opt = solver_cfg.get("optimization", {}) or {}
     tol = solver_cfg.get("tolerances", {}) or {}
     idw = solver_cfg.get("idw", {}) or {}
+    rain_init = opt.get("rain_init", {}) or {}
 
     kwargs = {
         "est_input_json": est_json,
@@ -180,6 +182,9 @@ def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: 
         "j4_w": float(opt.get("w_second_der", opt.get("j4_w", opt.get("w_j4", 1e-6)))),
         "use_linear_j3": bool(opt.get("use_linear_j3", False)),
         "R0": float(opt.get("R0", 0.1)),
+        "rain_init_mode": str(rain_init.get("mode", "fixed")),
+        "rain_init_value": float(rain_init.get("value", opt.get("R0", 0.1))),
+        "rain_init_multiplier": float(rain_init.get("multiplier", 1.0)),
         "maxiter": int(opt.get("maxiter", 300)),
         "ftol": float(tol.get("ftol", 1e-5)),
         "gtol": float(tol.get("gtol", 1e-4)),

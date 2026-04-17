@@ -17,7 +17,10 @@ solvers:
     optimization:
       epsilon: 0.01
       maxiter: 300
-      R0: 0.6
+      rain_init:
+        mode: fixed
+        value: 0.6
+        multiplier: 2.0
       R0_from_ILDW: true
       R0_from_IDW: false
       num_atten: 1.0

@@ -223,6 +223,9 @@ def solve_lbfgsb_and_save(
     warn: bool = True,
     R0_from_IDW: bool = False,
     R0_from_ILDW: bool = False,
+    rain_init_mode: str = "fixed",
+    rain_init_value: float | None = None,
+    rain_init_multiplier: float = 1.0,
     idw_r_max_m: float = 3125.0,
     idw_power: float = 2.0,
     idw_eps_m: float = 1.0,
@@ -282,6 +285,14 @@ def solve_lbfgsb_and_save(
     init_method = "constant"
     if R0_from_ILDW and R0_from_IDW:
         raise ValueError("Choose exactly one of R0_from_ILDW or R0_from_IDW.")
+    if rain_init_mode not in {"fixed", "idw_mean"}:
+        raise ValueError(f"Unsupported rain_init_mode={rain_init_mode!r}; expected 'fixed' or 'idw_mean'.")
+    if rain_init_value is None:
+        rain_init_value = float(R0)
+    if (R0_from_ILDW or R0_from_IDW) and rain_init_mode != "fixed":
+        raise ValueError("rain_init.mode='idw_mean' is only supported for constant-field initialization.")
+
+    effective_r0 = float(rain_init_value)
 
     if R0_from_ILDW:
         init_method = "ildw"
@@ -299,7 +310,23 @@ def solve_lbfgsb_and_save(
         )
         x0 = np.asarray(r0_grid, dtype=np.float64).reshape(prob.P)
     else:
-        x0 = np.full(prob.P, float(R0), dtype=np.float64)
+        if rain_init_mode == "idw_mean":
+            init_method = "idw_mean"
+            if idw_field_from_est_input is None:
+                raise RuntimeError("rain_init.mode='idw_mean' but idw_baseline.py unavailable.")
+            r0_grid, _ = idw_field_from_est_input(
+                Path(est_input_json),
+                r_max_m=float(idw_r_max_m),
+                power=float(idw_power),
+                eps_m=float(idw_eps_m),
+                default_value=float(idw_default_value),
+            )
+            idw_vals = np.asarray(r0_grid, dtype=np.float64).reshape(prob.P)
+            finite_vals = idw_vals[np.isfinite(idw_vals)]
+            if finite_vals.size == 0:
+                raise RuntimeError("rain_init.mode='idw_mean' produced no finite IDW values.")
+            effective_r0 = float(rain_init_multiplier) * float(np.mean(finite_vals))
+        x0 = np.full(prob.P, float(effective_r0), dtype=np.float64)
 
     a_att = float(mult["alpha_atten"])
     a_1d = float(mult["alpha_1d"])
@@ -319,7 +346,7 @@ def solve_lbfgsb_and_save(
             "iter": int(iteration),
             "feasible": True,
             "constraint_residual": 0.0,
-            "J_native_total": float(w_atten + w_1d + w_2d + w_total),
+            "J_weighted_sum": float(w_atten + w_1d + w_2d + w_total),
             "J_atten": float(J_atten),
             "J_1d": float(J_1d),
             "J_2d": float(J_2d),
@@ -336,7 +363,7 @@ def solve_lbfgsb_and_save(
 
     iter_trace: List[Dict[str, Any]] = []
     iter_trace.append(_trace_row(x0, iteration=0))
-    f_history: List[float] = [float(iter_trace[0]["J_native_total"])]
+    f_history: List[float] = [float(iter_trace[0]["J_weighted_sum"])]
     iter_idx = 0
 
     def _callback(xk: np.ndarray):
@@ -344,7 +371,7 @@ def solve_lbfgsb_and_save(
         iter_idx += 1
         row = _trace_row(xk, iteration=iter_idx)
         iter_trace.append(row)
-        f_history.append(float(row["J_native_total"]))
+        f_history.append(float(row["J_weighted_sum"]))
 
     res = minimize(
         fun,
@@ -388,13 +415,13 @@ def solve_lbfgsb_and_save(
     if not iter_trace or int(iter_trace[-1].get("iter", -1)) != final_iter:
         row = _trace_row(res.x, iteration=final_iter)
         iter_trace.append(row)
-        f_history.append(float(row["J_native_total"]))
+        f_history.append(float(row["J_weighted_sum"]))
 
     feasible_count = int(sum(1 for it in iter_trace if bool(it.get("feasible", False))))
     infeasible_count = int(len(iter_trace) - feasible_count)
-    best_idx = int(np.argmin([float(it.get("J_native_total", np.inf)) for it in iter_trace]))
+    best_idx = int(np.argmin([float(it.get("J_weighted_sum", np.inf)) for it in iter_trace]))
     best_iter = int(iter_trace[best_idx].get("iter", -1))
-    best_obj = float(iter_trace[best_idx].get("J_native_total", np.nan))
+    best_obj = float(iter_trace[best_idx].get("J_weighted_sum", np.nan))
     itertrace_path = npz_out.with_name(f"{npz_out.stem}_itertrace.json")
     itertrace_payload = {
         "summary": {
@@ -402,8 +429,8 @@ def solve_lbfgsb_and_save(
             "total_iterations": int(len(iter_trace)),
             "feasible_iterations": int(feasible_count),
             "infeasible_iterations": int(infeasible_count),
-            "best_iteration_by_native_total": int(best_iter),
-            "best_native_total": float(best_obj),
+            "best_iteration_by_weighted_sum": int(best_iter),
+            "best_weighted_sum": float(best_obj),
         },
         "iterations": iter_trace,
     }
@@ -449,7 +476,10 @@ def solve_lbfgsb_and_save(
         meta_alpha_1d=float(mult["alpha_1d"]),
         meta_alpha_2d=float(mult["alpha_2d"]),
         meta_alpha_total=float(mult["alpha_total"]),
-        meta_R0=float(R0),
+        meta_R0=float(effective_r0),
+        meta_rain_init_mode=str(rain_init_mode),
+        meta_rain_init_value=float(rain_init_value),
+        meta_rain_init_multiplier=float(rain_init_multiplier),
         meta_maxiter=int(maxiter),
         meta_ftol=float(ftol),
         meta_gtol=float(gtol),
