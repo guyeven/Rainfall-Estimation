@@ -172,6 +172,12 @@ def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: 
         "num_1d": float(opt.get("num_1d", 1.0)),
         "num_2d": float(opt.get("num_2d", 0.5)),
         "num_total": float(opt.get("num_total", 1.0)),
+        "virtual_freq_ghz": (
+            None
+            if opt.get("virtual_freq_ghz", None) is None
+            else float(opt.get("virtual_freq_ghz"))
+        ),
+        "beta_delta": float(opt.get("beta_delta", 0.1)),
         "j2_w": float(opt.get("w_shrink", opt.get("j2_w", opt.get("w_j2", 0.01)))),
         "j3_w": float(
             opt.get(

@@ -1072,11 +1072,9 @@ def plot_j_behavior(
     except Exception:
         return
 
-    xs = [int(it.get("iter", i + 1)) for i, it in enumerate(iterations)]
-
-    def series(key: str) -> List[float]:
+    def series_from_rows(rows: Sequence[Dict[str, Any]], key: str) -> List[float]:
         out: List[float] = []
-        for it in iterations:
+        for it in rows:
             v = it.get(key, None)
             try:
                 out.append(float(v) if v is not None else float("nan"))
@@ -1084,33 +1082,30 @@ def plot_j_behavior(
                 out.append(float("nan"))
         return out
 
-    def weighted_or_raw(weighted_key: str, raw_key: str) -> List[float]:
-        vals = series(weighted_key)
+    def weighted_or_raw_from_rows(rows: Sequence[Dict[str, Any]], weighted_key: str, raw_key: str) -> List[float]:
+        vals = series_from_rows(rows, weighted_key)
         if not vals or all(math.isnan(v) for v in vals):
-            return series(raw_key)
+            return series_from_rows(rows, raw_key)
         return vals
 
     def finite_values(vals: Sequence[float]) -> np.ndarray:
         arr = np.asarray(vals, dtype=np.float64)
         return arr[np.isfinite(arr)]
 
-    j_series: List[Tuple[str, List[float], float]] = [
-        (r"$J_{\mathrm{weighted\ sum}}$", series("J_weighted_sum"), 1.0),
-        (r"$\alpha_{\mathrm{atten}} \cdot J_{\mathrm{atten}}$", weighted_or_raw("weighted_J_atten", "J_atten"), 0.9),
-        (r"$\alpha_{1d} \cdot J_{1d}$", weighted_or_raw("weighted_J_1d", "J_1d"), 0.9),
-        (r"$\alpha_{\mathrm{total}} \cdot J_{\mathrm{total}}$", weighted_or_raw("weighted_J_total", "J_total"), 0.9),
-        (r"$\alpha_{2d} \cdot J_{2d}$", weighted_or_raw("weighted_J_2d", "J_2d"), 0.9),
-    ]
-    weighted_sum = j_series[0][1]
-    if not weighted_sum or all(math.isnan(v) for v in weighted_sum):
-        j_series[0] = (r"$J_{\mathrm{weighted\ sum}}$", series("J_native_total"), 1.0)
-    weighted_sum = j_series[0][1]
+    def build_series(rows: Sequence[Dict[str, Any]]) -> Tuple[List[Tuple[str, List[float], float]], List[float]]:
+        j_series: List[Tuple[str, List[float], float]] = [
+            (r"$J_{\mathrm{weighted\ sum}}$", series_from_rows(rows, "J_weighted_sum"), 1.0),
+            (r"$\alpha_{\mathrm{atten}} \cdot J_{\mathrm{atten}}$", weighted_or_raw_from_rows(rows, "weighted_J_atten", "J_atten"), 0.9),
+            (r"$\alpha_{1d} \cdot J_{1d}$", weighted_or_raw_from_rows(rows, "weighted_J_1d", "J_1d"), 0.9),
+            (r"$\alpha_{\mathrm{total}} \cdot J_{\mathrm{total}}$", weighted_or_raw_from_rows(rows, "weighted_J_total", "J_total"), 0.9),
+            (r"$\alpha_{2d} \cdot J_{2d}$", weighted_or_raw_from_rows(rows, "weighted_J_2d", "J_2d"), 0.9),
+        ]
+        weighted_sum = j_series[0][1]
+        if not weighted_sum or all(math.isnan(v) for v in weighted_sum):
+            j_series[0] = (r"$J_{\mathrm{weighted\ sum}}$", series_from_rows(rows, "J_native_total"), 1.0)
+        return j_series, j_series[0][1]
 
-    all_finite = np.concatenate([finite_values(vals) for _, vals, _ in j_series] or [np.array([], dtype=np.float64)])
-    y_break = 5.0
-    use_broken_y = bool(all_finite.size) and float(np.max(all_finite)) > y_break
-
-    def draw_series(ax: Any, *, lower_only: bool = False, upper_only: bool = False, cutoff: Optional[float] = None) -> None:
+    def draw_series(ax: Any, xs_local: Sequence[int], j_series: Sequence[Tuple[str, List[float], float]], *, lower_only: bool = False, upper_only: bool = False, cutoff: Optional[float] = None, show_legend: bool = True) -> None:
         for label, vals, linewidth in j_series:
             arr = np.asarray(vals, dtype=np.float64)
             if cutoff is not None:
@@ -1118,7 +1113,7 @@ def plot_j_behavior(
                     arr = np.where(arr <= cutoff, arr, np.nan)
                 elif upper_only:
                     arr = np.where(arr > cutoff, arr, np.nan)
-            ax.plot(xs, arr, marker="o", markersize=2.0, linewidth=linewidth, label=label)
+            ax.plot(xs_local, arr, marker="o", markersize=2.0, linewidth=linewidth, label=(label if show_legend else None))
 
     def add_final_weighted_sum_marker(ax: Any, final_value: float) -> None:
         ymin, ymax = ax.get_ylim()
@@ -1140,58 +1135,113 @@ def plot_j_behavior(
         ax.set_yticklabels(labels)
         ax.axhline(final_value, color="#666666", linestyle=":", linewidth=0.8, alpha=0.45, zorder=0)
 
+    def plot_single_panel(rows: Sequence[Dict[str, Any]], *, fig_title: str) -> None:
+        xs_local = [int(it.get("iter", i + 1)) for i, it in enumerate(rows)]
+        j_series, weighted_sum = build_series(rows)
+        all_finite = np.concatenate([finite_values(vals) for _, vals, _ in j_series] or [np.array([], dtype=np.float64)])
+        y_break = 5.0
+        use_broken_y = bool(all_finite.size) and float(np.max(all_finite)) > y_break
+
+        out_png.parent.mkdir(parents=True, exist_ok=True)
+        if use_broken_y:
+            fig, (ax_top, ax) = plt.subplots(
+                2,
+                1,
+                sharex=True,
+                figsize=(8.5, 6.0),
+                dpi=dpi,
+                gridspec_kw={"height_ratios": [1.0, 2.4], "hspace": 0.05},
+            )
+            draw_series(ax_top, xs_local, j_series, upper_only=True, cutoff=y_break)
+            draw_series(ax, xs_local, j_series, lower_only=True, cutoff=y_break)
+            y_top = float(np.max(all_finite))
+            high_vals = all_finite[all_finite > y_break]
+            upper_start = max(y_break * 1.02, float(np.min(high_vals)) * 0.98 if high_vals.size else y_break * 1.02)
+            if upper_start >= y_top:
+                upper_start = y_break * 1.02
+            ax.set_ylim(0.0, y_break)
+            ax_top.set_ylim(upper_start, y_top * 1.03)
+            ax_top.spines["bottom"].set_visible(False)
+            ax.spines["top"].set_visible(False)
+            ax_top.tick_params(labeltop=False, bottom=False)
+            d = 0.015
+            kwargs = dict(transform=ax_top.transAxes, color="k", clip_on=False, linewidth=0.8)
+            ax_top.plot((-d, +d), (-d, +d), **kwargs)
+            ax_top.plot((1 - d, 1 + d), (-d, +d), **kwargs)
+            kwargs.update(transform=ax.transAxes)
+            ax.plot((-d, +d), (1 - d, 1 + d), **kwargs)
+            ax.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
+            ax_top.set_title(fig_title)
+            ax_top.legend(loc="best", fontsize=8)
+            finite_weighted_sum = finite_values(weighted_sum)
+            if finite_weighted_sum.size:
+                final_weighted_sum = float(finite_weighted_sum[-1])
+                add_final_weighted_sum_marker(ax, final_weighted_sum)
+                add_final_weighted_sum_marker(ax_top, final_weighted_sum)
+            axes = [ax_top, ax]
+        else:
+            fig, ax = plt.subplots(figsize=(8.5, 4.8), dpi=dpi)
+            draw_series(ax, xs_local, j_series)
+            ax.set_title(fig_title)
+            ax.legend(loc="best", fontsize=8)
+            finite_weighted_sum = finite_values(weighted_sum)
+            if finite_weighted_sum.size:
+                add_final_weighted_sum_marker(ax, float(finite_weighted_sum[-1]))
+            axes = [ax]
+
+        ax.set_xlabel("Iteration")
+        ax.set_ylabel("Weighted objective contribution")
+        for axis in axes:
+            axis.grid(axis="y", alpha=0.25)
+        fig.tight_layout()
+        fig.savefig(out_png, dpi=dpi)
+        plt.close(fig)
+
+    stage_ids = sorted(
+        {
+            int(it.get("stage"))
+            for it in iterations
+            if it.get("stage", None) is not None
+        }
+    )
+    if len(stage_ids) <= 1:
+        plot_single_panel(iterations, fig_title=title)
+        return
+
+    stage_rows: List[Tuple[int, float, List[Dict[str, Any]]]] = []
+    for stage_id in stage_ids:
+        rows = [dict(it) for it in iterations if int(it.get("stage", -1)) == stage_id]
+        if not rows:
+            continue
+        beta = float(rows[0].get("beta", float("nan")))
+        stage_rows.append((stage_id, beta, rows))
+
     out_png.parent.mkdir(parents=True, exist_ok=True)
-    if use_broken_y:
-        fig, (ax_top, ax) = plt.subplots(
-            2,
-            1,
-            sharex=True,
-            figsize=(8.5, 6.0),
-            dpi=dpi,
-            gridspec_kw={"height_ratios": [1.0, 2.4], "hspace": 0.05},
-        )
-        draw_series(ax_top, upper_only=True, cutoff=y_break)
-        draw_series(ax, lower_only=True, cutoff=y_break)
-        y_top = float(np.max(all_finite))
-        high_vals = all_finite[all_finite > y_break]
-        upper_start = max(y_break * 1.02, float(np.min(high_vals)) * 0.98 if high_vals.size else y_break * 1.02)
-        if upper_start >= y_top:
-            upper_start = y_break * 1.02
-        ax.set_ylim(0.0, y_break)
-        ax_top.set_ylim(upper_start, y_top * 1.03)
-        ax_top.spines["bottom"].set_visible(False)
-        ax.spines["top"].set_visible(False)
-        ax_top.tick_params(labeltop=False, bottom=False)
-        d = 0.015
-        kwargs = dict(transform=ax_top.transAxes, color="k", clip_on=False, linewidth=0.8)
-        ax_top.plot((-d, +d), (-d, +d), **kwargs)
-        ax_top.plot((1 - d, 1 + d), (-d, +d), **kwargs)
-        kwargs.update(transform=ax.transAxes)
-        ax.plot((-d, +d), (1 - d, 1 + d), **kwargs)
-        ax.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
-        ax_top.set_title(title)
-        ax_top.legend(loc="best", fontsize=8)
-        finite_weighted_sum = finite_values(weighted_sum)
-        if finite_weighted_sum.size:
-            final_weighted_sum = float(finite_weighted_sum[-1])
-            add_final_weighted_sum_marker(ax, final_weighted_sum)
-            add_final_weighted_sum_marker(ax_top, final_weighted_sum)
-        axes = [ax_top, ax]
-    else:
-        fig, ax = plt.subplots(figsize=(8.5, 4.8), dpi=dpi)
-        draw_series(ax)
-        ax.set_title(title)
-        ax.legend(loc="best", fontsize=8)
+    n_stages = len(stage_rows)
+    fig_h = max(3.0 * n_stages, 5.0)
+    fig, axes = plt.subplots(n_stages, 1, figsize=(9.0, fig_h), dpi=dpi, sharex=False)
+    if n_stages == 1:
+        axes = [axes]
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    for ax, (stage_id, beta, rows) in zip(axes, stage_rows):
+        xs_local = list(range(len(rows)))
+        j_series, weighted_sum = build_series(rows)
+        for idx, (label, vals, linewidth) in enumerate(j_series):
+            color = color_cycle[idx % max(1, len(color_cycle))] if color_cycle else None
+            arr = np.asarray(vals, dtype=np.float64)
+            ax.plot(xs_local, arr, marker="o", markersize=2.0, linewidth=linewidth, label=label, color=color)
         finite_weighted_sum = finite_values(weighted_sum)
         if finite_weighted_sum.size:
             add_final_weighted_sum_marker(ax, float(finite_weighted_sum[-1]))
-        axes = [ax]
-
-    ax.set_xlabel("Iteration")
-    ax.set_ylabel("Weighted objective contribution")
-    for axis in axes:
-        axis.grid(axis="y", alpha=0.25)
-    fig.tight_layout()
+        inner_iters = max(0, len(rows) - 1)
+        beta_str = f"{beta:.2f}" if math.isfinite(beta) else "NA"
+        ax.set_title(f"Stage {stage_id + 1} (beta={beta_str}, inner iterations={inner_iters})", fontsize=10)
+        ax.set_ylabel("Weighted objective\ncontribution")
+        ax.grid(axis="y", alpha=0.25)
+    axes[0].legend(loc="best", fontsize=8)
+    axes[-1].set_xlabel("Inner iteration within stage")
+    fig.suptitle(title)
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
     fig.savefig(out_png, dpi=dpi)
     plt.close(fig)
 

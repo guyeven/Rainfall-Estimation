@@ -97,6 +97,8 @@ def objective_scaling_from_module(module_name: str) -> str:
     normalized_modules = {
         "solve_rain_lbfgsb_normalized_ildw_multipliers",
         "solve_rain_lbfgsb_normalized_ildw_multipliers",
+        "solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_convex",
+        "solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_homotopy",
         # backward-compatible names
         "solve_rain_lbfgsb_j1norm_j2j3j4",
         "solve_rain_lbfgsb_j1norm_j2j3lin_j4",
@@ -182,6 +184,8 @@ def objective_term_presence_from_module(module_name: str, *, solver_label: str =
         "solve_rain_lbfgsb",
         "solve_rain_lbfgsb_normalized_ildw_multipliers",
         "solve_rain_lbfgsb_normalized_ildw_multipliers",
+        "solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_convex",
+        "solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_homotopy",
         "solve_rain_lbfgsb_j1norm_j2j3j4",
         "solve_rain_lbfgsb_j1norm_j2j3lin_j4",
     }:
@@ -366,6 +370,24 @@ def load_npz_meta_scalars(path: Path) -> Dict[str, float]:
                 out[str(k)] = float(v.reshape(-1)[0])
         except Exception:
             continue
+    return out
+
+
+def load_npz_optional_link_arrays(path: Path) -> Dict[str, np.ndarray]:
+    wanted = (
+        "A_obs_virtual",
+        "A_hat_virtual",
+        "L_km_virtual",
+        "valid_links_virtual",
+    )
+    out: Dict[str, np.ndarray] = {}
+    try:
+        with np.load(path, allow_pickle=True) as z:
+            for name in wanted:
+                if name in z.files:
+                    out[name] = np.asarray(z[name])
+    except Exception:
+        return {}
     return out
 
 
@@ -1306,7 +1328,18 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         success=opt.get("success", None),
         status=opt.get("status", None),
         message=opt.get("message", None),
-        nit=opt.get("nit", opt.get("iteration", None)),
+        nit=opt.get("total_inner_iterations", opt.get("nit", opt.get("iteration", None))),
+        nit_last_stage=opt.get("final_stage_iterations", None),
+        outer_iterations=opt.get("outer_iterations", iter_summary.get("outer_iterations", None)),
+        total_inner_iterations=opt.get("total_inner_iterations", iter_summary.get("total_inner_iterations", None)),
+        final_stage_iterations=opt.get("final_stage_iterations", iter_summary.get("final_stage_iterations", None)),
+        stage_iteration_counts=json.dumps(iter_summary.get("stage_iteration_counts", opt.get("stage_iteration_counts", [])))
+            if (
+                iter_summary.get("stage_iteration_counts", None) is not None
+                or opt.get("stage_iteration_counts", None) is not None
+            )
+            else None,
+        init_method=opt.get("init_method", iter_summary.get("init_method", None)),
         nfev=opt.get("nfev", None),
         njev=opt.get("njev", None),
         proj_grad_inf=opt.get("proj_grad_inf", None),
@@ -1584,6 +1617,12 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         link_dists_by_k = compute_link_kth_neighbor_distances(est, jatten_k_values)
     except Exception as e:
         raise RuntimeError(f"Failed to compute link stats for {key} ({label}): {e}") from e
+    virtual_link_arrays = load_npz_optional_link_arrays(sol_path)
+    A_obs_virtual = np.asarray(virtual_link_arrays.get("A_obs_virtual", np.array([], dtype=np.float64)), dtype=np.float64)
+    A_hat_virtual = np.asarray(virtual_link_arrays.get("A_hat_virtual", np.array([], dtype=np.float64)), dtype=np.float64)
+    L_km_virtual = np.asarray(virtual_link_arrays.get("L_km_virtual", L_km), dtype=np.float64)
+    valid_virtual = np.asarray(virtual_link_arrays.get("valid_links_virtual", valid), dtype=bool)
+    ge10_virtual = (L_km_virtual >= 10.0) & valid_virtual if L_km_virtual.size else np.zeros(0, dtype=bool)
 
     n_valid_links = int(np.sum(valid)) if valid.size > 0 else 0
     den_valid_links = float(max(1, n_valid_links))
@@ -1686,6 +1725,37 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         E_all=E_all,
         E2_all=E2_all,
     )
+    if A_obs_virtual.size and A_hat_virtual.size:
+        attn_virtual_all, J1_virtual_all, n_valid_virtual = attn_l1_and_J1(
+            A_obs_virtual, A_hat_virtual, L_km_virtual, valid_virtual
+        )
+        attn_virtual_10, J1_virtual_10, n_10_virtual = attn_l1_and_J1(
+            A_obs_virtual, A_hat_virtual, L_km_virtual, ge10_virtual
+        )
+        mean_abs_attn_err_per_km_virtual_all, length_weighted_abs_attn_err_per_km_virtual_all = abs_attn_error_per_km_metrics(
+            A_obs_virtual, A_hat_virtual, L_km_virtual, valid_virtual
+        )
+        max_abs_diff_virtual, p95_abs_diff_virtual, p99_abs_diff_virtual = abs_diff_summary(
+            A_obs_virtual, A_hat_virtual, valid_virtual
+        )
+        J_atten_virtual_all = float(J1_virtual_all / float(n_valid_virtual)) if n_valid_virtual > 0 else 0.0
+        J_atten_virtual_10 = float(J1_virtual_10 / float(n_10_virtual)) if n_10_virtual > 0 else 0.0
+        link_row.update(
+            virtual_attn_available=True,
+            n_links_virtual_valid=n_valid_virtual,
+            attn_l1_virtual_all=attn_virtual_all,
+            J_atten_virtual_all=J_atten_virtual_all,
+            n_links_virtual_ge10km=n_10_virtual,
+            attn_l1_virtual_ge10km=attn_virtual_10,
+            J_atten_virtual_ge10km=J_atten_virtual_10,
+            max_abs_diff_virtual=max_abs_diff_virtual,
+            p95_abs_diff_virtual=p95_abs_diff_virtual,
+            p99_abs_diff_virtual=p99_abs_diff_virtual,
+            mean_abs_attn_err_per_km_virtual_all=mean_abs_attn_err_per_km_virtual_all,
+            length_weighted_abs_attn_err_per_km_virtual_all=length_weighted_abs_attn_err_per_km_virtual_all,
+        )
+    else:
+        link_row["virtual_attn_available"] = False
     idx_valid = np.where(valid)[0]
     abs_norm_resid_valid = np.abs(A_hat[idx_valid] - A_obs[idx_valid]) / L_km[idx_valid] if idx_valid.size > 0 else np.zeros(0, dtype=np.float64)
     link_metric = dict(
