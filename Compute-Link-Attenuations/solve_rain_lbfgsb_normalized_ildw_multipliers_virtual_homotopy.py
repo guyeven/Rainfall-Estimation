@@ -82,6 +82,7 @@ def solve_lbfgsb_and_save(
     num_1d: float = 1.0,
     num_2d: float = 0.5,
     num_total: float = 1.0,
+    num_total_divide_by_num_pixels: bool = False,
     virtual_freq_ghz: float | None = None,
     beta_delta: float = 0.1,
 ) -> Dict[str, Any]:
@@ -191,6 +192,7 @@ def solve_lbfgsb_and_save(
             num_1d=float(num_1d),
             num_2d=float(num_2d),
             num_total=float(num_total),
+            num_total_divide_by_num_pixels=bool(num_total_divide_by_num_pixels),
         )
         fun, jac = make_objective(
             prob_beta,
@@ -379,6 +381,8 @@ def solve_lbfgsb_and_save(
         meta_num_1d=float(last_mult["num_1d"]),
         meta_num_2d=float(last_mult["num_2d"]),
         meta_num_total=float(last_mult["num_total"]),
+        meta_num_total_effective=float(last_mult["num_total_effective"]),
+        meta_num_total_divide_by_num_pixels=bool(last_mult["num_total_divide_by_num_pixels"]),
         meta_alpha_atten=float(last_mult["alpha_atten"]),
         meta_alpha_1d=float(last_mult["alpha_1d"]),
         meta_alpha_2d=float(last_mult["alpha_2d"]),

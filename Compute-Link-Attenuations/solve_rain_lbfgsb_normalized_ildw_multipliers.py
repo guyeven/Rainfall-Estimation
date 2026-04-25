@@ -136,6 +136,7 @@ def _compute_instance_multipliers(
     num_1d: float = 1.0,
     num_2d: float = 0.5,
     num_total: float = 1.0,
+    num_total_divide_by_num_pixels: bool = False,
 ) -> Dict[str, float]:
     J_atten, J_1d, J_2d, J_total, _, _, _, _ = _compute_terms_and_grads(
         prob, R_ildw_flat, t_p=t_p, t_q=t_q, t_r=t_r
@@ -144,11 +145,14 @@ def _compute_instance_multipliers(
     beta_1d = _safe_inverse(J_1d)
     beta_2d = _safe_inverse(J_2d)
     beta_total = _safe_inverse(J_total)
+    effective_num_total = float(num_total)
+    if bool(num_total_divide_by_num_pixels):
+        effective_num_total /= float(max(1, int(prob.P)))
 
     alpha_atten = float(num_atten) * beta_atten
     alpha_1d = float(num_1d) * beta_1d
     alpha_2d = float(num_2d) * beta_2d
-    alpha_total = float(num_total) * beta_total
+    alpha_total = float(effective_num_total) * beta_total
 
     return {
         "J_atten_ildw": float(J_atten),
@@ -159,6 +163,8 @@ def _compute_instance_multipliers(
         "num_1d": float(num_1d),
         "num_2d": float(num_2d),
         "num_total": float(num_total),
+        "num_total_effective": float(effective_num_total),
+        "num_total_divide_by_num_pixels": bool(num_total_divide_by_num_pixels),
         "beta_atten": float(beta_atten),
         "beta_1d": float(beta_1d),
         "beta_2d": float(beta_2d),
@@ -238,6 +244,7 @@ def solve_lbfgsb_and_save(
     num_1d: float = 1.0,
     num_2d: float = 0.5,
     num_total: float = 1.0,
+    num_total_divide_by_num_pixels: bool = False,
 ) -> Dict[str, Any]:
     # Legacy weights are accepted but ignored: this solver uses per-instance ILDW multipliers.
     _ = lam
@@ -269,6 +276,7 @@ def solve_lbfgsb_and_save(
         num_1d=float(num_1d),
         num_2d=float(num_2d),
         num_total=float(num_total),
+        num_total_divide_by_num_pixels=bool(num_total_divide_by_num_pixels),
     )
 
     fun, jac = make_objective(
@@ -472,6 +480,8 @@ def solve_lbfgsb_and_save(
         meta_num_1d=float(mult["num_1d"]),
         meta_num_2d=float(mult["num_2d"]),
         meta_num_total=float(mult["num_total"]),
+        meta_num_total_effective=float(mult["num_total_effective"]),
+        meta_num_total_divide_by_num_pixels=bool(mult["num_total_divide_by_num_pixels"]),
         meta_alpha_atten=float(mult["alpha_atten"]),
         meta_alpha_1d=float(mult["alpha_1d"]),
         meta_alpha_2d=float(mult["alpha_2d"]),

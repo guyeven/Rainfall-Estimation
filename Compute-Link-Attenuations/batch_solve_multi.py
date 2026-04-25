@@ -172,6 +172,7 @@ def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: 
         "num_1d": float(opt.get("num_1d", 1.0)),
         "num_2d": float(opt.get("num_2d", 0.5)),
         "num_total": float(opt.get("num_total", 1.0)),
+        "num_total_divide_by_num_pixels": bool(opt.get("num_total_divide_by_num_pixels", False)),
         "virtual_freq_ghz": (
             None
             if opt.get("virtual_freq_ghz", None) is None
