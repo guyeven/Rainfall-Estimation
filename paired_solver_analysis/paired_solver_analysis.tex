@@ -1,0 +1,159 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=0.85in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{hyperref}
+
+\title{Paired Patchwise Solver Comparisons}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{What is being compared}
+Each solver is evaluated on the same 100 patches, so the inferential unit is the patchwise paired difference. For metric $M$ and solvers $A$ and $B$, the tested quantity is
+\[
+d_P = M_A(P) - M_B(P).
+\]
+The descriptive mean/SD table is useful for orientation, but significance depends on the variance of these paired differences, not on the separate solver standard deviations. The inferential tables below compare the optimization solvers against the two interpolation baselines, IDW and ILDW.
+
+The one-sided $t$ tests for RMSE and signed Bias use
+\[
+H_0:\mathbb{E}[d]\ge 0,\qquad H_1:\mathbb{E}[d]<0.
+\]
+The paired-test tables use $\alpha=0.01$. The one-sided $p$-value is the probability, under the boundary null $\mathbb{E}[d]=0$, of observing a test statistic at least as favorable to solver $A$ as the one observed. The p-value rule is to reject when the one-sided $p$-value is at most $0.01$.
+
+The 99\% one-sided bound is a confidence-bound version of the same test. For RMSE and signed Bias, the table reports an upper bound for the true mean paired difference $\mathbb{E}[d]$; if that upper bound is below zero, then the whole 99\% one-sided confidence region lies in the ``solver $A$ is smaller'' direction. For Pearson correlation, the table reports a lower bound; if that lower bound is above zero, then the whole 99\% one-sided confidence region lies in the ``solver $A$ has higher correlation'' direction. These bound rules and the $p \le 0.01$ rule give the same decisions because they are two equivalent forms of the same one-sided $t$ test at the same 1\% significance level.
+
+\begin{table}[H]
+\centering
+\tiny
+\setlength{\tabcolsep}{2.2pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrccccccccccccccc}
+\toprule
+ &  & \multicolumn{3}{c}{IDW} & \multicolumn{3}{c}{ILDW} & \multicolumn{3}{c}{Nonlinear Opt.} & \multicolumn{3}{c}{VC Light Shrinkage} & \multicolumn{3}{c}{Homotopy Light Shrinkage} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}\cmidrule(lr){12-14}\cmidrule(lr){15-17}
+$d_3$ bin (m) & mean pixels & RMSE & Bias & Pearson $r$ & RMSE & Bias & Pearson $r$ & RMSE & Bias & Pearson $r$ & RMSE & Bias & Pearson $r$ & RMSE & Bias & Pearson $r$ \\
+\midrule
+\mbox{$\leq$125} & 4830.6800 & 0.6525 $\pm$ 0.7805 & -0.0194 $\pm$ 0.0668 & 0.9671 $\pm$ 0.0179 & 0.7722 $\pm$ 1.0105 & -0.0014 $\pm$ 0.0655 & 0.9520 $\pm$ 0.0263 & 0.5106 $\pm$ 0.8270 & 0.0039 $\pm$ 0.0419 & 0.9810 $\pm$ 0.0203 & 0.3657 $\pm$ 0.4733 & -1.153e-04 $\pm$ 0.0143 & 0.9888 $\pm$ 0.0086 & 0.3652 $\pm$ 0.4721 & -4.286e-04 $\pm$ 0.0138 & 0.9888 $\pm$ 0.0086 \\
+\mbox{(125,375]} & 1.900e+04 & 0.7297 $\pm$ 0.8627 & -0.0158 $\pm$ 0.0646 & 0.9597 $\pm$ 0.0199 & 0.7269 $\pm$ 0.9108 & -9.566e-04 $\pm$ 0.0230 & 0.9581 $\pm$ 0.0213 & 0.5603 $\pm$ 0.8503 & -0.0100 $\pm$ 0.0218 & 0.9780 $\pm$ 0.0189 & 0.4137 $\pm$ 0.5104 & -7.573e-04 $\pm$ 0.0159 & 0.9862 $\pm$ 0.0081 & 0.4136 $\pm$ 0.5098 & -0.0012 $\pm$ 0.0157 & 0.9861 $\pm$ 0.0081 \\
+\mbox{(375,750]} & 3.020e+04 & 0.9064 $\pm$ 1.0679 & -0.0071 $\pm$ 0.1336 & 0.9411 $\pm$ 0.0286 & 0.8185 $\pm$ 0.9983 & 0.0052 $\pm$ 0.0921 & 0.9499 $\pm$ 0.0251 & 0.7005 $\pm$ 0.9790 & -0.0444 $\pm$ 0.1012 & 0.9673 $\pm$ 0.0244 & 0.5336 $\pm$ 0.6475 & 0.0035 $\pm$ 0.0195 & 0.9780 $\pm$ 0.0121 & 0.5338 $\pm$ 0.6473 & 0.0029 $\pm$ 0.0195 & 0.9780 $\pm$ 0.0121 \\
+\mbox{(750,1500]} & 5.844e+04 & 1.1086 $\pm$ 1.1395 & -0.0149 $\pm$ 0.2070 & 0.9081 $\pm$ 0.0438 & 1.0099 $\pm$ 1.0550 & -0.0026 $\pm$ 0.1643 & 0.9215 $\pm$ 0.0390 & 0.9170 $\pm$ 1.0600 & -0.1366 $\pm$ 0.2144 & 0.9452 $\pm$ 0.0385 & 0.6764 $\pm$ 0.7163 & 0.0022 $\pm$ 0.0324 & 0.9634 $\pm$ 0.0210 & 0.6766 $\pm$ 0.7163 & 0.0017 $\pm$ 0.0324 & 0.9634 $\pm$ 0.0210 \\
+\mbox{(1500,3125]} & 9.962e+04 & 1.4196 $\pm$ 1.3401 & 0.0035 $\pm$ 0.3578 & 0.8443 $\pm$ 0.0800 & 1.3469 $\pm$ 1.2881 & 0.0186 $\pm$ 0.3279 & 0.8591 $\pm$ 0.0740 & 1.3201 $\pm$ 1.3035 & -0.2838 $\pm$ 0.4349 & 0.8943 $\pm$ 0.0743 & 0.9100 $\pm$ 0.8755 & 0.0112 $\pm$ 0.0835 & 0.9320 $\pm$ 0.0416 & 0.9100 $\pm$ 0.8754 & 0.0110 $\pm$ 0.0835 & 0.9320 $\pm$ 0.0416 \\
+\mbox{(3125,6000]} & 5.213e+04 & 1.5957 $\pm$ 1.4288 & 0.1389 $\pm$ 0.6346 & 0.7761 $\pm$ 0.1257 & 1.5404 $\pm$ 1.3696 & 0.1459 $\pm$ 0.5838 & 0.7908 $\pm$ 0.1151 & 1.5502 $\pm$ 1.3664 & -0.2749 $\pm$ 0.6781 & 0.8309 $\pm$ 0.1101 & 1.0868 $\pm$ 0.9624 & 0.0688 $\pm$ 0.2232 & 0.8875 $\pm$ 0.0746 & 1.0868 $\pm$ 0.9625 & 0.0692 $\pm$ 0.2234 & 0.8875 $\pm$ 0.0746 \\
+\mbox{(6000,9000]} & 4685.6200 & 1.4356 $\pm$ 1.3474 & 0.6299 $\pm$ 0.9829 & 0.6174 $\pm$ 0.3024 & 1.4165 $\pm$ 1.3035 & 0.6422 $\pm$ 0.9707 & 0.6237 $\pm$ 0.3039 & 1.2760 $\pm$ 1.2904 & 0.2375 $\pm$ 1.0179 & 0.6598 $\pm$ 0.2992 & 1.0292 $\pm$ 1.0765 & 0.3317 $\pm$ 0.7597 & 0.7463 $\pm$ 0.2450 & 1.0299 $\pm$ 1.0767 & 0.3349 $\pm$ 0.7591 & 0.7464 $\pm$ 0.2451 \\
+\mbox{$>$9000} & 1090.6909 & 1.1345 $\pm$ 0.8346 & 0.7135 $\pm$ 0.8978 & 0.2872 $\pm$ 0.5728 & 1.1179 $\pm$ 0.7993 & 0.7203 $\pm$ 0.8713 & 0.2890 $\pm$ 0.5844 & 0.9822 $\pm$ 0.8306 & 0.4318 $\pm$ 0.9568 & 0.3258 $\pm$ 0.5681 & 0.7097 $\pm$ 0.5150 & 0.2394 $\pm$ 0.5701 & 0.2723 $\pm$ 0.6205 & 0.7088 $\pm$ 0.5133 & 0.2446 $\pm$ 0.5671 & 0.2730 $\pm$ 0.6196 \\
+\bottomrule
+\end{tabular}%
+}
+\caption{Distance-to-3rd-closest-link bin summaries. Each metric cell reports mean $\pm$ sample SD across patch-level bin metrics. RMSE, Bias, and Pearson $r$ are recomputed from the underlying pixel values inside each $d_3$ distance bin for each patch and solver.}
+\end{table}
+
+The sample size $n$ can differ between tables, and sometimes even for the same distance bin, because each table counts only patch/bin entries where that metric is defined. A bin can contain a different number of valid pixels from patch to patch; Pearson correlation additionally requires at least two pixels with nonzero variation in both the ground truth and solver field. Therefore an RMSE or Bias entry can exist for a patch/bin where the corresponding Pearson entry is omitted.
+
+\section*{Paired $t$ analysis for RMSE}
+For RMSE, negative differences mean that solver $A$ has lower RMSE than solver $B$ on average. This is the natural one-sided direction for testing whether $A$ improves on $B$.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrrrrrl}
+\toprule
+Comparison & n & mean A & mean B & mean diff & SD diff & SE & $t$ & one-sided $p$ & 99\% upper bound & $\alpha$ & decision \\
+\midrule
+Nonlinear Optimizer (300 iters, normal shrinkage) - IDW & 100 & 1.1958 & 1.3067 & -0.1108 & 0.1276 & 0.0128 & -8.6854 & 3.814e-14 & -0.0807 & 0.0100 & reject \\
+Nonlinear Optimizer (300 iters, normal shrinkage) - ILDW & 100 & 1.1958 & 1.2390 & -0.0432 & 0.0869 & 0.0087 & -4.9659 & 1.428e-06 & -0.0226 & 0.0100 & reject \\
+Virtual Convex Light Shrinkage (2000 iters) - IDW & 100 & 0.8452 & 1.3067 & -0.4615 & 0.4964 & 0.0496 & -9.2953 & 1.166e-15 & -0.3441 & 0.0100 & reject \\
+Virtual Convex Light Shrinkage (2000 iters) - ILDW & 100 & 0.8452 & 1.2390 & -0.3938 & 0.4402 & 0.0440 & -8.9454 & 1.160e-14 & -0.2897 & 0.0100 & reject \\
+Homotopy Light Shrinkage (2000 iters) - IDW & 100 & 0.8452 & 1.3067 & -0.4614 & 0.4965 & 0.0496 & -9.2940 & 1.832e-15 & -0.3440 & 0.0100 & reject \\
+Homotopy Light Shrinkage (2000 iters) - ILDW & 100 & 0.8452 & 1.2390 & -0.3937 & 0.4402 & 0.0440 & -8.9438 & 1.021e-14 & -0.2896 & 0.0100 & reject \\
+\bottomrule
+\end{tabular}%
+}
+\caption{Paired $t$ comparisons for patchwise RMSE differences.}
+\end{table}
+
+\section*{Paired $t$ analysis for Bias}
+For Bias, the difference is the signed bias difference $Bias_A-Bias_B$. The one-sided lower-tail test asks whether solver $A$ has a smaller signed bias than solver $B$. This is not the same as testing which solver is closer to zero bias; for that question, use paired differences of absolute bias instead.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrrrrrl}
+\toprule
+Comparison & n & mean A & mean B & mean diff & SD diff & SE & $t$ & one-sided $p$ & 99\% upper bound & $\alpha$ & decision \\
+\midrule
+Nonlinear Optimizer (300 iters, normal shrinkage) - IDW & 100 & -0.1863 & 0.0343 & -0.2206 & 0.3083 & 0.0308 & -7.1569 & 7.302e-11 & -0.1477 & 0.0100 & reject \\
+Nonlinear Optimizer (300 iters, normal shrinkage) - ILDW & 100 & -0.1863 & 0.0468 & -0.2331 & 0.2912 & 0.0291 & -8.0063 & 1.163e-12 & -0.1643 & 0.0100 & reject \\
+Virtual Convex Light Shrinkage (2000 iters) - IDW & 100 & 0.0233 & 0.0343 & -0.0110 & 0.2445 & 0.0245 & -0.4513 & 0.3264 & 0.0468 & 0.0100 & do not reject \\
+Virtual Convex Light Shrinkage (2000 iters) - ILDW & 100 & 0.0233 & 0.0468 & -0.0235 & 0.2083 & 0.0208 & -1.1296 & 0.1307 & 0.0257 & 0.0100 & do not reject \\
+Homotopy Light Shrinkage (2000 iters) - IDW & 100 & 0.0231 & 0.0343 & -0.0112 & 0.2445 & 0.0245 & -0.4581 & 0.3240 & 0.0466 & 0.0100 & do not reject \\
+Homotopy Light Shrinkage (2000 iters) - ILDW & 100 & 0.0231 & 0.0468 & -0.0237 & 0.2084 & 0.0208 & -1.1375 & 0.1290 & 0.0256 & 0.0100 & do not reject \\
+\bottomrule
+\end{tabular}%
+}
+\caption{Paired $t$ comparisons for patchwise signed-bias differences.}
+\end{table}
+
+\section*{Paired Fisher-$z$ analysis for correlation}
+For Pearson correlation, first apply the Fisher transform
+\[
+z = \frac{1}{2}\log\frac{1+r}{1-r},
+\]
+then compare the paired $z$ values across patches. For correlation, larger is better, so the Fisher-$z$ table uses the one-sided direction $H_0:\mathbb{E}[d]\le 0$ against $H_1:\mathbb{E}[d]>0$.
+
+\begin{table}[H]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrrrrrl}
+\toprule
+Comparison & n & mean A & mean B & mean diff & SD diff & SE & $t$ & one-sided $p$ & 99\% lower bound & $\alpha$ & decision \\
+\midrule
+Nonlinear Optimizer (300 iters, normal shrinkage) - IDW & 100 & 1.5563 & 1.3678 & 0.1885 & 0.1243 & 0.0124 & 15.1613 & 2.442e-15 & 0.1591 & 0.0100 & reject \\
+Nonlinear Optimizer (300 iters, normal shrinkage) - ILDW & 100 & 1.5563 & 1.4161 & 0.1402 & 0.1147 & 0.0115 & 12.2162 & 1.554e-15 & 0.1130 & 0.0100 & reject \\
+Virtual Convex Light Shrinkage (2000 iters) - IDW & 100 & 1.8171 & 1.3678 & 0.4493 & 0.1293 & 0.0129 & 34.7495 & 1.998e-15 & 0.4187 & 0.0100 & reject \\
+Virtual Convex Light Shrinkage (2000 iters) - ILDW & 100 & 1.8171 & 1.4161 & 0.4009 & 0.1193 & 0.0119 & 33.6160 & 1.110e-15 & 0.3727 & 0.0100 & reject \\
+Homotopy Light Shrinkage (2000 iters) - IDW & 100 & 1.8171 & 1.3678 & 0.4494 & 0.1291 & 0.0129 & 34.8183 & 2.220e-15 & 0.4188 & 0.0100 & reject \\
+Homotopy Light Shrinkage (2000 iters) - ILDW & 100 & 1.8171 & 1.4161 & 0.4010 & 0.1191 & 0.0119 & 33.6749 & 1.554e-15 & 0.3728 & 0.0100 & reject \\
+\bottomrule
+\end{tabular}%
+}
+\caption{Paired $t$ comparisons for Fisher-transformed patchwise Pearson correlations. Positive differences mean solver $A$ has higher transformed correlation than solver $B$.}
+\end{table}
+
+\begin{table}[H]
+\centering
+\scriptsize
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\toprule
+Comparison & nonzero n & A higher & B higher & one-sided $p$ \\
+\midrule
+Nonlinear Optimizer (300 iters, normal shrinkage) - IDW & 100 & 98 & 2 & 3.985e-27 \\
+Nonlinear Optimizer (300 iters, normal shrinkage) - ILDW & 100 & 100 & 0 & 7.889e-31 \\
+Virtual Convex Light Shrinkage (2000 iters) - IDW & 100 & 100 & 0 & 7.889e-31 \\
+Virtual Convex Light Shrinkage (2000 iters) - ILDW & 100 & 100 & 0 & 7.889e-31 \\
+Homotopy Light Shrinkage (2000 iters) - IDW & 100 & 100 & 0 & 7.889e-31 \\
+Homotopy Light Shrinkage (2000 iters) - ILDW & 100 & 100 & 0 & 7.889e-31 \\
+\bottomrule
+\end{tabular}%
+}
+\caption{One-sided sign test for patchwise Pearson correlation differences. The alternative is that solver A has higher Pearson correlation than solver B on more than half of the non-tied patches.}
+\end{table}
+
+\end{document}

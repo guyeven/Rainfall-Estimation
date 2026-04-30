@@ -15,12 +15,8 @@ from io import BytesIO
 from typing import List
 from collections import OrderedDict
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
 import numpy as np
-import pandas as pd
+from PIL import Image
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
@@ -295,34 +291,44 @@ def api_patch_image(patch_id: str):
         raise HTTPException(status_code=404, detail="Patch not found in memory")
 
     data = _LAST_PATCH_DATA[patch_id]
+    arr = np.asarray(data, dtype=np.float32)
+    finite = np.isfinite(arr)
+    if not finite.any():
+        norm = np.zeros(arr.shape, dtype=np.float32)
+    else:
+        lo = float(np.nanmin(arr[finite]))
+        hi = float(np.nanmax(arr[finite]))
+        if hi <= lo:
+            norm = np.zeros(arr.shape, dtype=np.float32)
+        else:
+            norm = np.clip((arr - lo) / (hi - lo), 0.0, 1.0)
+    norm[~finite] = 0.0
 
-    fig, ax = plt.subplots(figsize=(4, 4))
+    # Lightweight viridis-like ramp, avoiding Matplotlib during API startup.
+    stops = np.array(
+        [
+            [68, 1, 84],
+            [59, 82, 139],
+            [33, 145, 140],
+            [94, 201, 98],
+            [253, 231, 37],
+        ],
+        dtype=np.float32,
+    )
+    scaled = norm * (len(stops) - 1)
+    idx = np.floor(scaled).astype(np.int16)
+    idx = np.clip(idx, 0, len(stops) - 2)
+    frac = (scaled - idx)[..., None]
+    rgb = (stops[idx] * (1.0 - frac) + stops[idx + 1] * frac).astype(np.uint8)
 
-    # Assume 2 km per pixel (OPERA grid). Adjust here if you change resolution.
-    km_per_pixel = 2.0
-
-    h, w = data.shape
-    # Map pixel indices to km using imshow "extent"
-    extent = [0, w * km_per_pixel, h * km_per_pixel, 0]
-
-    im = ax.imshow(data, origin="upper", extent=extent)
-    plt.colorbar(im, ax=ax, label="mm")
-
-    # No title inside PNG; frontend shows patch metadata
-    ax.set_title("")
-
-    # Ticks directly in km
-    xticks_km = np.linspace(0, w * km_per_pixel, num=min(5, w))
-    yticks_km = np.linspace(0, h * km_per_pixel, num=min(5, h))
-    ax.set_xticks(xticks_km)
-    ax.set_yticks(yticks_km)
-    ax.set_xlabel("x (km)")
-    ax.set_ylabel("y (km)")
+    img = Image.fromarray(rgb)
+    max_side = 512
+    scale = max(1, max_side // max(img.size))
+    if scale > 1:
+        img = img.resize((img.width * scale, img.height * scale), Image.Resampling.NEAREST)
 
     buf = BytesIO()
-    fig.tight_layout()
-    fig.savefig(buf, format="png", dpi=100)
-    plt.close(fig)
+    img.save(buf, format="PNG")
     buf.seek(0)
 
     return Response(content=buf.read(), media_type="image/png")
@@ -380,6 +386,8 @@ def api_patch_geo(
 # --------------------------------------------------------------------
 @app.get("/patches/export_excel")
 def api_export_patches_excel():
+    import pandas as pd
+
     if not _LAST_PATCHES:
         return {"status": "no_patches", "message": "Run /detect_patches first."}
 
