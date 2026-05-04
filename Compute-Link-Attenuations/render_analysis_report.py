@@ -1178,6 +1178,32 @@ def plot_j_behavior(
         arr = np.asarray(vals, dtype=np.float64)
         return arr[np.isfinite(arr)]
 
+    series_colors: Dict[str, str] = {
+        r"$J$": "#1f77b4",
+        r"$\alpha_{\mathrm{atten}} \cdot J_{\mathrm{atten}}$": "#ff7f0e",
+        r"$\alpha_{1d} \cdot J_{1d}$": "#2ca02c",
+        r"$\alpha_{\mathrm{total}} \cdot J_{\mathrm{total}}$": "#d62728",
+        r"$\alpha_{2d} \cdot J_{2d}$": "#9467bd",
+    }
+
+    def series_style(label: str, linewidth: float, color: Optional[str] = None) -> Dict[str, Any]:
+        base_color = series_colors.get(label, color)
+        if label == r"$J$":
+            return {
+                "color": base_color or "#1f77b4",
+                "linewidth": max(1.8, linewidth + 0.6),
+                "markersize": 2.6,
+                "alpha": 1.0,
+                "zorder": 5,
+            }
+        return {
+            "color": base_color,
+            "linewidth": linewidth,
+            "markersize": 2.0,
+            "alpha": 0.8,
+            "zorder": 3,
+        }
+
     def build_series(rows: Sequence[Dict[str, Any]]) -> Tuple[List[Tuple[str, List[float], float]], List[float]]:
         j_series: List[Tuple[str, List[float], float]] = [
             (r"$J$", series_from_rows(rows, "J_weighted_sum"), 1.0),
@@ -1199,7 +1225,8 @@ def plot_j_behavior(
                     arr = np.where(arr <= cutoff, arr, np.nan)
                 elif upper_only:
                     arr = np.where(arr > cutoff, arr, np.nan)
-            ax.plot(xs_local, arr, marker="o", markersize=2.0, linewidth=linewidth, label=(label if show_legend else None))
+            style = series_style(label, linewidth)
+            ax.plot(xs_local, arr, marker="o", label=(label if show_legend else None), **style)
 
     def add_final_weighted_sum_marker(ax: Any, final_value: float) -> None:
         ymin, ymax = ax.get_ylim()
@@ -1219,6 +1246,20 @@ def plot_j_behavior(
             else:
                 labels.append(f"{tick:g}")
         ax.set_yticklabels(labels)
+        for tick_value, tick_label in zip(deduped, ax.get_yticklabels()):
+            if abs(tick_value - final_value) <= 1e-9:
+                tick_label.set_bbox(
+                    {
+                        "facecolor": "#1f77b4",
+                        "edgecolor": "#1f77b4",
+                        "boxstyle": "round,pad=0.15",
+                        "linewidth": 0.8,
+                    }
+                )
+                tick_label.set_color("white")
+            else:
+                tick_label.set_bbox(None)
+                tick_label.set_color("black")
         ax.axhline(final_value, color="#666666", linestyle=":", linewidth=0.8, alpha=0.45, zorder=0)
 
     def plot_single_panel(rows: Sequence[Dict[str, Any]], *, fig_title: str) -> None:
@@ -1268,7 +1309,8 @@ def plot_j_behavior(
         else:
             fig, ax = plt.subplots(figsize=(8.5, 6.0), dpi=dpi)
             draw_series(ax, xs_local, j_series)
-            ax.set_title(fig_title)
+            ax.set_ylim(bottom=0.0)
+            ax.set_title(fig_title, pad=6)
             ax.legend(loc="best", fontsize=8)
             finite_weighted_sum = finite_values(weighted_sum)
             if finite_weighted_sum.size:
@@ -1279,7 +1321,7 @@ def plot_j_behavior(
         ax.set_ylabel("Weighted objective contribution")
         for axis in axes:
             axis.grid(axis="y", alpha=0.25)
-        fig.tight_layout()
+        fig.subplots_adjust(left=0.13, right=0.95, bottom=0.14, top=0.90)
         fig.savefig(out_png, dpi=dpi)
         plt.close(fig)
 
@@ -1308,14 +1350,14 @@ def plot_j_behavior(
     fig, axes = plt.subplots(n_stages, 1, figsize=(9.0, fig_h), dpi=dpi, sharex=False)
     if n_stages == 1:
         axes = [axes]
-    color_cycle = plt.rcParams["axes.prop_cycle"].by_key().get("color", [])
     for ax, (stage_id, beta, rows) in zip(axes, stage_rows):
         xs_local = list(range(len(rows)))
         j_series, weighted_sum = build_series(rows)
         for idx, (label, vals, linewidth) in enumerate(j_series):
-            color = color_cycle[idx % max(1, len(color_cycle))] if color_cycle else None
             arr = np.asarray(vals, dtype=np.float64)
-            ax.plot(xs_local, arr, marker="o", markersize=2.0, linewidth=linewidth, label=label, color=color)
+            style = series_style(label, linewidth)
+            ax.plot(xs_local, arr, marker="o", label=label, **style)
+        ax.set_ylim(bottom=0.0)
         finite_weighted_sum = finite_values(weighted_sum)
         if finite_weighted_sum.size:
             add_final_weighted_sum_marker(ax, float(finite_weighted_sum[-1]))
