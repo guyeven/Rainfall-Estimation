@@ -1252,11 +1252,13 @@ def plot_j_behavior(
                     {
                         "facecolor": "#1f77b4",
                         "edgecolor": "#1f77b4",
-                        "boxstyle": "round,pad=0.15",
+                        "boxstyle": "round,pad=0.22",
                         "linewidth": 0.8,
+                        "alpha": 1.0,
                     }
                 )
                 tick_label.set_color("white")
+                tick_label.set_zorder(6)
             else:
                 tick_label.set_bbox(None)
                 tick_label.set_color("black")
@@ -1318,9 +1320,9 @@ def plot_j_behavior(
             axes = [ax]
 
         ax.set_xlabel("Iteration")
-        ax.set_ylabel("Weighted objective contribution")
         for axis in axes:
             axis.grid(axis="y", alpha=0.25)
+        fig.supylabel("Weighted objective contribution", x=0.015, y=0.47)
         fig.subplots_adjust(left=0.13, right=0.95, bottom=0.14, top=0.90)
         fig.savefig(out_png, dpi=dpi)
         plt.close(fig)
@@ -1364,10 +1366,10 @@ def plot_j_behavior(
         inner_iters = max(0, len(rows) - 1)
         beta_str = f"{beta:.2f}" if math.isfinite(beta) else "NA"
         ax.set_title(f"Stage {stage_id + 1} (beta={beta_str}, inner iterations={inner_iters})", fontsize=10)
-        ax.set_ylabel("Weighted objective\ncontribution")
         ax.grid(axis="y", alpha=0.25)
     axes[0].legend(loc="best", fontsize=8)
     axes[-1].set_xlabel("Inner iteration within stage")
+    fig.supylabel("Weighted objective contribution", x=0.015, y=0.5)
     fig.suptitle(title)
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
     fig.savefig(out_png, dpi=dpi)
