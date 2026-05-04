@@ -1180,7 +1180,7 @@ def plot_j_behavior(
 
     def build_series(rows: Sequence[Dict[str, Any]]) -> Tuple[List[Tuple[str, List[float], float]], List[float]]:
         j_series: List[Tuple[str, List[float], float]] = [
-            (r"$J_{\mathrm{weighted\ sum}}$", series_from_rows(rows, "J_weighted_sum"), 1.0),
+            (r"$J$", series_from_rows(rows, "J_weighted_sum"), 1.0),
             (r"$\alpha_{\mathrm{atten}} \cdot J_{\mathrm{atten}}$", weighted_or_raw_from_rows(rows, "weighted_J_atten", "J_atten"), 0.9),
             (r"$\alpha_{1d} \cdot J_{1d}$", weighted_or_raw_from_rows(rows, "weighted_J_1d", "J_1d"), 0.9),
             (r"$\alpha_{\mathrm{total}} \cdot J_{\mathrm{total}}$", weighted_or_raw_from_rows(rows, "weighted_J_total", "J_total"), 0.9),
@@ -1188,7 +1188,7 @@ def plot_j_behavior(
         ]
         weighted_sum = j_series[0][1]
         if not weighted_sum or all(math.isnan(v) for v in weighted_sum):
-            j_series[0] = (r"$J_{\mathrm{weighted\ sum}}$", series_from_rows(rows, "J_native_total"), 1.0)
+            j_series[0] = (r"$J$", series_from_rows(rows, "J_native_total"), 1.0)
         return j_series, j_series[0][1]
 
     def draw_series(ax: Any, xs_local: Sequence[int], j_series: Sequence[Tuple[str, List[float], float]], *, lower_only: bool = False, upper_only: bool = False, cutoff: Optional[float] = None, show_legend: bool = True) -> None:
@@ -1266,7 +1266,7 @@ def plot_j_behavior(
                 add_final_weighted_sum_marker(ax_top, final_weighted_sum)
             axes = [ax_top, ax]
         else:
-            fig, ax = plt.subplots(figsize=(8.5, 4.8), dpi=dpi)
+            fig, ax = plt.subplots(figsize=(8.5, 6.0), dpi=dpi)
             draw_series(ax, xs_local, j_series)
             ax.set_title(fig_title)
             ax.legend(loc="best", fontsize=8)
