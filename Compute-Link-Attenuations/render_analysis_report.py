@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import textwrap
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +35,36 @@ _PATCH_LOCATION_OVERRIDES: Dict[str, str] = {
     "RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301282100_patch000": "Barents Sea area",
     "RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310200_patch000": "Edinburgh area",
     "RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301311600_patch000": "Western Norway",
+}
+
+_COMBINED_PATCH_SOLVER_ORDER: Dict[str, int] = {
+    "IDW": 0,
+    "ILDW": 1,
+    "OPT_NORM_ILDW_MULT_ILDW_INIT_LIGHT_JTOTAL_LONG": 2,
+    "OPT_NORM_VIRTUAL_CONVEX_CONST_INIT_LONG_LIGHT_JTOTAL": 3,
+    "OPT_NORM_VIRTUAL_HOMOTOPY_CONST_INIT_LONG_LIGHT_JTOTAL": 4,
+    "OPT_NORM_ILDW_MULT_GT_INIT_LIGHT_JTOTAL": 5,
+}
+
+_DEFAULT_SOLVER_DISPLAY_NAMES: Dict[str, str] = {
+    "IDW": "IDW",
+    "ILDW": "ILDW",
+    "OPT_NORM_ILDW_MULT_ILDW_INIT_LIGHT_JTOTAL_LONG": "Solver(ILDW)",
+    "OPT_NORM_VIRTUAL_CONVEX_CONST_INIT_LONG_LIGHT_JTOTAL": "Convex-Solver",
+    "OPT_NORM_VIRTUAL_HOMOTOPY_CONST_INIT_LONG_LIGHT_JTOTAL": "Homotopy-Solver",
+    "OPT_NORM_ILDW_MULT_GT_INIT_LIGHT_JTOTAL": "Solver(GT)",
+}
+
+_COMBINED_FEW_SOLVERS = {
+    "IDW",
+    "OPT_NORM_ILDW_MULT_GT_INIT_LIGHT_JTOTAL",
+    "OPT_NORM_VIRTUAL_CONVEX_CONST_INIT_LONG_LIGHT_JTOTAL",
+}
+
+_COMBINED_FEW_SOLVER_ORDER: Dict[str, int] = {
+    "IDW": 0,
+    "OPT_NORM_ILDW_MULT_GT_INIT_LIGHT_JTOTAL": 1,
+    "OPT_NORM_VIRTUAL_CONVEX_CONST_INIT_LONG_LIGHT_JTOTAL": 2,
 }
 
 
@@ -101,7 +132,10 @@ def reorder_row_columns(
 
 
 def solver_display_map(cache: Dict[str, Any], render_config: Dict[str, Any]) -> Dict[str, str]:
-    base = {str(v): str(v) for v in cache.get("solvers", {}).get("order", [])}
+    base = {
+        str(v): _DEFAULT_SOLVER_DISPLAY_NAMES.get(str(v), str(v))
+        for v in cache.get("solvers", {}).get("order", [])
+    }
     overrides = render_value(render_config, "labels.solver_overrides", {})
     if not isinstance(overrides, dict):
         return base
@@ -112,6 +146,20 @@ def solver_display_map(cache: Dict[str, Any], render_config: Dict[str, Any]) -> 
 
 def apply_solver_display(label: str, display_map: Dict[str, str]) -> str:
     return display_map.get(str(label), str(label))
+
+
+def combined_patch_solver_sort_key(job: Dict[str, Any], display_map: Dict[str, str]) -> Tuple[int, str]:
+    raw_label = str(job["solver_label"])
+    return _COMBINED_PATCH_SOLVER_ORDER.get(raw_label, 100), apply_solver_display(raw_label, display_map)
+
+
+def combined_patch_solver_sort_key_with_order(
+    job: Dict[str, Any],
+    display_map: Dict[str, str],
+    solver_order: Dict[str, int],
+) -> Tuple[int, str]:
+    raw_label = str(job["solver_label"])
+    return solver_order.get(raw_label, 100), apply_solver_display(raw_label, display_map)
 
 
 def replace_solver_labels_in_text(text: str, display_map: Dict[str, str]) -> str:
@@ -229,10 +277,23 @@ def plot_box_whisker(
         or [np.array([], dtype=np.float64)]
     )
     finite_vals = finite_vals[np.isfinite(finite_vals)]
+    median_vals = np.asarray(
+        [
+            float(np.percentile(clean_vals, 50))
+            for method in method_order
+            for lab in dist_labels
+            for raw_vals in [np.asarray(per_patch_values.get(method, {}).get(lab, []), dtype=np.float64)]
+            for clean_vals in [raw_vals[np.isfinite(raw_vals)]]
+            if clean_vals.size > 0
+        ],
+        dtype=np.float64,
+    )
     positive_vals = finite_vals[finite_vals > 0]
     log_floor = float(np.min(positive_vals)) * 0.5 if positive_vals.size else 1e-6
     if broken_y and finite_vals.size:
         low_end = float(np.percentile(finite_vals, 90))
+        if median_vals.size:
+            low_end = max(low_end, float(np.max(median_vals)) * 1.08)
         high_start = float(np.percentile(finite_vals, 98))
         y_top = float(np.max(finite_vals))
         if high_start <= low_end * 1.15 or y_top <= high_start:
@@ -281,7 +342,16 @@ def plot_box_whisker(
                         capprops={"color": color, "linewidth": 1.2},
                         medianprops={"color": color, "linewidth": 1.4},
                     )
-            target_ax.plot(x + off, medians, marker="o", linestyle="None", color=color, label=method)
+            target_ax.plot(
+                x + off,
+                medians,
+                marker="o",
+                linestyle="None",
+                color=color,
+                markersize=6.2,
+                zorder=8,
+                label=method,
+            )
 
     for target_ax in axes:
         draw_contents(target_ax)
@@ -662,21 +732,30 @@ def render_combined_patch_error_map(
     img_dir: Path,
     render_cfg: Dict[str, Any],
     display_map: Dict[str, str],
+    output_subdir: str = "combined",
+    solver_allowlist: Optional[set[str]] = None,
+    solver_order: Optional[Dict[str, int]] = None,
+    include_map_override: Optional[bool] = None,
 ) -> None:
     import matplotlib.pyplot as plt  # type: ignore
     from matplotlib.gridspec import GridSpec  # type: ignore
 
+    if solver_allowlist is not None:
+        jobs = [job for job in jobs if str(job["solver_label"]) in solver_allowlist]
     if not jobs:
         return
 
-    jobs_sorted = sorted(jobs, key=lambda j: apply_solver_display(str(j["solver_label"]), display_map))
+    if solver_order is None:
+        jobs_sorted = sorted(jobs, key=lambda j: combined_patch_solver_sort_key(j, display_map))
+    else:
+        jobs_sorted = sorted(jobs, key=lambda j: combined_patch_solver_sort_key_with_order(j, display_map, solver_order))
     gt = load_npz_first_key(Path(str(jobs_sorted[0]["gt_path"])), list(jobs_sorted[0]["gt_key_pref"])).astype(np.float64)
     thr = float(render_cfg["threshold_mmph"])
     plot_dpi = int(render_cfg["dpi"])
     cmap_gt = str(render_cfg["cmap_gt"])
     cmap_sol = str(render_cfg["cmap_sol"])
     cmap_rel = str(render_cfg["cmap_rel"])
-    include_map = bool(render_cfg.get("include_map", False))
+    include_map = bool(render_cfg.get("include_map", False)) if include_map_override is None else include_map_override
 
     rainy = gt >= thr
     solver_payloads: List[Tuple[str, np.ndarray, np.ndarray]] = []
@@ -704,8 +783,8 @@ def render_combined_patch_error_map(
     n_solver = len(solver_payloads)
     n_cols = n_solver + 1 + (1 if include_map else 0)
     width_ratios = ([1.45] if include_map else []) + [1.35] + [1.0] * n_solver
-    fig = plt.figure(figsize=(4.8 * n_cols, 8.6), dpi=plot_dpi)
-    gs = GridSpec(2, n_cols, width_ratios=width_ratios, hspace=0.14, wspace=0.28)
+    fig = plt.figure(figsize=(4.8 * n_cols, 9.2), dpi=plot_dpi)
+    gs = GridSpec(2, n_cols, width_ratios=width_ratios, hspace=0.22, wspace=0.28)
 
     next_col = 0
     if include_map:
@@ -765,7 +844,8 @@ def render_combined_patch_error_map(
         ax_bot = fig.add_subplot(gs[1, idx])
 
         pred_im = ax_top.imshow(pred, cmap=cmap_sol, vmin=0.0, vmax=rmax)
-        ax_top.set_title(f"{solver_title}\nprediction", fontsize=12)
+        wrapped_solver_title = "\n".join(textwrap.wrap(solver_title, width=28)) or solver_title
+        ax_top.set_title(wrapped_solver_title, fontsize=10)
         ax_top.set_xticks([])
         ax_top.set_yticks([])
         fig.colorbar(pred_im, ax=ax_top, fraction=0.046, pad=0.03)
@@ -789,10 +869,11 @@ def render_combined_patch_error_map(
         f"{pretty_patch_label(patch_key)}\n"
         "Ground Truth, solver predictions, and signed relative error over rainy pixels",
         fontsize=14,
+        y=0.99,
     )
-    out_path = img_dir / "combined" / f"{safe_path_token(str(patch_key))}.png"
+    out_path = img_dir / output_subdir / f"{safe_path_token(str(patch_key))}.png"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.01, 0.01, 0.99, 0.95))
+    fig.tight_layout(rect=(0.01, 0.01, 0.99, 0.82))
     fig.savefig(out_path)
     plt.close(fig)
 
@@ -1892,6 +1973,20 @@ def render_report_from_cache(
             )
             if idx == len(patch_keys) or idx % interval == 0:
                 log_progress(f"Combined patch error maps: {idx}/{len(patch_keys)}")
+        log_progress(f"Rendering reduced combined patch error maps ({len(patch_keys)} patches)")
+        for idx, patch_key in enumerate(patch_keys, start=1):
+            render_combined_patch_error_map(
+                patch_key,
+                jobs_by_patch[patch_key],
+                img_dir=patch_error_maps_img_dir,
+                render_cfg=patch_map_render_cfg,
+                display_map=display_map,
+                output_subdir="combined_few",
+                solver_allowlist=_COMBINED_FEW_SOLVERS,
+                solver_order=_COMBINED_FEW_SOLVER_ORDER,
+            )
+            if idx == len(patch_keys) or idx % interval == 0:
+                log_progress(f"Reduced combined patch error maps: {idx}/{len(patch_keys)}")
         finish_major("patch error maps")
 
     if rae_hist_plots and render_bool(render_config, "plots.rae_histograms", True):
