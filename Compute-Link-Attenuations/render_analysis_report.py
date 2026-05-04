@@ -50,8 +50,8 @@ _DEFAULT_SOLVER_DISPLAY_NAMES: Dict[str, str] = {
     "IDW": "IDW",
     "ILDW": "ILDW",
     "OPT_NORM_ILDW_MULT_ILDW_INIT_LIGHT_JTOTAL_LONG": "Solver(ILDW)",
-    "OPT_NORM_VIRTUAL_CONVEX_CONST_INIT_LONG_LIGHT_JTOTAL": "Convex-Solver",
-    "OPT_NORM_VIRTUAL_HOMOTOPY_CONST_INIT_LONG_LIGHT_JTOTAL": "Homotopy-Solver",
+    "OPT_NORM_VIRTUAL_CONVEX_CONST_INIT_LONG_LIGHT_JTOTAL": "Convex Solver",
+    "OPT_NORM_VIRTUAL_HOMOTOPY_CONST_INIT_LONG_LIGHT_JTOTAL": "Homotopy Solver",
     "OPT_NORM_ILDW_MULT_GT_INIT_LIGHT_JTOTAL": "Solver(GT)",
 }
 
@@ -151,6 +151,11 @@ def apply_solver_display(label: str, display_map: Dict[str, str]) -> str:
 def combined_patch_solver_sort_key(job: Dict[str, Any], display_map: Dict[str, str]) -> Tuple[int, str]:
     raw_label = str(job["solver_label"])
     return _COMBINED_PATCH_SOLVER_ORDER.get(raw_label, 100), apply_solver_display(raw_label, display_map)
+
+
+def ordered_solver_labels(cache: Dict[str, Any]) -> List[str]:
+    labels = [str(v) for v in cache.get("solvers", {}).get("order", [])]
+    return sorted(labels, key=lambda label: (_COMBINED_PATCH_SOLVER_ORDER.get(label, 100), label))
 
 
 def combined_patch_solver_sort_key_with_order(
@@ -1869,7 +1874,7 @@ def render_report_from_cache(
     jatten_k_values = [int(v) for v in labels["jatten_k_values"]]
     jatten_dist_labels = [str(v) for v in labels["jatten_dist_labels"]]
 
-    solver_order = [str(v) for v in cache["solvers"]["order"]]
+    solver_order = ordered_solver_labels(cache)
     solver_order_display = [apply_solver_display(v, display_map) for v in solver_order]
     largest_patch_payload = cache.get("largest_patch_plot_payload", None)
     j_behavior_plots = cache.get("j_behavior_plots", []) or []
@@ -2167,18 +2172,18 @@ def render_report_from_cache(
             rainy_plot_title = "Distribution of patch-level median RAE over rainy pixels by distance bin" if focus_rainy_k3 else rainy_title
             rainy_box_plot_title = "Distribution of patch-level median RAE over rainy pixels by distance bin" if focus_rainy_k3 else rainy_box_title
             nonrainy_box_plot_title = "Distribution of patch-level median non-rainy-pixel absolute error by distance bin" if focus_rainy_k3 else nonrainy_box_title
-            rainy_x_label = "Distance to 3rd-closest link (m)" if focus_rainy_k3 else None
+            distance_x_label = "d3 bin(m)" if focus_rainy_k3 else None
             rainy_plot_footnote = None if focus_rainy_k3 else rainy_footnote
             rainy_box_plot_footnote = None
 
             if render_bool(render_config, "plots.distance_profiles", True):
                 log_progress(f"Distance-profile medians: k={k}")
-                plot_iqr_summary(distance_iqr_img_dir / rainy_name, rainy_plot_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, x_label=rainy_x_label, y_label="Patch-level median rainy-pixel RAE\nDot: median, bar: IQR", footnote=rainy_plot_footnote, broken_y=focus_rainy_k3)
-                plot_iqr_summary(distance_iqr_img_dir / nonrainy_name, nonrainy_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Per-patch median non-rainy-pixel absolute error\nDot: median, bar: IQR", footnote=nonrainy_footnote)
-                plot_box_whisker(distance_box_linear_k_img_dir / rainy_box_name, rainy_box_plot_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, x_label=rainy_x_label, y_label="Median rainy-pixel RAE per patch", footnote=rainy_box_plot_footnote, broken_y=True)
-                plot_box_whisker(distance_box_linear_k_img_dir / nonrainy_box_name, nonrainy_box_plot_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Median non-rainy-pixel absolute error per patch", footnote=None, broken_y=True)
-                plot_box_whisker(distance_box_log_k_img_dir / rainy_box_name, rainy_box_plot_title + " (log scale)", medians_rainy_display, labels_r, method_order_display, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, x_label=rainy_x_label, y_label="Median rainy-pixel RAE per patch", footnote=None, log_scale=True)
-                plot_box_whisker(distance_box_log_k_img_dir / nonrainy_box_name, nonrainy_box_plot_title + " (log scale)", medians_nonrainy_display, labels_n, method_order_display, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, y_label="Median non-rainy-pixel absolute error per patch", footnote=None, log_scale=True)
+                plot_iqr_summary(distance_iqr_img_dir / rainy_name, rainy_plot_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, x_label=distance_x_label, y_label="Patch-level median rainy-pixel RAE\nDot: median, bar: IQR", footnote=rainy_plot_footnote, broken_y=focus_rainy_k3)
+                plot_iqr_summary(distance_iqr_img_dir / nonrainy_name, nonrainy_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, x_label=distance_x_label, y_label="Per-patch median non-rainy-pixel absolute error\nDot: median, bar: IQR", footnote=nonrainy_footnote)
+                plot_box_whisker(distance_box_linear_k_img_dir / rainy_box_name, rainy_box_plot_title, medians_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, x_label=distance_x_label, y_label="Median rainy-pixel RAE per patch", footnote=rainy_box_plot_footnote, broken_y=True)
+                plot_box_whisker(distance_box_linear_k_img_dir / nonrainy_box_name, nonrainy_box_plot_title, medians_nonrainy_display, labels_n, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, x_label=distance_x_label, y_label="Median non-rainy-pixel absolute error per patch", footnote=None, broken_y=True)
+                plot_box_whisker(distance_box_log_k_img_dir / rainy_box_name, rainy_box_plot_title + " (log scale)", medians_rainy_display, labels_r, method_order_display, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, x_label=distance_x_label, y_label="Median rainy-pixel RAE per patch", footnote=None, log_scale=True)
+                plot_box_whisker(distance_box_log_k_img_dir / nonrainy_box_name, nonrainy_box_plot_title + " (log scale)", medians_nonrainy_display, labels_n, method_order_display, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_n, x_label=distance_x_label, y_label="Median non-rainy-pixel absolute error per patch", footnote=None, log_scale=True)
             if render_bool(render_config, "plots.p90_profiles", True):
                 log_progress(f"Distance-profile p90s: k={k}")
                 plot_iqr_summary(distance_iqr_img_dir / rainy_p90_name, rainy_p90_title, p90s_rainy_display, labels_r, method_order_display, y_max=y_max, dpi=dpi, bin_spacing=bin_spacing, tick_labels=tick_labels_r, y_label="Per-patch rainy-pixel p90 RAE\nDot: median, bar: IQR", footnote="Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\nEach patch contributes one rainy-pixel 90th-percentile relative absolute error value in each distance bin.\nDot = median of those per-patch p90 values across patches.\nBar = 25th to 75th percentile of those per-patch p90 values across patches.\nTick labels show the average rainy-pixel count per patch in the bin.")
@@ -2204,7 +2209,7 @@ def render_report_from_cache(
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_r,
-                    x_label=rainy_x_label,
+                    x_label=distance_x_label,
                     y_label="Patch-level median rainy-pixel RAE relative to IDW",
                     footnote=None,
                     broken_y=True,
@@ -2218,7 +2223,7 @@ def render_report_from_cache(
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_r,
-                    x_label=rainy_x_label,
+                    x_label=distance_x_label,
                     y_label="Patch-level median rainy-pixel RAE relative to IDW",
                     footnote=None,
                     log_scale=True,
@@ -2232,7 +2237,7 @@ def render_report_from_cache(
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_r,
-                    x_label=rainy_x_label,
+                    x_label=distance_x_label,
                     y_label="Patch-level median rainy-pixel RAE relative to IDW\nDot: median, bar: IQR",
                     footnote=None if focus_rainy_k3 else (
                         "Metric (RAE): |GT(p)-PRED(p)| / GT(p) over rainy pixels p.\n"
@@ -2251,6 +2256,7 @@ def render_report_from_cache(
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_n,
+                    x_label=distance_x_label,
                     y_label="Per-patch error-median ratio to IDW\nDot: median, bar: IQR",
                     footnote=(
                         "Metric: |GT(p)-PRED(p)| over non-rainy pixels p.\n"
@@ -2268,6 +2274,7 @@ def render_report_from_cache(
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_n,
+                    x_label=distance_x_label,
                     y_label="Per-patch median non-rainy-pixel error relative to IDW",
                     footnote=None,
                     broken_y=True,
@@ -2281,6 +2288,7 @@ def render_report_from_cache(
                     dpi=dpi,
                     bin_spacing=bin_spacing,
                     tick_labels=tick_labels_n,
+                    x_label=distance_x_label,
                     y_label="Per-patch median non-rainy-pixel error relative to IDW",
                     footnote=None,
                     log_scale=True,
