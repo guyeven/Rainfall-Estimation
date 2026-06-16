@@ -1,8 +1,9 @@
 % Change only these lines to point the note at another rendered report.
 \newcommand{\reportroot}{../Compute-Link-Attenuations/HundredPatches/norm/report}
+\newcommand{\reportlightroot}{../Compute-Link-Attenuations/HundredPatches/norm/report_light_jtotal_2000_with_gt}
 \newcommand{\datasetlabel}{HundredPatches/norm}
-\newcommand{\distanceboxplot}{\reportroot/images/distance_profiles_box_whisker/linear/distance_iqr_medians_rainy_multi_k3_box_whisker.png}
-\newcommand{\nonrainydistanceboxplot}{\reportroot/images/distance_profiles_box_whisker/linear/distance_iqr_medians_nonrainy_multi_k3_box_whisker.png}
+\newcommand{\distanceboxplot}{\reportlightroot/images/distance_profiles_box_whisker/linear/k3/distance_iqr_medians_rainy_multi_k3_box_whisker.png}
+\newcommand{\nonrainydistanceboxplot}{\reportlightroot/images/distance_profiles_box_whisker/linear/k3/distance_iqr_medians_nonrainy_multi_k3_box_whisker.png}
 \newcommand{\idwconfusionplot}{\reportroot/images/confusion_maps/IDW_confusion_map.png}
 \newcommand{\ildwconfusionplot}{\reportroot/images/confusion_maps/ILDW_confusion_map.png}
 \newcommand{\nonlinearconfusionplot}{\reportroot/images/confusion_maps/Nonlinear_Optimizer_confusion_map.png}
@@ -10,7 +11,7 @@
 \newcommand{\patcheuropeoverview}{\reportroot/images/patch_overview/hundredpatches_europe_overview_basemap.png}
 \newcommand{\patchmetricboxplot}{\reportroot/images/summaries/patch_map_metrics_boxplots_readable_corr.png}
 \newcommand{\linkhistplot}{\reportroot/images/patch_overview/link_count_histogram.png}
-\newcommand{\largestpatchbinsplot}{\reportroot/images/largest_patch_distance_bins/largest_patch_distance_bins_k3.png}
+\newcommand{\largestpatchbinsplot}{\reportlightroot/images/largest_patch_distance_bins/largest_patch_distance_bins_k3.png}
 \newcommand{\contextroot}{\reportroot/images/rain_patch_explorer_maps}
 \newcommand{\contextvone}{\reportroot/images/rain_patch_explorer_maps/v1}
 \newcommand{\contextvtwo}{\reportroot/images/rain_patch_explorer_maps/v2}
@@ -19,11 +20,13 @@
 \newcommand{\contextscreenshotone}{\contextvtwo/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301282100_patch000.png}
 \newcommand{\contextscreenshottwo}{\contextvtwo/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310200_patch000.png}
 \newcommand{\contextscreenshotthree}{\contextvone/202301311600_patch000_map.png}
-\newcommand{\combinedcaseorigone}{\reportroot/images/patch_error_maps/combined/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301280900_patch000.png}
-\newcommand{\combinedcaseorigtwo}{\reportroot/images/patch_error_maps/combined/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310900_patch000.png}
-\newcommand{\combinedcaseone}{\reportroot/images/patch_error_maps/combined/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301282100_patch000.png}
-\newcommand{\combinedcasetwo}{\reportroot/images/patch_error_maps/combined/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310200_patch000.png}
-\newcommand{\combinedcasethree}{\reportroot/images/patch_error_maps/combined/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301311600_patch000.png}
+\newcommand{\combinedcaseorigone}{\reportlightroot/images/patch_error_maps/combined/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301280900_patch000.png}
+\newcommand{\combinedcaseorigtwo}{\reportlightroot/images/patch_error_maps/combined/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310900_patch000.png}
+\newcommand{\combinedfewcaseorigone}{\reportlightroot/images/patch_error_maps/combined_few/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301280900_patch000.png}
+\newcommand{\combinedfewcaseorigtwo}{\reportlightroot/images/patch_error_maps/combined_few/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310900_patch000.png}
+\newcommand{\combinedcaseone}{\reportlightroot/images/patch_error_maps/combined/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301282100_patch000.png}
+\newcommand{\combinedcasetwo}{\reportlightroot/images/patch_error_maps/combined/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310200_patch000.png}
+\newcommand{\combinedcasethree}{\reportlightroot/images/patch_error_maps/combined/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301311600_patch000.png}
 \newcommand{\idwcaseorigone}{\reportroot/images/patch_error_maps/IDW/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301280900_patch000_rainy.png}
 \newcommand{\ildwcaseorigone}{\reportroot/images/patch_error_maps/ILDW/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301280900_patch000_rainy.png}
 \newcommand{\optcaseorigone}{\reportroot/images/patch_error_maps/OPT_NORM_ILDW_MULT_ILDW_INIT/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301280900_patch000_rainy.png}
@@ -39,8 +42,12 @@
 \newcommand{\idwcasethree}{\reportroot/images/patch_error_maps/IDW/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301311600_patch000_rainy.png}
 \newcommand{\ildwcasethree}{\reportroot/images/patch_error_maps/ILDW/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301311600_patch000_rainy.png}
 \newcommand{\optcasethree}{\reportroot/images/patch_error_maps/OPT_NORM_ILDW_MULT_ILDW_INIT/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301311600_patch000_rainy.png}
-\newcommand{\jcaseorigone}{\reportroot/images/j_behavior/opt_norm_ildw_mult_ildw_init/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301280900_patch000.png}
-\newcommand{\jcaseorigtwo}{\reportroot/images/j_behavior/opt_norm_ildw_mult_ildw_init/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310900_patch000.png}
-\newcommand{\jcaseone}{\reportroot/images/j_behavior/opt_norm_ildw_mult_ildw_init/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301282100_patch000.png}
-\newcommand{\jcasetwo}{\reportroot/images/j_behavior/opt_norm_ildw_mult_ildw_init/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310200_patch000.png}
-\newcommand{\jcasethree}{\reportroot/images/j_behavior/opt_norm_ildw_mult_ildw_init/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301311600_patch000.png}
+\newcommand{\jbehaviorroot}{../Compute-Link-Attenuations/HundredPatches/norm/report_light_jtotal_2000_with_gt/images/j_behavior/opt_norm_virtual_convex_const_init_long_light_jtotal}
+\newcommand{\jcaseorigone}{\jbehaviorroot/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301280900_patch000.png}
+\newcommand{\jcaseorigtwo}{\jbehaviorroot/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310900_patch000.png}
+\newcommand{\jcaseone}{\jbehaviorroot/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301282100_patch000.png}
+\newcommand{\jcasetwo}{\jbehaviorroot/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310200_patch000.png}
+\newcommand{\jcasethree}{\jbehaviorroot/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301311600_patch000.png}
+\newcommand{\jgtbehaviorroot}{../Compute-Link-Attenuations/HundredPatches/norm/report_light_jtotal_2000_with_gt/images/j_behavior/opt_norm_ildw_mult_gt_init_light_jtotal}
+\newcommand{\jgtcaseorigone}{\jgtbehaviorroot/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301280900_patch000.png}
+\newcommand{\jgtcaseorigtwo}{\jgtbehaviorroot/RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301310900_patch000.png}
