@@ -4,7 +4,7 @@
 \usepackage[round,authoryear]{natbib}
 \usepackage{siunitx}
 \usepackage{cleveref}
-\usepackage[margin=1in]{geometry}
+\usepackage[letterpaper,twoside,inner=1.18in,outer=0.95in,top=1in,bottom=1in]{geometry}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{float}
@@ -15,6 +15,7 @@
 \usepackage{xcolor}
 \usepackage{pdfpages}
 \usepackage{titlesec}
+\usepackage{fancyhdr}
 %\usepackage{algorithm}
 %\usepackage{algpseudocode}
 \usepackage[ruled,vlined,linesnumbered]{algorithm2e}
@@ -23,11 +24,22 @@
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
 
+\setlength{\headheight}{14pt}
+\pagestyle{plain}
+\fancypagestyle{thesismain}{%
+  \fancyhf{}
+  \fancyhead[L]{\bfseries\thepage}
+  \fancyhead[R]{\bfseries\nouppercase{\leftmark}}
+  \renewcommand{\headrulewidth}{0.4pt}
+  \renewcommand{\footrulewidth}{0pt}
+}
+\renewcommand{\sectionmark}[1]{\markboth{Chapter \thesection\ #1}{}}
+
 \titleformat{name=\section}
   [display]
-  {\normalfont\bfseries}
-  {\Large Chapter \thesection}
-  {0.8ex}
+  {\normalfont\bfseries\thispagestyle{plain}}
+  {\vspace*{0.02\textheight}\Huge Chapter \thesection}
+  {7.0ex}
   {\Huge}
 \titleformat{name=\section,numberless}
   {\normalfont\huge\bfseries}
@@ -44,7 +56,7 @@
   {\thesubsubsection}
   {0.7em}
   {}
-\titlespacing*{\section}{0pt}{5.5ex plus 1.2ex minus .4ex}{4.0ex plus .4ex}
+\titlespacing*{\section}{0pt}{0pt}{10ex plus .4ex}
 \titlespacing*{\subsection}{0pt}{2.4ex plus .8ex minus .2ex}{1.2ex plus .2ex}
 \titlespacing*{\subsubsection}{0pt}{2.0ex plus .6ex minus .2ex}{1.0ex plus .2ex}
 
@@ -54,8 +66,8 @@
 
 \newcommand{\thesistitle}{Optimization-Based Precipitation Estimation from Commercial Microwave Links}
 \newcommand{\thesistype}{Master's Thesis}
-\newcommand{\thesisauthor}{Iv\'an Soto}
-\newcommand{\thesissubmissiondate}{July 15th, 2026}
+\newcommand{\thesisauthor}{Iván Soto}
+\newcommand{\thesissubmissiondate}{June 2026}
 \newcommand{\thesisadvisor}{Prof. Guy Even}
 \newcommand{\thesisfirstreviewer}{Prof. Dr. Kurt Mehlhorn (First Examiner)}
 \newcommand{\thesissecondreviewer}{(Second Examiner)}
@@ -75,6 +87,16 @@
   \addtocounter{page}{-1}
 }
 
+\newcommand{\cleartorecto}{%
+  \clearpage
+  \ifodd\value{page}
+  \else
+    \thispagestyle{empty}
+    \null
+    \clearpage
+  \fi
+}
+
 \newcommand{\makethesisabstract}{%
   \clearpage
   \section*{Abstract}
@@ -87,7 +109,7 @@
 }
 
 \newcommand{\makethesisacknowledgments}{%
-  \clearpage
+  \cleartorecto
   \section*{Acknowledgments}
   \addcontentsline{toc}{section}{Acknowledgments}
 
@@ -98,9 +120,9 @@
   \setcounter{page}{1}
   \makethesisabstract
   \makethesisacknowledgments
-  \makeuncountedblankpage
+  \makeblankpage
   \tableofcontents
-  \clearpage
+  \makeblankpage
   \pagenumbering{arabic}
   \setcounter{page}{1}
 }
@@ -118,6 +140,7 @@
   Alle fachlichen Entscheidungen, Auswertungen, Interpretationen und die Endfassung der Arbeit wurden von mir geprüft und verantwortet.
   Mir ist bewusst, dass der Verstoß gegen diese Versicherung zum Nichtbestehen der Prüfung bis hin zum Verlust des Prüfungsanspruchs führen kann.
 
+  \vspace{3ex}
   \section*{Declaration of Original Authorship}
   I hereby declare that this thesis is my own original work and was completed independently, without unauthorized assistance or unacknowledged sources.
   Any content derived from publications or other external sources, whether quoted verbatim or paraphrased, has been duly acknowledged and clearly marked as such.
@@ -185,6 +208,7 @@
 \makeauthorshipdeclaration
 \makeblankpage
 \makefrontmatter
+\pagestyle{thesismain}
 
 \section{Introduction}
 Rainfall is one of the most important variables in meteorology, yet measuring it accurately over a geographic area remains difficult. One approach that has been studied extensively is to use commercial microwave links as an indirect source of rainfall observations \citep{messer2006environmental,goldshtein2009rain,chwala2019cml,lian2022cmlreview}. These links, originally installed for telecommunications, are attractive because they are already widespread, operate continuously, and provide measurements that carry information about rainfall without requiring a dedicated rainfall-sensor network. Because rain attenuates the transmitted signal along the link path, attenuation measurements collected on such links can be used to infer rainfall.
@@ -199,33 +223,35 @@ In this thesis, we study whether rainfall reconstruction can be improved by repl
 To test this question, we construct a 100-patch benchmark from radar-derived rainfall fields. We then simulate microwave-link attenuations with a physical model relating rainfall to link attenuation and compare IDW, ILDW, and several solver variants derived from the optimization-based formulation.
 \endgroup
 
+With this setup in place, the remainder of the thesis reviews the background and prior work, presents the benchmark and methods, reports the empirical comparison, and closes with a discussion of the main conclusions and limitations.
+
 \begingroup\color{blue}
 For reproducibility, the code, experiment configuration files, and generated report artifacts used for this thesis are available in the project repository.\\[0.35ex]
 \url{https://github.com/guyeven/Rainfall-Estimation}.
 \endgroup
 
-With this setup in place, the remainder of the thesis reviews the background and prior work, presents the benchmark and methods, reports the empirical comparison, and closes with a discussion of the main conclusions and limitations.
-
-\clearpage
+\cleartorecto
 \section{Background and Related Work}
 In most settings, rainfall is measured primarily with rain gauges and weather radar. Rain gauges provide accurate measurements at their installation sites, but gauge networks are often sparse across a region \citep{mckee2015gaugeradar}. Radar gives broad spatial coverage, but it does not measure rain rate directly and must infer it from electromagnetic echoes. This is one reason rainfall estimation remains challenging even where operational radar and gauge networks are already in place \citep{olsson2025societal}.
 
 \paragraph*{Weather radar: strengths and limitations.} A weather radar is a sensing system that monitors precipitation remotely by transmitting electromagnetic pulses and recording the energy that is scattered back toward the antenna. The return time gives distance, the antenna pointing gives direction, and the returned signal strength gives reflectivity. Rainfall is then inferred from that reflectivity through a conversion model. This is powerful because a single radar can observe precipitation over a wide region with high spatial and temporal resolution. At the same time, the inference is imperfect. The returned energy is influenced not only by rain, but also by the drop-size distribution and, in some situations, by snow, hail, insects, birds, terrain clutter, and other non-rain scatterers. Operational radar processing therefore includes filtering, classification, and calibration steps before reflectivity is turned into rainfall products.
 
-\paragraph*{Commercial microwave links as opportunistic sensors.} A commercial microwave link is a fixed telecommunication path between two antennas, typically mounted on cell-phone towers. Rain along that path attenuates the transmitted microwave signal. By comparing the received signal during rainy periods with its dry-weather baseline, one can estimate the attenuation caused by rain along the link and then convert that attenuation into a path-averaged rain-rate estimate. The physical attenuation--rainfall relationship itself goes back much earlier, including classical work such as \citet{olsen1978rain}. The specific idea of using measurements from wireless communication networks for rainfall monitoring is usually traced to \citet{messer2006environmental}. Since then, the topic has been studied extensively and is now a well-established opportunistic-sensing approach for rainfall observation \citep{goldshtein2009rain,chwala2019cml,olsson2025societal}.
+\paragraph*{Commercial microwave links as opportunistic sensors.} A commercial microwave link is a fixed telecommunication path between two antennas, typically mounted on cell-phone towers. Rain along that path attenuates the transmitted microwave signal. By comparing the received signal during rainy periods with its dry-weather baseline, one can estimate the attenuation caused by rain along the link and then convert that attenuation into a path-averaged rain-rate estimate. This conversion relies on the standard power-law relationship between rain rate and microwave specific attenuation, which is introduced later in this work and itself goes back much earlier, including classical work such as \citet{olsen1978rain}. The specific idea of using measurements from wireless communication networks for rainfall monitoring is usually traced to \citet{messer2006environmental}. Since then, the topic has been studied extensively and is now a well-established opportunistic-sensing approach for rainfall observation \citep{goldshtein2009rain,chwala2019cml,olsson2025societal}.
 
 \paragraph*{What information a link carries.} In the present context, a link is modeled geometrically as the line segment connecting its two endpoints. Besides those endpoint coordinates, each link carries a carrier frequency and a polarization. The frequency determines the microwave band at which the signal is transmitted. The polarization describes the orientation of the electric field of the transmitted wave, typically horizontal or vertical. Both frequency and polarization matter because the ITU attenuation coefficients depend on them: the same rain rate leads to different specific attenuation at different frequencies and polarizations.
 
 \begingroup\color{darkgray}
-\paragraph*{From link attenuation to rainfall maps.} Recovering a spatial rainfall field from microwave links is harder than recovering a single path-averaged rain rate. Each link only measures information integrated along a line segment, so many different rainfall fields can be compatible with similar link observations. In practice, this has often led to simple but scalable map-construction strategies. A common approach is to turn each link into a representative rainfall value and then interpolate those values across space, for example with Kriging or inverse-distance weighting (IDW) \citep{chwala2019cml,olsson2025societal}. These methods are attractive because they are easy to implement, computationally light, and well suited to larger networks. In the present thesis, this motivates the use of IDW as the main interpolation baseline. We also evaluate ILDW, a link-aware modification of IDW used in this work. Unlike the standard midpoint representation of a CML as a virtual rain gauge, ILDW weights each grid cell by its distance to the full link segment and assigns the link-derived path-average rain rate along that segment.
+\paragraph*{From link attenuation to rainfall maps.} A microwave link does not provide a point measurement of rainfall. Instead, its attenuation reflects the combined effect of rain along the path between its two antennas, so different spatial rainfall patterns can produce similar link measurements. This ambiguity makes map reconstruction difficult. In practice, many approaches handle the problem with simple but scalable map-construction strategies. A common approach is to turn each link into a representative rainfall value and then interpolate those values across space, for example with Kriging or inverse-distance weighting (IDW) \citep{chwala2019cml,olsson2025societal}. These methods are attractive because they are easy to implement, computationally light, and well suited to larger networks. In the present thesis, this motivates the use of IDW as the main interpolation baseline. We also evaluate ILDW, a link-aware variant that keeps the full link segment in the interpolation step; both methods are defined in the methodology section.
 \endgroup
 
-\paragraph*{What has been done before.} Early signal-processing work already showed that measurements from commercial telecommunication links can be converted into useful rain-rate estimates over two-dimensional domains \citep{goldshtein2009rain}. Later studies have tested these ideas on larger link networks and in settings closer to operational rainfall monitoring. Roversi et al., for example, applied the RAINLINK workflow to 357 links in northern Italy and compared the resulting rainfall products against the operational products of the regional weather service, finding that CML-based estimates can complement radar products \citep{roversi2020northernitaly}. More broadly, Olsson et al. review opportunistic rainfall observations from the perspective of societal benefit and conclude that the scientific support for their use is already strong, while challenges in access, quality assurance, and operational integration still remain \citep{olsson2025societal}. The present thesis fits into this line of work, but asks a more focused methodological question: whether replacing interpolation by a nonlinear inverse model can improve rainfall reconstruction while also reproducing the observed link attenuations more faithfully.
+\paragraph*{What has been done before.} \textcolor{blue}{The use of CMLs for rainfall estimation has developed from early signal-processing demonstrations to larger mapping studies and operational assessments. Early work showed that measurements from commercial telecommunication links can be converted into useful rain-rate estimates over two-dimensional domains \citep{goldshtein2009rain}. Later studies tested these ideas on larger link networks; for example, Roversi et al. applied the RAINLINK workflow to 357 links in northern Italy and found that CML-based estimates can complement radar products \citep{roversi2020northernitaly}. At a broader level, Olsson et al. survey opportunistic rainfall observations, including CML-based approaches, and emphasize both their scientific promise and the remaining challenges in data access, quality assurance, and operational integration \citep{olsson2025societal}.}
 
-\clearpage
+\textcolor{blue}{This literature establishes CMLs as useful opportunistic rain sensors, but it also leaves methodological choices in how link measurements are turned into maps. One direction, close to the approach studied in this thesis, is to treat map construction as an inverse reconstruction problem rather than only as an interpolation task. A recent example is \citet{moufad2026bayesian}, who study a Bayesian inverse formulation with learned generative priors. Here, we use a controlled CML rainfall-mapping benchmark to compare interpolation with deterministic optimization-based reconstructions.}
+
+\cleartorecto
 \section{Methodology}
 \subsection{Data and Benchmark Construction}
-Our benchmark is built patch by patch. A \emph{patch} is a rectangular crop of an hourly rainfall accumulation map from the OPERA European weather-radar product, selected to capture a detected rain event, with the patch width and height constrained to lie between 50 km and 95 km. For each patch in the benchmark list, we first extract the corresponding rainfall crop from the OPERA map. We then refine that crop from the native \SI{2}{km} grid to a finer \SI{125}{m} grid by splitting each coarse OPERA pixel into smaller subpixels and assigning each subpixel the parent pixel's rainfall value. We then smooth this refined field. This smoothed high-resolution rainfall field serves as ground truth for both simulating link attenuations and evaluating the solvers. \textcolor{blue}{Thus, although the link attenuations are simulated, the underlying rainfall fields are based on observed OPERA rain events rather than randomly generated synthetic patterns; the refinement and smoothing steps provide a high-resolution field while preserving the large-scale structure of the radar-derived event.} The microwave-link data set, obtained from the 4TU-NL link data, is then overlaid on each patch, and only links whose endpoints fall inside the patch are retained. Each retained link preserves its original metadata (endpoints and frequency) from the data set and is included in the benchmark only if both endpoints lie within the selected patch. The 4TU-derived link file used in this benchmark does not specify polarization, so the patch-export pipeline supplies a default polarization when missing. In the present benchmark, that default is set to horizontal ($\mathrm{H}$), and the forward model therefore uses the ITU coefficients corresponding to horizontal polarization. Because the patch detector is designed to capture rainy events rather than dry background, the benchmark is rain-dominated: across the 100 patches, the mean non-rainy proportion is about \SI{10.50}{\percent}, where non-rainy pixels are those with very little or no rainfall.
+Our benchmark is built patch by patch. A \emph{patch} is a rectangular crop of an hourly rainfall accumulation map from the OPERA European weather-radar product, selected to capture a detected rain event, with the patch width and height constrained to lie between 50 km and 95 km. For each patch in the benchmark list, we first extract the corresponding rainfall crop from the OPERA map. We then refine that crop from the native \SI{2}{km} grid to a finer \SI{125}{m} grid by splitting each coarse OPERA pixel into smaller subpixels and assigning each subpixel the parent pixel's rainfall value. We then smooth this refined field. This smoothed high-resolution rainfall field serves as ground truth for both simulating link attenuations and evaluating the solvers. The microwave-link data set, obtained from the 4TU-NL link data, is then overlaid on each patch, and only links whose endpoints fall inside the patch are retained. Each retained link preserves its original metadata (endpoints and frequency) from the data set and is included in the benchmark only if both endpoints lie within the selected patch. The 4TU-derived link file used in this benchmark does not specify polarization, so the patch-export pipeline supplies a default polarization when missing. In the present benchmark, that default is set to horizontal ($\mathrm{H}$), and the forward model therefore uses the ITU coefficients corresponding to horizontal polarization. Because the patch detector is designed to capture rainy events rather than dry background, the benchmark is rain-dominated: across the 100 patches, the mean non-rainy proportion is about \SI{10.50}{\percent}, where non-rainy pixels are those with very little or no rainfall.
 
 This benchmark design differs from much of the earlier literature in a useful way. Some influential studies work directly with operational microwave-link measurements and validate against radar and gauges \citep{messer2006environmental,roversi2020northernitaly}, while others study interpolation behavior on synthetic rain fields and synthetic CML networks \citep{eshel2020idw}. Here we instead begin from a radar-derived rainfall field that is treated as known ground truth, synthesize the corresponding link attenuations under a shared forward model, and then compare the inverse solvers under that controlled setup. This gives us exact access to both the rainfall field and the attenuation field for every test case, which makes solver-to-solver comparisons cleaner. It also yields a relatively large patch-wise reconstruction benchmark: the present data set contains 100 patches, with between 939 and 1996 links per patch (mean 1324), and the largest-area patch contains 1894 links. For comparison, \citet{roversi2020northernitaly} evaluate their operational study on 357 links in northern Italy. The comparison is not one-to-one, but it helps place the scale of the present benchmark.
 
@@ -500,7 +526,7 @@ We also include a ground-truth-initialized diagnostic run:
 This run uses information unavailable in practice, so it is not a deployable reconstruction method. Instead, it provides an optimistic empirical reference for interpreting the objective landscape and for seeing what the objective preserves, or moves away from, when initialized at the target rainfall field.
 \endgroup
 
-\clearpage
+\cleartorecto
 \section{Evaluation}
 \subsection{Evaluation Protocol}
 \begingroup\color{darkgray}
@@ -843,7 +869,7 @@ False negatives are especially important in this wet/dry view because they corre
 
 % Our work differs in two ways. First, we compare midpoint IDW to a link-aware ILDW variant that retains the full link geometry during interpolation. Second, we compare both interpolation baselines against a nonlinear inverse solver that keeps the attenuation forward model inside the reconstruction problem itself. In that sense, the present thesis is closer in spirit to inverse or tomographic formulations than to purely interpolative mapping, while still evaluating the methods under the same benchmark, the same forward model, and the same synthetic link observations.
 
-\clearpage
+\cleartorecto
 \section{Conclusion and Outlook}
 % \textcolor{green}{[TODO: This section is still work in progress and should be expanded in the final version.]}
 
@@ -857,7 +883,8 @@ One possible extension, related to existing radar-CML data-fusion work, would be
 
 \textcolor{blue}{Beyond objective design, two broader validation questions remain. First, the benchmark used here samples observed European rain events, but it is not explicitly stratified by rainfall regime; future work should therefore test whether the conclusions hold across labeled rainfall patterns such as convective, stratiform, coastal, or mountainous events. Second, real CML deployment would add time-varying measurement effects, such as changing link availability, wet-antenna attenuation, and baseline drift, which are not present in the simulated-link benchmark and would need to be modeled or filtered before the inverse formulation could be used operationally.}
 
-\clearpage
+\cleartorecto
+\pagestyle{plain}
 \section{Appendix}
 \subsection{Largest-Patch Link-Network Summary}
 \begingroup\color{blue}
@@ -1051,6 +1078,7 @@ Taken together, these appendix case studies support the main-text interpretation
 %   \caption{Patch-level summary of the globally length-normalized absolute attenuation error. For a given patch, we compute $\frac{\sum_{k \in \mathrm{links}} \left|\hat{A}_k - A_k^{\mathrm{obs}}\right|}{\sum_{k \in \mathrm{links}} L_k^{\mathrm{km}}}$ using the same notation as above. Unlike the previous table, this metric first sums the absolute attenuation error over all valid links in the patch and then divides by the total valid-link length, so longer links receive more weight. The table reports the mean and standard deviation of this per-patch quantity across the 100 evaluated patches for each solver. Lower values again indicate better agreement with the observed link attenuations.}
 % \end{table}
 \clearpage
+\vspace*{4ex}
 \section*{Statement on the Usage of Generative Digital Assistants}
 \addcontentsline{toc}{section}{Statement on the Usage of Generative Digital Assistants}
 
