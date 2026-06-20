@@ -3,7 +3,6 @@
 \usepackage{amssymb}
 \usepackage[round,authoryear]{natbib}
 \usepackage{siunitx}
-\usepackage{cleveref}
 \usepackage[letterpaper,twoside,inner=1.18in,outer=0.95in,top=1in,bottom=1in]{geometry}
 \usepackage{graphicx}
 \usepackage{booktabs}
@@ -14,6 +13,8 @@
 \usepackage{xurl}
 \usepackage{xcolor}
 \usepackage{pdfpages}
+\usepackage[hidelinks,bookmarksnumbered=true,hypertexnames=false]{hyperref}
+\usepackage{cleveref}
 \usepackage{titlesec}
 \usepackage{fancyhdr}
 %\usepackage{algorithm}
@@ -215,20 +216,14 @@ Rainfall is one of the most important variables in meteorology, yet measuring it
 
 Reconstructing rainfall fields from microwave-link data has already been studied in the literature, often through interpolation-based methods that first convert each link into a representative rain-rate value and then spread those values across a region. Simple interpolation rules such as inverse-distance weighting (IDW) are attractive because they are straightforward to implement and provide a practical baseline for rainfall mapping \citep{lian2022cmlreview}.
 
-\begingroup\color{darkgray}
 In this thesis, we study whether rainfall reconstruction can be improved by replacing purely interpolative map construction with optimization-based inverse reconstruction. Rather than treating the rainfall map only as an interpolation problem, we formulate reconstruction as an optimization problem that balances agreement with the observed link attenuations against terms that encourage spatially coherent rainfall fields. We evaluate several solver variants derived from this formulation and compare them against IDW, a standard interpolation baseline.
-\endgroup
 
-\begingroup\color{darkgray}
 To test this question, we construct a 100-patch benchmark from radar-derived rainfall fields. We then simulate microwave-link attenuations with a physical model relating rainfall to link attenuation and compare IDW, ILDW, and several solver variants derived from the optimization-based formulation.
-\endgroup
 
 With this setup in place, the remainder of the thesis reviews the background and prior work, presents the benchmark and methods, reports the empirical comparison, and closes with a discussion of the main conclusions and limitations.
 
-\begingroup\color{blue}
 For reproducibility, the code, experiment configuration files, and generated report artifacts used for this thesis are available in the project repository.\\[0.35ex]
 \url{https://github.com/guyeven/Rainfall-Estimation}.
-\endgroup
 
 \cleartorecto
 \section{Background and Related Work}
@@ -240,28 +235,31 @@ In most settings, rainfall is measured primarily with rain gauges and weather ra
 
 \paragraph*{What information a link carries.} In the present context, a link is modeled geometrically as the line segment connecting its two endpoints. Besides those endpoint coordinates, each link carries a carrier frequency and a polarization. The frequency determines the microwave band at which the signal is transmitted. The polarization describes the orientation of the electric field of the transmitted wave, typically horizontal or vertical. Both frequency and polarization matter because the ITU attenuation coefficients depend on them: the same rain rate leads to different specific attenuation at different frequencies and polarizations.
 
-\begingroup\color{darkgray}
 \paragraph*{From link attenuation to rainfall maps.} A microwave link does not provide a point measurement of rainfall. Instead, its attenuation reflects the combined effect of rain along the path between its two antennas, so different spatial rainfall patterns can produce similar link measurements. This ambiguity makes map reconstruction difficult. In practice, many approaches handle the problem with simple but scalable map-construction strategies. A common approach is to turn each link into a representative rainfall value and then interpolate those values across space, for example with Kriging or inverse-distance weighting (IDW) \citep{chwala2019cml,olsson2025societal}. These methods are attractive because they are easy to implement, computationally light, and well suited to larger networks. In the present thesis, this motivates the use of IDW as the main interpolation baseline. We also evaluate ILDW, a link-aware variant that keeps the full link segment in the interpolation step; both methods are defined in the methodology section.
-\endgroup
 
-\paragraph*{What has been done before.} \textcolor{blue}{The use of CMLs for rainfall estimation has developed from early signal-processing demonstrations to larger mapping studies and operational assessments. Early work showed that measurements from commercial telecommunication links can be converted into useful rain-rate estimates over two-dimensional domains \citep{goldshtein2009rain}. Later studies tested these ideas on larger link networks; for example, Roversi et al. applied the RAINLINK workflow to 357 links in northern Italy and found that CML-based estimates can complement radar products \citep{roversi2020northernitaly}. At a broader level, Olsson et al. survey opportunistic rainfall observations, including CML-based approaches, and emphasize both their scientific promise and the remaining challenges in data access, quality assurance, and operational integration \citep{olsson2025societal}.}
+\paragraph*{What has been done before.} The use of CMLs for rainfall estimation has developed from early signal-processing demonstrations to larger mapping studies and operational assessments. Early work showed that measurements from commercial telecommunication links can be converted into useful rain-rate estimates over two-dimensional domains \citep{goldshtein2009rain}. Later studies tested these ideas on larger link networks; for example, Roversi et al. applied the RAINLINK workflow to 357 links in northern Italy and found that CML-based estimates can complement radar products \citep{roversi2020northernitaly}. At a broader level, Olsson et al. survey opportunistic rainfall observations, including CML-based approaches, and emphasize both their scientific promise and the remaining challenges in data access, quality assurance, and operational integration \citep{olsson2025societal}.
 
-\textcolor{blue}{This literature establishes CMLs as useful opportunistic rain sensors, but it also leaves methodological choices in how link measurements are turned into maps. One direction, close to the approach studied in this thesis, is to treat map construction as an inverse reconstruction problem rather than only as an interpolation task. A recent example is \citet{moufad2026bayesian}, who study a Bayesian inverse formulation with learned generative priors. Here, we use a controlled CML rainfall-mapping benchmark to compare interpolation with deterministic optimization-based reconstructions.}
+The literature establishes CMLs as useful opportunistic rain sensors, but it also leaves methodological choices in how link measurements are turned into maps. In this thesis, we use a controlled CML rainfall-mapping benchmark to ask whether optimization-based reconstruction can improve on interpolation-based map construction.
 
 \cleartorecto
 \section{Methodology}
 \subsection{Data and Benchmark Construction}
-Our benchmark is built patch by patch. A \emph{patch} is a rectangular crop of an hourly rainfall accumulation map from the OPERA European weather-radar product, selected to capture a detected rain event, with the patch width and height constrained to lie between 50 km and 95 km. For each patch in the benchmark list, we first extract the corresponding rainfall crop from the OPERA map. We then refine that crop from the native \SI{2}{km} grid to a finer \SI{125}{m} grid by splitting each coarse OPERA pixel into smaller subpixels and assigning each subpixel the parent pixel's rainfall value. We then smooth this refined field. This smoothed high-resolution rainfall field serves as ground truth for both simulating link attenuations and evaluating the solvers. The microwave-link data set, obtained from the 4TU-NL link data, is then overlaid on each patch, and only links whose endpoints fall inside the patch are retained. Each retained link preserves its original metadata (endpoints and frequency) from the data set and is included in the benchmark only if both endpoints lie within the selected patch. The 4TU-derived link file used in this benchmark does not specify polarization, so the patch-export pipeline supplies a default polarization when missing. In the present benchmark, that default is set to horizontal ($\mathrm{H}$), and the forward model therefore uses the ITU coefficients corresponding to horizontal polarization. Because the patch detector is designed to capture rainy events rather than dry background, the benchmark is rain-dominated: across the 100 patches, the mean non-rainy proportion is about \SI{10.50}{\percent}, where non-rainy pixels are those with very little or no rainfall.
+Our benchmark is built patch by patch. A \emph{patch} is a rectangular crop of an hourly rainfall accumulation map from the OPERA European weather-radar product, selected to capture a detected rain event, with the patch width and height constrained to lie between 50 km and 95 km. For each patch in the benchmark list, we first extract the corresponding rainfall crop from the OPERA map. We then refine that crop from the native \SI{2}{km} grid to a finer \SI{125}{m} grid by splitting each coarse OPERA pixel into smaller subpixels and assigning each subpixel the parent pixel's rainfall value. We then smooth this refined field. This smoothed high-resolution rainfall field serves as ground truth for both simulating link attenuations and evaluating the solvers.
+
+The microwave-link geometry is not geographically co-located with the selected OPERA patch locations. Instead, we use the 4TU-NL data as a source of realistic CML endpoint geometry and frequencies, place the resulting link network in the coordinate system of each selected patch, and retain only links whose endpoints fall inside the patch. Each retained link preserves the frequency and relative path geometry of the 4TU-derived record, but its attenuation is simulated from the radar-derived rainfall field on the selected OPERA patch rather than taken from an operational CML measurement at that location.
+The 4TU-derived link file used in this benchmark does not specify polarization, so the patch-export pipeline supplies a default polarization when missing. In the present benchmark, that default is set to horizontal ($\mathrm{H}$), and the forward model therefore uses the ITU coefficients corresponding to horizontal polarization. Because the patch detector is designed to capture rainy events rather than dry background, the benchmark is rain-dominated: across the 100 patches, the mean non-rainy proportion is about \SI{10.50}{\percent}, where non-rainy pixels are those with very little or no rainfall.
 
 This benchmark design differs from much of the earlier literature in a useful way. Some influential studies work directly with operational microwave-link measurements and validate against radar and gauges \citep{messer2006environmental,roversi2020northernitaly}, while others study interpolation behavior on synthetic rain fields and synthetic CML networks \citep{eshel2020idw}. Here we instead begin from a radar-derived rainfall field that is treated as known ground truth, synthesize the corresponding link attenuations under a shared forward model, and then compare the inverse solvers under that controlled setup. This gives us exact access to both the rainfall field and the attenuation field for every test case, which makes solver-to-solver comparisons cleaner. It also yields a relatively large patch-wise reconstruction benchmark: the present data set contains 100 patches, with between 939 and 1996 links per patch (mean 1324), and the largest-area patch contains 1894 links. For comparison, \citet{roversi2020northernitaly} evaluate their operational study on 357 links in northern Italy. The comparison is not one-to-one, but it helps place the scale of the present benchmark.
 
+To give a concrete sense of the benchmark, we next summarize where the selected patches are located, how large they are, and how many overlaid 4TU-derived links are retained.
+
 \subsubsection{Geographic Distribution of the Benchmark Patches}
-\Cref{fig:patches_europe_overview} maps the geographic distribution of the 100 benchmark patches. Each red rectangle marks the footprint of one selected patch on the Europe basemap. The figure makes clear that the benchmark is not concentrated in a single country or climatological regime: the selected rainy-event patches are spread across northern, western, central, southern, and southeastern Europe.
+\Cref{fig:patches_europe_overview} shows that the selected rainy-event patches are not concentrated in one country or local region; instead, they are spread across northern, western, central, southern, and southeastern Europe.
 
 \begin{figure}[!htbp]
   \centering
   \includegraphics[width=\textwidth]{\patcheuropeoverview}
-  \caption{Geographic distribution of the 100 benchmark patches. Each patch is shown as a red outline rectangle over a Europe basemap. The figure visualizes the spatial spread of the selected rainy-event patches across the OPERA domain and provides geographic context for the benchmark used throughout the thesis.}
+  \caption{Geographic distribution of the 100 benchmark patches over the OPERA domain. Each red rectangle marks the footprint of one selected patch.}
   \label{fig:patches_europe_overview}
 \end{figure}
 
@@ -285,10 +283,11 @@ This benchmark design differs from much of the earlier literature in a useful wa
 
 % This histogram summarizes how link density varies across the selected patches. The parallel-link ratio is included because the current expectation is that it should stay close to $1$ for this dataset.
 
+Patch size also determines how many overlaid 4TU-derived links are retained, since only links with both endpoints inside the patch are used. Some retained links appear at more than one frequency, so \Cref{tab:link_multiplicity} reports representative link counts and one- versus two-frequency counts for three patch sizes.
+
 \begin{table}[!htbp]
-  \vspace{-1.5\baselineskip}
   \centering
-  \begin{tabular}{lrrrrr}
+  \begin{tabular}{lrrr}
     \toprule
     Patch size (km) & \# links & 1-multiplicity & 2-multiplicity \\
     \midrule
@@ -302,6 +301,7 @@ The multiplicity of a link is defined as the number of frequencies assigned to i
 The second column reports the total number of link–frequency pairs.
 In the data set, link multiplicities were either 1 or 2, with approximately $10\%$ of links having multiplicity 1.
 }
+  \label{tab:link_multiplicity}
 
 \end{table}
 
@@ -322,11 +322,9 @@ A_\ell \approx \sum_{c\in\mathcal{C}(\ell)} \kappa_\ell\,R_c^{\alpha_\ell}\,\Del
 where $\mathcal{C}(\ell)$ is the set of crossed cells and $\Delta s_{\ell,c}$ is the path length of link $\ell$ inside cell $c$ (in km). These computed attenuation values, together with link metadata, form the link-level observations used for inverse reconstruction of the rainfall field.
 
 \subsection{Inverse Solvers}
-\begingroup\color{darkgray}
-We compare IDW, ILDW, and four optimization-based reconstructions: Solver(ILDW), Convex Solver, Homotopy Solver, and Solver(GT). Solver(GT) is initialized from the ground-truth rainfall field, so it is not a method that could be used on real unknown rainfall fields. Instead, we use it as an empirical best-case reference for this objective and optimizer.
+After the forward model defines how a rainfall field produces link attenuations, the reconstruction task runs in the opposite direction: given link-level observations, estimate the rainfall field that produced them. We compare IDW, ILDW, and four optimization-based reconstructions for this inverse problem: Solver(ILDW), Convex Solver, Homotopy Solver, and Solver(GT). Solver(GT) is initialized from the ground-truth rainfall field, so it is not a method that could be used on real unknown rainfall fields. Instead, we use it as an empirical best-case reference for this objective and optimizer.
 
 Using the same link-level observations and forward-model conventions described above, we now describe each solver family and its implementation details.
-\endgroup
 \subsubsection{IDW}
 Inverse-distance weighting (IDW) is one of the standard simple interpolation strategies used in commercial-microwave-link rainfall reconstruction \citep{chwala2019cml}. The input consists of a set of links, where each link carries total attenuation, frequency, and polarization.
 
@@ -337,6 +335,8 @@ R_\ell \triangleq \left(\frac{A_\ell/|\ell|}{\kappa_\ell}\right)^{1/\alpha_\ell}
 where $A_\ell$ denotes the attenuation of link $\ell$, $|\ell|$ its length, and $(\kappa_\ell,\alpha_\ell)$ the ITU-R P.838-3 coefficients corresponding to its frequency and polarization.
 
 Each per-link rain-rate estimate is then treated as a virtual point observation at the link midpoint. For each pixel $p$ with center $c_p$, IDW computes a weighted average of nearby $R_\ell$ values, using weights proportional to $\|m_\ell-c_p\|_2^{-2}$ within a prescribed search radius $r_{\max}$ (set to 15km in our study). If one or more link midpoints lie inside pixel $p$, $\hat R_p$ (the estimated rainfall in pixel $p$), is set to the mean of their rainfall estimates. This defines the discretized IDW baseline used throughout this thesis.
+
+\smallskip
 
 % Requires \usepackage[ruled,vlined,linesnumbered]{algorithm2e} and \SetAlgoNoEnd in the preamble.
 \begin{algorithm}[H]
@@ -365,9 +365,7 @@ Each per-link rain-rate estimate is then treated as a virtual point observation 
 
 
 \subsubsection{ILDW}
-\begingroup\color{darkgray}
 ILDW is a link-aware modification of IDW used in this work. It starts from the same per-link rain-rate values obtained by inverting the discretized attenuation forward model for each link. The motivation for this variant is that a microwave-link attenuation measurement is associated with an entire path, not only with the midpoint of that path. We therefore considered whether interpolation could be improved by using the full link geometry when deciding which links should influence a pixel and how strongly they should do so.
-\endgroup
 
 More precisely, for a pixel center $c_p$, ILDW replaces the midpoint distance $\|m_\ell-c_p\|_2$ by the point-to-segment distance
 \[
@@ -376,12 +374,12 @@ More precisely, for a pixel center $c_p$, ILDW replaces the midpoint distance $\
 where $\ell=[p_{\ell,1},p_{\ell,2}]$ denotes the full link segment with endpoint coordinates $p_{\ell,1}$ and $p_{\ell,2}$.
 
 
-\begingroup\color{darkgray}
 If one or more links cross the pixel, the estimate is taken to be the mean of the corresponding link rain-rate values. Otherwise, the estimate is a weighted average over nearby links within radius $r_{\max}$ (set to \SI{15}{km}), with weights proportional to the inverse squared segment distance. We considered this variant important because it preserves the same simple interpolation philosophy as IDW while using more of the link-path geometry.
 
-\endgroup
+At the algorithmic level, ILDW differs from Algorithm~1 only in how link geometry enters the interpolation step: midpoint membership and midpoint distance are replaced by pixel--segment intersection and distance to the full link segment.
+
 \begin{algorithm}[H]
-    \caption{Discretized ILDW. Rainfall is averaged by inverse squared distance to a link. Lines that are different from their corresponding lines in IDW are colored red. }
+    \caption{Discretized ILDW. Compared with Algorithm~1, the red lines replace midpoint-based interpolation by interpolation based on the full link segment.}
     \DontPrintSemicolon
     \KwData{link set $\mathcal{L}$, a patch $P$, and a maximum influence distance $r_{\max}$}
     \KwResult{rainfall field $\hat R$}
@@ -405,10 +403,8 @@ If one or more links cross the pixel, the estimate is taken to be the mean of th
 \end{algorithm}
 
 
-\subsubsection{\textcolor{darkgray}{Optimization-Based Reconstruction}}
-\begingroup\color{darkgray}
-The optimization-based reconstructions explore a different approach from purely interpolation-based rainfall mapping. IDW and ILDW first reduce each link to a link-level rain estimate and then spread that information spatially by geometric weighting. In contrast, the optimization-based methods treat the rainfall value in every pixel as an unknown and choose the full rainfall field by minimizing an objective that combines agreement with the observed link attenuations with terms that encourage spatially coherent solutions.
-\endgroup
+\subsubsection{Optimization-Based Reconstruction}
+The optimization-based reconstructions explore a different approach from purely interpolation-based rainfall mapping. IDW and ILDW first reduce each link attenuation to a single link-level rain-rate estimate and then spread that information spatially by geometric weighting. In contrast, the optimization-based methods treat the rainfall value in every pixel as an unknown and choose the full rainfall field by minimizing an objective that combines agreement with the observed link attenuations with terms that encourage spatially coherent solutions.
 
 \paragraph*{Optimization Objective}
 For each patch $P$, we identify $P$ with its set of pixels, and denote by $\mathcal{L}(P)$ the set of links contained in $P$. Let $r\in\mathbb{R}_{\ge 0}^{|P|}$ denote the unknown rainfall field written as a vector over pixels. We solve the constrained optimization problem
@@ -432,9 +428,10 @@ Here $J_{\mathrm{atten}}$ penalizes disagreement between observed and forward-mo
 \alpha_{\mathrm{atten}}&\triangleq\frac{1}{J_{\mathrm{atten}}({\mathrm{ILDW}})},&
 \alpha_{1d}&\triangleq\frac{1}{J_{1d}({\mathrm{ILDW}})},\\
 \alpha_{2d}&\triangleq\frac{1}{2} \cdot\frac{1}{J_{2d}({\mathrm{ILDW}})},&
-\textcolor{darkgray}{\alpha_{\mathrm{total}}}&\textcolor{darkgray}{\triangleq\frac{1}{|P|}\cdot\frac{1}{J_{\mathrm{total}}({\mathrm{ILDW}})}}.
+\alpha_{\mathrm{total}}&\triangleq\frac{1}{|P|}\cdot\frac{1}{J_{\mathrm{total}}({\mathrm{ILDW}})}.
 \end{aligned}
 \]
+
 More concretely, $J_{\mathrm{atten}}$ is the attenuation-misfit term:
 \[
 J_{\mathrm{atten}}(r)\triangleq\frac{1}{|\mathcal{L}(P)|}\sum_{\ell\in\mathcal{L}(P)}
@@ -463,7 +460,8 @@ This term biases the solution toward smaller overall rainfall values, except whe
 
 These four terms are added together only after weighting, so the optimizer balances attenuation fit against smoothness, curvature control, and shrinkage.
 
-\begingroup\color{darkgray}
+These weights should be read as heuristic normalization choices rather than as parameters derived from an optimality principle. Using the ILDW objective values puts the four terms on comparable numerical scales at the same reference field, so that the optimizer is not dominated by one raw term simply because of units or magnitude. The additional factor $1/2$ downweights the second-difference penalty relative to the first-difference penalty, while the factor $1/|P|$ makes the global shrinkage term a weak regularizer. We did not perform a systematic sensitivity analysis over nearby weight choices.
+
 \paragraph*{Solver Variants}
 All optimization-based variants are solved iteratively with L-BFGS-B, a limited-memory quasi-Newton method for smooth constrained optimization \citep{byrd1995limited,zhu1997algorithm}. Starting from an initial rainfall field, the optimizer repeatedly updates the field to reduce the objective while enforcing the nonnegativity bounds on rainfall. In the present setting, the optimization variable is the rainfall value at every pixel of the patch. We write
 \[
@@ -524,16 +522,12 @@ We also include a ground-truth-initialized diagnostic run:
 \operatorname{L\mbox{-}BFGS\mbox{-}B}(\mathcal{L},P,r_{\mathrm{GT}}).
 \]
 This run uses information unavailable in practice, so it is not a deployable reconstruction method. Instead, it provides an optimistic empirical reference for interpreting the objective landscape and for seeing what the objective preserves, or moves away from, when initialized at the target rainfall field.
-\endgroup
 
 \cleartorecto
 \section{Evaluation}
 \subsection{Evaluation Protocol}
-\begingroup\color{darkgray}
 We evaluate each solver in four ways: overall agreement with the ground-truth rainfall map, how errors change as distance from links increases, wet/dry classification behavior, and agreement with observed link attenuations under the forward model. We first report patch-level summaries across all 100 benchmark patches, and then provide qualitative case studies in the appendix. All optimization-based results reported below use the same objective terms and weights described above, with a maximum budget of 2000 optimizer iterations per patch.
-\endgroup
 
-\begingroup\color{darkgray}
 \subsubsection{Optimization Stopping Criteria}
 The 2000-iteration budget was used as a cap rather than as a fixed number of iterations. Each optimized patch reconstruction used the same L-BFGS-B stopping tolerances, with relative objective-reduction tolerance $\mathrm{ftol}=10^{-6}$ and projected-gradient tolerance $\mathrm{gtol}=10^{-6}$. Let $J_k$ denote the objective value at iteration $k$. The $\mathrm{ftol}$ criterion stops the solve when the relative objective decrease between two successive iterations is small,
 \[
@@ -561,16 +555,11 @@ where $g^{\mathrm{proj}}_{k+1}$ is the gradient projected according to the bound
   \label{tab:optimization_iterations}
 \end{table}
 
-\endgroup
 
-\begingroup\color{darkgray}
-\paragraph*{Key findings at a glance.} Across the benchmark, the optimized solvers improve substantially over IDW, with Convex Solver and Homotopy Solver giving stronger rainfall-map agreement than Solver(ILDW) while also preserving strong attenuation consistency. Homotopy Solver does not improve the map-level RMSE, bias, or correlation summaries relative to Convex Solver, although it does provide a small gain in attenuation consistency. Solver(GT) gives the best map agreement, but Convex Solver and Homotopy Solver achieve lower attenuation mismatch, showing that pixelwise agreement with the radar-derived ground truth and consistency with the link observations are related but not identical criteria. When we look at distance bins, all methods degrade as nearby-link coverage becomes weaker, but the optimized solvers remain clearly better than IDW in the low-coverage bins.
-\endgroup
+\paragraph*{Key findings at a glance.} Across the benchmark, the optimized solvers have lower patch-level RMSE and higher Pearson correlation than IDW, with Convex Solver and Homotopy Solver giving stronger rainfall-map agreement than Solver(ILDW) while also preserving strong attenuation consistency. Homotopy Solver does not improve the map-level RMSE, bias, or correlation summaries relative to Convex Solver, although it does provide a small gain in attenuation consistency. Solver(GT) has the strongest RMSE, bias, and correlation summaries, but Convex Solver and Homotopy Solver achieve lower attenuation mismatch, showing that pixelwise agreement with the radar-derived ground truth and consistency with the link observations are related but not identical criteria. When we look at distance bins, all methods degrade as nearby-link coverage becomes weaker, but the optimized solvers retain lower median errors than IDW in the low-coverage bins.
 
 \subsection{Patch-Level Metrics}
-\begingroup\color{darkgray}
-We now turn to the empirical comparison on the hundred-patch benchmark. We begin with whole-patch summaries, then examine how errors vary with link proximity, and finally report attenuation-consistency analyses.
-\endgroup
+We now turn to the empirical comparison on the hundred-patch benchmark. We begin with whole-patch summaries, then examine how pixel-level errors vary with link proximity, and finally report attenuation-consistency analyses.
 
 For a patch $P$, let $R_P(p)$ denote the ground-truth rainfall at pixel $p$, and let $\widehat{R}_{P,s}(p)$ denote the rainfall predicted at pixel $p$ by solver $s$. We compute three scalar metrics over all pixels in $P$: the root mean squared error
 \[
@@ -601,12 +590,11 @@ Correlation measures how well the spatial structure of the field is reproduced
 independently of scale and offset.
 The Pearson correlation coefficient satisfies $r_{P,s}\in[-1,1]$.
 A value of $1$ indicates perfect positive linear agreement between predicted and
-true rainfall maps.
+ground-truth rainfall maps.
 A value of $0$ indicates no linear relationship.
 A value of $-1$ indicates perfect negative linear agreement (an exact inverse
 pattern).
 
-\begingroup\color{darkgray}
 \begin{table}[H]
   \centering
   \begin{tabular}{lccc}
@@ -624,7 +612,6 @@ pattern).
   \caption{Descriptive patch-level summary of three global map metrics across the 100 evaluated patches. Each entry reports mean $\pm$ standard deviation across patches. Here RMSE and Bias are computed in the same rainfall units as $R_P$ and $\widehat{R}_{P,s}$, while Correlation is the Pearson correlation coefficient between the predicted and ground-truth rainfall fields within each patch.}
   \label{tab:patch_map_metrics}
 \end{table}
-\endgroup
 
 % \begin{figure}[!htbp]
 %   \centering
@@ -633,13 +620,10 @@ pattern).
 %   \label{fig:patch_map_metrics}
 % \end{figure}
 
-\begingroup\color{darkgray}
-Table~\ref{tab:patch_map_metrics} gives a descriptive overview of the scale and variability of the patch-level metrics for each solver. Homotopy Solver gives nearly identical descriptive metrics to Convex Solver, so in these experiments its added continuation machinery does not produce an additional empirical gain. Solver(GT) achieves the strongest descriptive agreement with the ground-truth rainfall maps, as expected for a run initialized from the ground truth. Comparing IDW and ILDW also suggests that keeping more of the link-path geometry can be useful even within a simple interpolation framework: ILDW improves the mean RMSE and correlation relative to midpoint IDW, although its mean signed bias is not lower than IDW's.
+Table~\ref{tab:patch_map_metrics} gives a descriptive overview of the scale and variability of the patch-level metrics for each solver. Homotopy Solver gives nearly identical descriptive metrics to Convex Solver, so in these experiments its added continuation machinery does not produce an additional empirical gain in the map-level summaries. Solver(GT) has the lowest mean RMSE, lowest mean signed bias, and highest mean correlation, as expected for a run initialized from the ground truth. Comparing IDW and ILDW also suggests that keeping more of the link-path geometry can be useful even within a simple interpolation framework: ILDW has lower mean RMSE and higher mean correlation than midpoint IDW, although its mean signed bias is not lower than IDW's.
 
-Because all solvers are evaluated on the same 100 patches, direct solver comparisons should also use the paired patchwise differences. Here we restrict the paired comparison to Convex Solver against IDW, since this is the main optimized solver relative to the standard interpolation baseline. In that paired view, Convex Solver improves strongly over IDW: it has lower RMSE on all 100 patches and higher Pearson correlation on all 100 patches. For absolute bias, where the result is not a clean sweep, Convex Solver is closer to zero bias on 78 patches and IDW is closer on 22 patches.
-\endgroup
+Because all solvers are evaluated on the same 100 patches, direct solver comparisons should also use the paired patchwise differences. Here we restrict the paired comparison to Convex Solver against IDW, since this is the main optimized solver relative to the standard interpolation baseline. In that paired view, Convex Solver has lower RMSE than IDW on all 100 patches and higher Pearson correlation on all 100 patches. For absolute bias, where the result is not a clean sweep, Convex Solver is closer to zero bias on 78 patches and IDW is closer on 22 patches.
 
-\begingroup\color{darkgray}
 For absolute bias, we compare the paired patchwise differences
 \[
 d_P = |\mathrm{Bias}_{P,\mathrm{Convex}}| - |\mathrm{Bias}_{P,\mathrm{IDW}}|.
@@ -661,11 +645,9 @@ Negative values mean that Convex Solver is closer to zero bias on patch $P$. We 
   \caption{Paired patchwise comparison between Convex Solver and IDW across the 100 evaluated patches.}
   \label{tab:convex_idw_paired_global}
 \end{table}
-\endgroup
 
 \subsubsection{Attenuation Mismatch}
-\begingroup\color{darkgray}
-The previous metrics compare each reconstructed rainfall map directly to the ground-truth radar field. We also evaluate the reconstructions from the point of view of the CML observations themselves: if a predicted rainfall field is passed through the forward attenuation model, how closely does it reproduce the measured link attenuations? This matters because a useful reconstruction should not only resemble the radar field pixelwise, but should also remain consistent with the link measurements that drive the inverse problem.
+The previous metrics compare each reconstructed rainfall map directly to the ground-truth radar field. We also evaluate the reconstructions from the point of view of the CML observations themselves: if a predicted rainfall field is passed through the forward attenuation model, how closely does it reproduce the observed link attenuations? This matters because a useful reconstruction should not only resemble the radar field pixelwise, but should also remain consistent with the link observations that drive the inverse problem.
 
 We report two complementary attenuation-mismatch summaries in the same table. The mean absolute attenuation error per kilometer gives a directly interpretable link-level discrepancy in dB/km, while $J_{\mathrm{atten}}$ reports the squared attenuation-fitting term used inside the optimization objective.
 
@@ -687,11 +669,8 @@ We report two complementary attenuation-mismatch summaries in the same table. Th
   \end{tabular}
   \caption{Patch-level attenuation-mismatch summaries across the 100 evaluated patches. For a given patch and solver $s$, the absolute-error columns summarize $\frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{|\hat{A}_{\ell,s} - A_\ell^{\mathrm{obs}}|}{|\ell|}$, while $J_{\mathrm{atten}} = \frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left(\hat{A}_{\ell,s} - A_\ell^{\mathrm{obs}}\right)^2}{|\ell|}$. Here $\hat{A}_{\ell,s}$ is the attenuation implied on link $\ell$ by the rainfall field estimated by solver $s$, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. Lower values indicate better agreement with the observed link attenuations.}
 \end{table}
-\endgroup
 
-\begingroup\color{darkgray}
-Together, these attenuation-based summaries show that the optimized solvers match the measured link attenuations much more closely than IDW and ILDW, with Convex Solver and Homotopy Solver giving the smallest mismatches. They also add a useful qualification to the map-level results above: pixelwise agreement with the radar-derived ground truth and consistency with the CML observations are related but not identical criteria: Solver(GT) remains closest to the radar field, but Convex Solver and Homotopy Solver better satisfy the link observations under the forward model. Thus, the field closest to the radar ground truth is not necessarily the field that minimizes attenuation mismatch. In addition, although Homotopy Solver does not improve the RMSE, bias, or correlation summaries relative to Convex Solver, it does provide a small gain in link consistency.
-\endgroup
+Together, these attenuation-based summaries show that the optimized solvers match the observed link attenuations much more closely than IDW and ILDW, with Convex Solver and Homotopy Solver giving the smallest mismatches. They also add a useful qualification to the map-level results above: pixelwise agreement with the radar-derived ground truth and consistency with the simulated CML observations are related but not identical criteria. Solver(GT) remains closest to the radar field, but Convex Solver and Homotopy Solver better satisfy the link observations under the forward model. Thus, the field closest to the radar ground truth is not necessarily the field that minimizes attenuation mismatch. In addition, although Homotopy Solver does not improve the RMSE, bias, or correlation summaries relative to Convex Solver, it does provide a small gain in link consistency.
 
 
 \subsection{Distance-Conditioned Error Analysis}
@@ -730,9 +709,7 @@ In \Cref{fig:RAE}, these patch-level medians are compared across the full benchm
 \[
 [0,125]\ \text{m},\ (125,375]\ \text{m},\ (375,750]\ \text{m},\ (750,1500]\ \text{m},\ (1500,3125]\ \text{m},\ (3125,6000]\ \text{m},\ (6000,\infty)\ \text{m},
 \]
-\begingroup\color{darkgray}
 In the box-and-whisker plot, the two sparsely populated tail bins $(6000,9000]$ m and $(9000,\infty)$ are merged and displayed as a single $(6000,\infty)$ m bin. The count table below still reports these two tail bins separately.
-\endgroup
 
 For fixed solver $s$ and distance bin $B_i$, let
 \[
@@ -827,9 +804,7 @@ of patch-level non-rainy-pixel median AE values across patches. Thus the rainy a
   \label{tab:nonrain_counts}
 \end{table}
 
-\begingroup\color{blue}
 To make the distance-conditioned summaries easier to interpret geometrically, we show the distance-bin assignment for the largest evaluated patch. This illustrates how the third-closest-link distance partitions a real patch into near-link and low-coverage regions.
-\endgroup
 
 \begin{figure}[H]
   \centering
@@ -838,15 +813,14 @@ To make the distance-conditioned summaries easier to interpret geometrically, we
 \end{figure}
 
 \subsubsection{Wet/Dry Confusion Table}
-\begingroup\color{blue}
-Beyond continuous error magnitudes, we also summarize whether each method preserves the basic wet/dry structure of the rainfall field. Using the same 0.6 mm/h threshold as above, each pixel is classified as wet or dry in both the ground truth and the reconstruction. This gives patch-level true-positive, false-negative, false-positive, and true-negative fractions, summarized in the table below.
+Beyond pixel-level error magnitudes, we also summarize whether each method preserves the basic wet/dry structure of the rainfall field. Using the same 0.6 mm/h threshold as above, each pixel is classified as wet or dry in both the ground truth and the reconstruction. This gives patch-level true-positive, false-negative, false-positive, and true-negative fractions, summarized in the table below.
 
 \begin{table}[H]
   \centering
   \scriptsize
   \begin{tabular}{lcccc}
     \toprule
-    Solver & TP & FN & FP & TN \\
+    Solver & $\mathrm{TP}/|P|$ & $\mathrm{FN}/|P|$ & $\mathrm{FP}/|P|$ & $\mathrm{TN}/|P|$ \\
     \midrule
     IDW & $0.893 \pm 0.013$ & $0.002 \pm 0.000$ & $0.040 \pm 0.004$ & $0.065 \pm 0.010$ \\
     ILDW & $0.892 \pm 0.013$ & $0.003 \pm 0.000$ & $0.037 \pm 0.004$ & $0.068 \pm 0.010$ \\
@@ -860,7 +834,6 @@ Beyond continuous error magnitudes, we also summarize whether each method preser
 \end{table}
 
 False negatives are especially important in this wet/dry view because they correspond to missed rain: pixels that are rainy in the ground truth but classified as dry by the reconstruction. In these rain-event patches, the false-negative fractions are very small for all methods, so the table mainly differentiates the solvers by how much extra wet area they introduce through false positives.
-\endgroup
 
 
 
@@ -873,27 +846,25 @@ False negatives are especially important in this wet/dry view because they corre
 \section{Conclusion and Outlook}
 % \textcolor{green}{[TODO: This section is still work in progress and should be expanded in the final version.]}
 
-\begingroup\color{blue}
-This thesis compared interpolation and optimization-based reconstruction strategies on a 100-patch benchmark built from OPERA rainfall fields and simulated microwave-link attenuations. Across the reported experiments, the optimized solvers achieved much better attenuation consistency than IDW. Convex Solver and Homotopy Solver also improved the map-level RMSE, signed bias, and Pearson correlation summaries relative to both IDW and the ILDW-initialized nonlinear solver. Solver(GT) achieved the strongest overall agreement with the ground-truth rainfall maps, but it is initialized from the ground truth and therefore is not a deployable method. At the same time, the comparison between Solver(GT) and the convex solvers shows that the rainfall field closest to the radar-derived ground truth is not always the field that best matches the link observations under the chosen forward model. ILDW remained a useful link-aware IDW modification: it preserves the simplicity of IDW-style interpolation while making better use of the fact that each CML observation belongs to a full link path rather than only to a midpoint.
-\endgroup
+This thesis compared interpolation and optimization-based reconstruction strategies on a 100-patch benchmark built from OPERA rainfall maps and simulated microwave-link attenuations. Across the reported experiments, the optimized solvers achieved lower attenuation mismatch than IDW under the shared forward model. Convex Solver and Homotopy Solver also had lower map-level RMSE, lower mean signed bias, and higher Pearson correlation summaries than both IDW and the ILDW-initialized nonlinear solver. Solver(GT) had the strongest reported map-level summaries, but it is initialized from the ground truth and therefore is not a deployable method. At the same time, the comparison between Solver(GT) and the convex solvers shows that the rainfall field closest to the radar-derived ground truth is not always the field that best matches the link observations under the chosen forward model. ILDW remained a useful link-aware IDW modification: it preserves the simplicity of IDW-style interpolation while making better use of the fact that each CML observation belongs to a full link path rather than only to a midpoint.
 
 Several directions for future work are already visible. One is to move beyond single-time reconstruction and test the current solver on longer event sequences over the same region. Even without changing the objective, this would show whether the method behaves stably over time or produces frame-to-frame artifacts when applied independently to consecutive observations. A second step would be to incorporate temporal structure directly. In meteorology, \emph{optical flow} refers to methods that estimate an apparent motion field between consecutive images \citep{ayzel2019optical}. In the present context, such methods could be used to estimate how rainfall structures translate and evolve from one radar scene to the next. That temporal information could then be added to the inverse problem as a penalty that discourages reconstructed rainfall fields from changing in ways inconsistent with the estimated motion field, or it could be used to support short-term rainfall prediction.
 
 One possible extension, related to existing radar-CML data-fusion work, would be to include radar observations directly in the inverse objective, for example through a radar-mismatch term. However, the results above suggest that this should be treated as a formulation question rather than a straightforward add-on: the objective weights would need careful validation because improving the optimized objective is not always the same as improving agreement with the radar-derived ground truth.
 
-\textcolor{blue}{Beyond objective design, two broader validation questions remain. First, the benchmark used here samples observed European rain events, but it is not explicitly stratified by rainfall regime; future work should therefore test whether the conclusions hold across labeled rainfall patterns such as convective, stratiform, coastal, or mountainous events. Second, real CML deployment would add time-varying measurement effects, such as changing link availability, wet-antenna attenuation, and baseline drift, which are not present in the simulated-link benchmark and would need to be modeled or filtered before the inverse formulation could be used operationally.}
+Another possible direction is to compare the deterministic solvers studied here with learning-based inverse approaches. Recent work, for example, has studied CML rain-field reconstruction using a Bayesian inverse formulation with learned generative priors \citep{moufad2026bayesian}. Such methods could provide a useful point of comparison, but they would require a separate evaluation of training data, prior assumptions, and generalization beyond the benchmark setting used here.
+
+Beyond objective design, two broader validation questions remain. First, the benchmark used here samples observed European rain events, but it is not explicitly stratified by rainfall regime; future work should therefore test whether the conclusions hold across labeled rainfall patterns such as convective, stratiform, coastal, or mountainous events. Second, real CML deployment would add time-varying measurement effects, such as changing link availability, wet-antenna attenuation, and baseline drift, which are not present in the simulated-link benchmark and would need to be modeled or filtered before the inverse formulation could be used operationally.
 
 \cleartorecto
 \pagestyle{plain}
 \section{Appendix}
 \subsection{Largest-Patch Link-Network Summary}
-\begingroup\color{blue}
 This appendix summarizes the link-network properties of the largest evaluated patch shown in the distance-bin map. The distance-bin map shows which pixels are close to or far from nearby links, but it does not by itself describe the link network that produced that geometry.
 
 Here, link length refers to the path length of a link, carrier frequency is the microwave-link frequency in GHz, and endpoint degree is the number of links incident to a given endpoint node.
 
 Link length matters because longer links average rainfall over longer paths and can smooth local rainfall variation. Carrier frequency matters because rain-induced attenuation depends on frequency. Endpoint degree gives a compact view of whether the network is mostly chain-like or whether many links meet at shared nodes.
-\endgroup
 
 \begin{figure}[H]
   \centering
@@ -979,9 +950,7 @@ The first example illustrates the first pattern. For the Black Sea coast, Romani
 \bottomrule
 \end{array}
 \]
-\begingroup\color{blue}
-This discrepancy is important: in this case, Convex Solver has a lower final objective value than Solver(GT), even though Solver(GT) is much closer to the ground-truth rainfall field. Thus, minimizing the weighted objective is not the same as minimizing pixelwise reconstruction error to GT. Instead, the objective can prefer a smoother or lower-cost field that fits the attenuation and regularization terms better, even when that field is visually and quantitatively farther from the true rainfall map.
-\endgroup
+This discrepancy is important: in this case, Convex Solver has a lower final objective value than Solver(GT), even though Solver(GT) is much closer to the ground-truth rainfall field. Thus, minimizing the weighted objective is not the same as minimizing pixelwise reconstruction error to GT. Instead, the objective can prefer a smoother or lower-cost field that fits the attenuation and regularization terms better, even when that field is visually and quantitatively farther from the radar-derived ground-truth map.
 
 \begin{figure}[H]
   \centering
@@ -1008,9 +977,7 @@ This discrepancy is important: in this case, Convex Solver has a lower final obj
   \caption{Objective traces for the Black Sea coast, Romania case study.}
 \end{figure}
 
-\begingroup\color{blue}
 The traces suggest that most of the objective reduction occurs early. For Convex Solver, the objective is still decreasing after several hundred iterations, but the visible progress after the first few hundred iterations is very small and is driven mainly by the first-discrete-derivative term $J_{1d}$. In contrast, Solver(GT) reaches its final behavior after only a few iterations, with one of the stopping tolerances becoming active once the initial objective drop has already occurred.
-\endgroup
 \medskip
 
 The second example illustrates the second pattern. For the Northern Norway case study, Solver(GT) and Convex Solver look almost the same in the reconstruction panels:
@@ -1032,9 +999,7 @@ The second example illustrates the second pattern. For the Northern Norway case 
   \label{fig:case_202301310900}
 \end{figure}
 
-\begingroup\color{blue}
 Looking closely at the error heatmaps, Solver(GT) and Convex Solver also appear to introduce less extra rainfall than IDW overall, as indicated by the smaller red regions.
-\endgroup
 \medskip
 
 \begin{figure}[H]
@@ -1055,14 +1020,10 @@ Looking closely at the error heatmaps, Solver(GT) and Convex Solver also appear 
   \caption{Objective traces for the Northern Norway case study.}
 \end{figure}
 
-\begingroup\color{blue}
 Similarly to the Black Sea case, the Northern Norway traces show that the first few hundred iterations account for most of the visible objective reduction in Convex Solver, with the remaining gradual decrease driven mainly by the first-discrete-derivative term $J_{1d}$.
-\endgroup
 \medskip
 
-\begingroup\color{blue}
 Taken together, these appendix case studies support the main-text interpretation: Solver(GT) is useful for understanding what the objective can preserve when initialized near the target field, but lower objective values do not always correspond to lower pixelwise error. The examples also show that Convex Solver can either diverge visibly from Solver(GT) or produce nearly the same reconstruction, depending on the patch.
-\endgroup
 
 % \begin{table}[H]
 %   \centering
@@ -1082,11 +1043,9 @@ Taken together, these appendix case studies support the main-text interpretation
 \section*{Statement on the Usage of Generative Digital Assistants}
 \addcontentsline{toc}{section}{Statement on the Usage of Generative Digital Assistants}
 
-For this thesis, I used OpenAI ChatGPT and OpenAI Codex as generative digital assistants. Their use included support for programming and debugging Python and LaTeX code, rendering and checking report artifacts, converting numerical summaries into LaTeX tables, comparing generated figures and output files, and revising explanatory prose for clarity, structure, and academic style. I also used these tools to help draft intermediate notes, emails, and thesis paragraphs, and to discuss possible interpretations of numerical results and visual case studies.
+For this thesis, I used OpenAI ChatGPT and OpenAI Codex as generative digital assistants. Their use included support for programming and debugging Python and LaTeX code, rendering and checking report artifacts, converting numerical summaries into LaTeX tables, comparing generated figures and output files, and revising explanatory prose for clarity, structure, and readability.
 
-The tools were used as assistants rather than as independent scientific sources. Mathematical formulations, empirical results, numerical values, figures, citations, and final interpretations were checked against the project code, generated artifacts, local files, and the cited literature. I reviewed and edited the final thesis text and take responsibility for the submitted content.
-
-The research direction, solver design, interpretation of results, and thesis framing were also shaped through supervision by Prof. Guy Even and through project discussions, including meetings or exchanges involving Jonatan Ostrometzky, Christian Sohler, Rex Lei, and Andreas Karrenbauer. In broad terms, the work combined supervisory guidance and research discussion with my implementation, experimentation, analysis, and writing, with generative digital assistants used extensively as practical support during coding, analysis, and drafting.
+The tools were used as assistants rather than as independent scientific sources. Mathematical formulations, empirical results, numerical values, figures, citations, and final interpretations were checked against the project code, generated artifacts, local files, and the cited literature. I reviewed and edited the thesis text and take responsibility for the submitted content.
 
 I am aware of the potential risks of using generative digital assistants, including incorrect suggestions, hallucinated claims, and over-polished wording that may obscure uncertainty. For this reason, I used them with caution and critical review.
 
