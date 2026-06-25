@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 import numpy as np
 from scipy.optimize import minimize
@@ -23,6 +23,40 @@ try:
     from ildw_baseline import ildw_field_from_est_input  # type: ignore
 except Exception:
     ildw_field_from_est_input = None  # type: ignore
+
+
+def _patch_id_from_est_input(path: str | Path) -> str:
+    stem = Path(path).stem
+    return stem[len("est_input_") :] if stem.startswith("est_input_") else stem
+
+
+def _load_gt_initial_field(
+    est_input_json: str | Path,
+    *,
+    gt_dir: str | Path | None,
+    gt_prefix: str = "gt",
+    gt_key_preference: Sequence[str] = ("R_gt", "rain", "gt"),
+    expected_shape: Tuple[int, int],
+) -> Tuple[np.ndarray, Path, str]:
+    if gt_dir is None:
+        raise ValueError("R0_from_GT=True requires rain_init.gt.dir or solver input.gt_dir.")
+
+    patch_id = _patch_id_from_est_input(est_input_json)
+    gt_path = Path(gt_dir) / f"{gt_prefix}_{patch_id}.npz"
+    if not gt_path.exists():
+        raise FileNotFoundError(f"GT init file not found: {gt_path}")
+
+    with np.load(gt_path) as z:
+        key = next((k for k in gt_key_preference if k in z.files), None)
+        if key is None:
+            raise KeyError(f"{gt_path} has keys {z.files}, none of {list(gt_key_preference)}")
+        gt = np.asarray(z[key], dtype=np.float64)
+
+    if gt.shape != expected_shape:
+        raise ValueError(f"GT init shape mismatch for {gt_path}: got {gt.shape}, expected {expected_shape}")
+    if not np.all(np.isfinite(gt)):
+        raise ValueError(f"GT init contains non-finite values: {gt_path}")
+    return np.maximum(gt, 0.0).reshape(-1), gt_path, str(key)
 
 
 def _build_collinear_triplets(h: int, w: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -229,6 +263,10 @@ def solve_lbfgsb_and_save(
     warn: bool = True,
     R0_from_IDW: bool = False,
     R0_from_ILDW: bool = False,
+    R0_from_GT: bool = False,
+    gt_dir: str | Path | None = None,
+    gt_prefix: str = "gt",
+    gt_key_preference: Sequence[str] = ("R_gt", "rain", "gt"),
     rain_init_mode: str = "fixed",
     rain_init_value: float | None = None,
     rain_init_multiplier: float = 1.0,
@@ -291,16 +329,19 @@ def solve_lbfgsb_and_save(
     )
 
     init_method = "constant"
-    if R0_from_ILDW and R0_from_IDW:
-        raise ValueError("Choose exactly one of R0_from_ILDW or R0_from_IDW.")
+    requested_warm_starts = int(bool(R0_from_ILDW)) + int(bool(R0_from_IDW)) + int(bool(R0_from_GT))
+    if requested_warm_starts > 1:
+        raise ValueError("Choose at most one of R0_from_ILDW, R0_from_IDW, or R0_from_GT.")
     if rain_init_mode not in {"fixed", "idw_mean"}:
         raise ValueError(f"Unsupported rain_init_mode={rain_init_mode!r}; expected 'fixed' or 'idw_mean'.")
     if rain_init_value is None:
         rain_init_value = float(R0)
-    if (R0_from_ILDW or R0_from_IDW) and rain_init_mode != "fixed":
+    if (R0_from_ILDW or R0_from_IDW or R0_from_GT) and rain_init_mode != "fixed":
         raise ValueError("rain_init.mode='idw_mean' is only supported for constant-field initialization.")
 
     effective_r0 = float(rain_init_value)
+    gt_init_path = None
+    gt_init_key = ""
 
     if R0_from_ILDW:
         init_method = "ildw"
@@ -317,6 +358,15 @@ def solve_lbfgsb_and_save(
             default_value=float(idw_default_value),
         )
         x0 = np.asarray(r0_grid, dtype=np.float64).reshape(prob.P)
+    elif R0_from_GT:
+        init_method = "gt"
+        x0, gt_init_path, gt_init_key = _load_gt_initial_field(
+            est_input_json,
+            gt_dir=gt_dir,
+            gt_prefix=str(gt_prefix),
+            gt_key_preference=tuple(gt_key_preference),
+            expected_shape=(prob.H, prob.W),
+        )
     else:
         if rain_init_mode == "idw_mean":
             init_method = "idw_mean"
@@ -500,6 +550,9 @@ def solve_lbfgsb_and_save(
         meta_init_method=str(init_method),
         meta_R0_from_IDW=bool(R0_from_IDW),
         meta_R0_from_ILDW=bool(R0_from_ILDW),
+        meta_R0_from_GT=bool(R0_from_GT),
+        meta_gt_init_path="" if gt_init_path is None else str(gt_init_path),
+        meta_gt_init_key=str(gt_init_key),
         meta_idw_r_max_m=float(idw_r_max_m),
         meta_idw_power=float(idw_power),
         meta_idw_eps_m=float(idw_eps_m),

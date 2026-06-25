@@ -6,10 +6,11 @@ import math
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent
-PATCH_LIST = ROOT / "JSON-files/benchmark-500-files-758-patches.local.jsonl"
-HUNDRED_DIR = ROOT / "HundredPatches/patch_jsonl_files"
-OUT = ROOT / "HundredPatches/pipeline/report/images/patch_overview/hundredpatches_europe_overview.svg"
+HERE = Path(__file__).resolve().parent
+PROJECT_ROOT = HERE.parents[1]
+PATCH_LIST = PROJECT_ROOT / "JSON-files/benchmark-500-files-758-patches.local.jsonl"
+HUNDRED_DIR = HERE / "patch_jsonl_files"
+OUT = PROJECT_ROOT / "HundredPatches/pipeline/report/images/patch_overview/hundredpatches_europe_overview.svg"
 
 
 def load_patch_metadata() -> dict[str, dict]:

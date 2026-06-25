@@ -1,2 +1,0 @@
-# rainfall_sim package
-

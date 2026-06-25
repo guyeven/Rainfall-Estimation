@@ -14,7 +14,7 @@ from shapely.geometry import box
 ROOT = Path(__file__).resolve().parent
 PATCH_LIST = ROOT / "JSON-files/benchmark-500-files-758-patches.local.jsonl"
 HUNDRED_DIR = ROOT / "HundredPatches/patch_jsonl_files"
-OUT_DIR = ROOT / "HundredPatches/norm/report/images/patch_overview"
+OUT_DIR = ROOT / "HundredPatches/pipeline/report/images/patch_overview"
 OUT_PNG = OUT_DIR / "hundredpatches_europe_overview_basemap.png"
 OUT_PDF = OUT_DIR / "hundredpatches_europe_overview_basemap.pdf"
 

@@ -12,18 +12,14 @@ from typing import Any
 import numpy as np
 
 
-ROOT = Path("/Users/isoto/Documents/MPI/Research/RainfallMap")
+ROOT = Path(__file__).resolve().parents[1]
 NOTE_DIR = ROOT / "paired_solver_analysis"
 CACHE_PATH = (
     ROOT
-    / "Compute-Link-Attenuations/HundredPatches/norm/batch_analyze_virtual_long_output/"
-    / "stats_multi_new_solver_report_cache.json"
+    / "Compute-Link-Attenuations/HundredPatches/pipeline/batch_analyze_output"
+    / "stats_report_cache.json"
 )
-LIGHT_SHRINKAGE_CACHE_PATH = (
-    ROOT
-    / "Compute-Link-Attenuations/HundredPatches/norm/batch_analyze_light_jtotal_compare_output/"
-    / "stats_multi_new_solver_report_cache.json"
-)
+LIGHT_SHRINKAGE_CACHE_PATH = CACHE_PATH
 EST_INPUT_DIR = ROOT / "Compute-Link-Attenuations/HundredPatches/est_dir"
 
 sys.path.insert(0, str(ROOT / "Compute-Link-Attenuations"))

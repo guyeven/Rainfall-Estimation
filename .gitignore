@@ -1,4 +1,3 @@
-
 # macOS
 .DS_Store
 **/.DS_Store
@@ -8,43 +7,36 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Node / Electron deps + build output
+# Node / Electron dependencies and build output
 **/node_modules/
 Patch-Generator/build/
 Patch-Generator/dist/
 Patch-Generator/electron/
 Patch-Generator/electron/dist/
 
-# Common generated report / experiment artifacts
-**/Diagnostics-Out/
-**/report/
-**/est_dir/
-**/gt_dir/
-**/sol_dir_*/
+# Local environments
+.venv/
+venv/
+.env
+
+# Generated analyzer cache that exceeds GitHub's normal 100 MB file limit.
+# Recreate it by running Compute-Link-Attenuations/batch_analyze_multi.py
+# with HundredPatches/pipeline/analyze.yaml when report cache contents need refreshing.
+Compute-Link-Attenuations/HundredPatches/pipeline/batch_analyze_output/
 
 # LaTeX build products
 *.aux
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
 *.log
+*.out
+*.synctex.gz
+*.toc
+*.lof
+*.lot
 
-# Stray duplicate artifacts
+# Stray duplicate artifacts from Finder/editor copies
 * 2.*
 * 3.*
-
-# Keep these refactor experiment trees visible even if they contain
-# generated outputs we may want to inspect or commit intentionally.
-!Compute-Link-Attenuations/TenPatches/norm_post_refactor/
-!Compute-Link-Attenuations/TenPatches/norm_post_refactor/**
-!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/
-!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/**
-!Compute-Link-Attenuations/TenPatches/norm_post_refactor/analyze_multi.yaml
-!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/analyze_multi.yaml
-!Compute-Link-Attenuations/TenPatches/norm_post_refactor/batch_analyze_output_multi/
-!Compute-Link-Attenuations/TenPatches/norm_post_refactor/batch_analyze_output_multi/**
-!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/batch_analyze_output_multi/
-!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/batch_analyze_output_multi/**
-!Compute-Link-Attenuations/TenPatches/norm_post_refactor/report/
-!Compute-Link-Attenuations/TenPatches/norm_post_refactor/report/**
-!Compute-Link-Attenuations/TenPatches/norm_post_refactor/sol_dir_*/
-!Compute-Link-Attenuations/TenPatches/norm_post_refactor/sol_dir_*/**
-!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/sol_dir_*/
-!Compute-Link-Attenuations/HundredPatches/norm_post_refactor/sol_dir_*/**

@@ -18,6 +18,10 @@ Supports solvers as either:
           ...
 
 Relative paths are resolved relative to the config file.
+
+Parallelism:
+  - parallel.solver_workers runs different solver entries concurrently.
+  - parallel.patch_workers runs different est_input patch files concurrently within each solver.
 """
 
 from __future__ import annotations
@@ -143,7 +147,7 @@ def _filtered_kwargs(func, kwargs: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in kwargs.items() if k in allowed}
 
 
-def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: dict):
+def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: dict, base_dir: Path):
     """
     Calls mod.solve_lbfgsb_and_save(...) using the parameter names in YOUR solve_rain_lbfgsb.py.
 
@@ -161,6 +165,8 @@ def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: 
     tol = solver_cfg.get("tolerances", {}) or {}
     idw = solver_cfg.get("idw", {}) or {}
     rain_init = opt.get("rain_init", {}) or {}
+    gt_init = rain_init.get("gt", {}) or {}
+    input_cfg = solver_cfg.get("input", {}) or {}
 
     kwargs = {
         "est_input_json": est_json,
@@ -192,6 +198,13 @@ def solve_with_lbfgsb_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: 
         "rain_init_mode": str(rain_init.get("mode", "fixed")),
         "rain_init_value": float(rain_init.get("value", opt.get("R0", 0.1))),
         "rain_init_multiplier": float(rain_init.get("multiplier", 1.0)),
+        "R0_from_GT": bool(opt.get("R0_from_GT", False)),
+        "gt_dir": resolve_path(
+            gt_init.get("dir", input_cfg.get("gt_dir", None)),
+            base_dir=base_dir,
+        ),
+        "gt_prefix": str(gt_init.get("prefix", input_cfg.get("gt_prefix", "gt"))),
+        "gt_key_preference": list(gt_init.get("key_preference", input_cfg.get("gt_key_preference", ["R_gt", "rain", "gt"]))),
         "maxiter": int(opt.get("maxiter", 300)),
         "ftol": float(tol.get("ftol", 1e-5)),
         "gtol": float(tol.get("gtol", 1e-4)),
@@ -250,11 +263,42 @@ def solve_with_idw_module(mod, *, est_json: Path, out_npz: Path, solver_cfg: dic
     save_npz(out_npz, R_hat=field, meta=meta)
 
 
+def solve_one_patch(
+    *,
+    solver_cfg: dict,
+    est_path: Path,
+    out_dir: Path,
+    base_dir: Path,
+    module_spec: str,
+    solver_type: str,
+) -> None:
+    mod = import_module_from_spec(module_spec, base_dir=base_dir)
+    out_npz = out_dir / (est_path.stem + "_solution.npz")
+
+    if solver_type == "idw":
+        solve_with_idw_module(mod, est_json=est_path, out_npz=out_npz, solver_cfg=solver_cfg)
+    elif solver_type == "lbfgsb":
+        solve_with_lbfgsb_module(
+            mod,
+            est_json=est_path,
+            out_npz=out_npz,
+            solver_cfg=solver_cfg,
+            base_dir=base_dir,
+        )
+    else:
+        if not hasattr(mod, "solve_and_save"):
+            raise AttributeError("custom solver requires solve_and_save(est_input_json, out_npz, cfg)")
+        s_with_base = dict(solver_cfg)
+        s_with_base["_base_dir"] = str(base_dir)
+        mod.solve_and_save(est_path, out_npz, s_with_base)  # type: ignore
+
+
 def run_solver_batch(
     solver_cfg: dict,
     *,
     est_files: List[Path],
     base_dir: Path,
+    patch_workers: int = 1,
 ) -> Tuple[str, int, int]:
     label = str(solver_cfg.get("label") or solver_cfg.get("name") or "solver")
     module_spec = solver_cfg.get("module", None)
@@ -281,25 +325,52 @@ def run_solver_batch(
     failures = 0
     n_total = len(est_files)
     progress_step = max(1, n_total // 20)  # ~5% steps
-    for i, est_path in enumerate(est_files, 1):
-        out_npz = out_dir / (est_path.stem + "_solution.npz")
-        try:
-            if solver_type == "idw":
-                solve_with_idw_module(mod, est_json=est_path, out_npz=out_npz, solver_cfg=solver_cfg)
-            elif solver_type == "lbfgsb":
-                solve_with_lbfgsb_module(mod, est_json=est_path, out_npz=out_npz, solver_cfg=solver_cfg)
-            else:
-                if not hasattr(mod, "solve_and_save"):
-                    raise AttributeError("custom solver requires solve_and_save(est_input_json, out_npz, cfg)")
-                s_with_base = dict(solver_cfg)
-                s_with_base["_base_dir"] = str(base_dir)
-                mod.solve_and_save(est_path, out_npz, s_with_base)  # type: ignore
-        except Exception as e:
-            failures += 1
-            print(f"[{label}] [{i}/{len(est_files)}] FAIL {est_path.name}: {e}")
-        if i == 1 or i == n_total or (i % progress_step == 0):
-            pct = (100.0 * float(i) / float(n_total)) if n_total > 0 else 100.0
-            print(f"[{label}] progress {i}/{n_total} ({pct:.1f}%) | failures={failures}")
+
+    patch_workers = max(1, min(int(patch_workers), n_total))
+    if patch_workers <= 1:
+        for i, est_path in enumerate(est_files, 1):
+            try:
+                solve_one_patch(
+                    solver_cfg=solver_cfg,
+                    est_path=est_path,
+                    out_dir=out_dir,
+                    base_dir=base_dir,
+                    module_spec=str(module_spec),
+                    solver_type=solver_type,
+                )
+            except Exception as e:
+                failures += 1
+                print(f"[{label}] [{i}/{len(est_files)}] FAIL {est_path.name}: {e}")
+            if i == 1 or i == n_total or (i % progress_step == 0):
+                pct = (100.0 * float(i) / float(n_total)) if n_total > 0 else 100.0
+                print(f"[{label}] progress {i}/{n_total} ({pct:.1f}%) | failures={failures}")
+    else:
+        print(f"[{label}] running patches in parallel with {patch_workers} worker(s).")
+        futures = {}
+        completed = 0
+        with ThreadPoolExecutor(max_workers=patch_workers) as ex:
+            for est_path in est_files:
+                fut = ex.submit(
+                    solve_one_patch,
+                    solver_cfg=solver_cfg,
+                    est_path=est_path,
+                    out_dir=out_dir,
+                    base_dir=base_dir,
+                    module_spec=str(module_spec),
+                    solver_type=solver_type,
+                )
+                futures[fut] = est_path
+            for fut in as_completed(futures):
+                completed += 1
+                est_path = futures[fut]
+                try:
+                    fut.result()
+                except Exception as e:
+                    failures += 1
+                    print(f"[{label}] [{completed}/{len(est_files)}] FAIL {est_path.name}: {e}")
+                if completed == 1 or completed == n_total or (completed % progress_step == 0):
+                    pct = (100.0 * float(completed) / float(n_total)) if n_total > 0 else 100.0
+                    print(f"[{label}] progress {completed}/{n_total} ({pct:.1f}%) | failures={failures}")
 
     if failures:
         print(f"[{label}] finished with failures: {failures}/{len(est_files)}")
@@ -341,15 +412,23 @@ def main() -> int:
         solver_workers = max(1, int(workers_cfg))
         solver_workers = min(solver_workers, len(solvers))
 
+    patch_workers = max(1, int(deep_get(cfg, "parallel.patch_workers", 1)))
+
     if solver_workers <= 1:
         for s in solvers:
-            run_solver_batch(s, est_files=est_files, base_dir=base_dir)
+            run_solver_batch(s, est_files=est_files, base_dir=base_dir, patch_workers=patch_workers)
     else:
         print(f"Running solvers in parallel with {solver_workers} worker(s).")
         futures = {}
         with ThreadPoolExecutor(max_workers=solver_workers) as ex:
             for s in solvers:
-                fut = ex.submit(run_solver_batch, s, est_files=est_files, base_dir=base_dir)
+                fut = ex.submit(
+                    run_solver_batch,
+                    s,
+                    est_files=est_files,
+                    base_dir=base_dir,
+                    patch_workers=patch_workers,
+                )
                 futures[fut] = str(s.get("label") or s.get("name") or "solver")
             for fut in as_completed(futures):
                 label = futures[fut]

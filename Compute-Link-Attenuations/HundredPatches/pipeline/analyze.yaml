@@ -1,0 +1,101 @@
+# Final 2000-iteration light-shrinkage comparison.
+# Paths are relative to this YAML file.
+
+input:
+  gt_dir: "../gt_dir"
+  gt_prefix: "gt"
+
+  est_input_dir: "../est_dir"
+
+  solvers:
+    idw:
+      name: "idw"
+      label: "IDW"
+      sol_dir: "solutions/sol_dir_idw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    ildw:
+      name: "ildw"
+      label: "ILDW"
+      sol_dir: "solutions/sol_dir_ildw"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_norm_ildw_mult_gt_init_light_jtotal:
+      name: "opt_norm_ildw_mult_gt_init_light_jtotal"
+      label: "OPT_NORM_ILDW_MULT_GT_INIT_LIGHT_JTOTAL"
+      module: "solve_rain_lbfgsb_normalized_ildw_multipliers"
+      sol_dir: "solutions/sol_dir_opt_norm_ildw_mult_gt_init_light_jtotal"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_norm_ildw_mult_ildw_init_light_jtotal_long:
+      name: "opt_norm_ildw_mult_ildw_init_light_jtotal_long"
+      label: "OPT_NORM_ILDW_MULT_ILDW_INIT_LIGHT_JTOTAL_LONG"
+      module: "solve_rain_lbfgsb_normalized_ildw_multipliers"
+      sol_dir: "solutions/sol_dir_opt_norm_ildw_mult_ildw_init_light_jtotal_long"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_norm_virtual_convex_const_init_long_light_jtotal:
+      name: "opt_norm_virtual_convex_const_init_long_light_jtotal"
+      label: "OPT_NORM_VIRTUAL_CONVEX_CONST_INIT_LONG_LIGHT_JTOTAL"
+      module: "solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_convex"
+      sol_dir: "solutions/sol_dir_opt_norm_virtual_convex_const_init_long_light_jtotal"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+    opt_norm_virtual_homotopy_const_init_long_light_jtotal:
+      name: "opt_norm_virtual_homotopy_const_init_long_light_jtotal"
+      label: "OPT_NORM_VIRTUAL_HOMOTOPY_CONST_INIT_LONG_LIGHT_JTOTAL"
+      module: "solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_homotopy"
+      sol_dir: "solutions/sol_dir_opt_norm_virtual_homotopy_const_init_long_light_jtotal"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+
+data:
+  gt_key_preference: ["R_gt", "rain", "gt"]
+  allow_shape_mismatch: false
+
+rain:
+  threshold_mmph: 0.6
+  fp_fn_threshold_sweep_mmph:
+    start: 0.2
+    stop: 5.0
+    step: 0.1
+
+coverage:
+  enabled: true
+  bins: [0, 1, 2, 3, 4, "5+"]
+
+distance:
+  bin_edges_m: [125, 375, 750, 1500, 3125, 6000, 9000]
+  k_values: [1, 2, 3]
+  method: sampled_points
+  sample_spacing_m: 250.0
+  k_query_samples: 100
+  chunk_size: 8000
+  max_samples_per_link: 200
+
+jatten_link_distance:
+  bin_edges_m: [125, 375, 750, 1500, 3125, 6000, 9000]
+  k_values: [2, 3]
+
+plots:
+  skip_patch_plots: false
+  enable_rae_histograms: false
+  bin_spacing: 1.35
+  automatic_vertical_scaling: true
+  prune_bins_enabled: true
+  prune_bins_zero_frac: 0.5
+
+output:
+  out_dir: "batch_analyze_output"
+  images_subdir: "images"
+  excel_filename: "stats.xlsx"
+
+rae_hist:
+  enabled: false
+  bins: 50
+  out_dir: "images/RAE_histograms"
