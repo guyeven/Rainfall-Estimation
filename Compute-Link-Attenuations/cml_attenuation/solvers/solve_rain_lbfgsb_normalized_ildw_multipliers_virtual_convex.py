@@ -8,22 +8,22 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 from scipy.optimize import minimize
 
-from solve_rain_lbfgsb import _write_opt_diagnostics, forward_Ahat_and_r, load_est_input_json
-from solve_rain_lbfgsb_normalized_ildw_multipliers import (
+from cml_attenuation.solvers.solve_rain_lbfgsb import _write_opt_diagnostics, forward_Ahat_and_r, load_est_input_json
+from cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers import (
     _build_collinear_triplets,
     _compute_instance_multipliers,
     _compute_terms_and_grads,
     make_objective,
 )
-from virtual_link_utils import make_virtual_problem
+from cml_attenuation.virtual_link_utils import make_virtual_problem
 
 try:
-    from idw_baseline import idw_field_from_est_input  # type: ignore
+    from cml_attenuation.idw_baseline import idw_field_from_est_input  # type: ignore
 except Exception:
     idw_field_from_est_input = None  # type: ignore
 
 try:
-    from ildw_baseline import ildw_field_from_est_input  # type: ignore
+    from cml_attenuation.ildw_baseline import ildw_field_from_est_input  # type: ignore
 except Exception:
     ildw_field_from_est_input = None  # type: ignore
 

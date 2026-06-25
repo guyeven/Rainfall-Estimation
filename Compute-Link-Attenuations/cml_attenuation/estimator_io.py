@@ -22,7 +22,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from link_geometry import PatchRectRD
+from cml_attenuation.link_geometry import PatchRectRD
 
 
 def rd_to_local_m(x_rd: float, y_rd: float, rect_rd: PatchRectRD) -> Tuple[float, float]:

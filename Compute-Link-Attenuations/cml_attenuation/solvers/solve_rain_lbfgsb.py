@@ -38,18 +38,18 @@ from scipy.optimize import minimize
 # Optional: IDW/ILDW baseline initialisation (shared with batch_analyze / baselines)
 # Only required when solve_lbfgsb_and_save is called with R0_from_IDW=True or R0_from_ILDW=True.
 try:
-    from idw_baseline import idw_field_from_est_input  # type: ignore
+    from cml_attenuation.idw_baseline import idw_field_from_est_input  # type: ignore
 except Exception:
     idw_field_from_est_input = None  # type: ignore
 
 try:
-    from ildw_baseline import ildw_field_from_est_input  # type: ignore
+    from cml_attenuation.ildw_baseline import ildw_field_from_est_input  # type: ignore
 except Exception:
     ildw_field_from_est_input = None  # type: ignore
 
 
 # Uses your repo's ITU implementation
-from itu_r_p_8383 import k_alpha
+from cml_attenuation.itu_r_p_8383 import k_alpha
 
 
 def _build_neighbor_triplets(H: int, W: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:

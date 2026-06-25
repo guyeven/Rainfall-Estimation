@@ -32,7 +32,7 @@ from matplotlib.patches import Rectangle
 import numpy as np
 from openpyxl import Workbook
 
-from idw_baseline import itu838_k_alpha
+from cml_attenuation.idw_baseline import itu838_k_alpha
 
 
 @dataclass

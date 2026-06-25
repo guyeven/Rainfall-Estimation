@@ -12,7 +12,7 @@ solvers:
     name: "idw"
     label: "IDW"
     type: "idw"
-    module: "idw_baseline"
+    module: "cml_attenuation.idw_baseline"
     out_dir: "solutions/sol_dir_idw"
     idw:
       r_max_m: 15000.0
@@ -24,7 +24,7 @@ solvers:
     name: "ildw"
     label: "ILDW"
     type: "idw"
-    module: "ildw_baseline"
+    module: "cml_attenuation.ildw_baseline"
     out_dir: "solutions/sol_dir_ildw"
     idw:
       r_max_m: 15000.0
@@ -36,7 +36,7 @@ solvers:
     name: "opt_norm_ildw_mult_ildw_init_light_jtotal_long"
     label: "OPT_NORM_ILDW_MULT_ILDW_INIT_LIGHT_JTOTAL_LONG"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_normalized_ildw_multipliers"
+    module: "cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers"
     out_dir: "solutions/sol_dir_opt_norm_ildw_mult_ildw_init_light_jtotal_long"
     optimization:
       epsilon: 0.01
@@ -66,7 +66,7 @@ solvers:
     name: "opt_norm_virtual_convex_const_init_long_light_jtotal"
     label: "OPT_NORM_VIRTUAL_CONVEX_CONST_INIT_LONG_LIGHT_JTOTAL"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_convex"
+    module: "cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_convex"
     out_dir: "solutions/sol_dir_opt_norm_virtual_convex_const_init_long_light_jtotal"
     optimization:
       epsilon: 0.01
@@ -97,7 +97,7 @@ solvers:
     name: "opt_norm_virtual_homotopy_const_init_long_light_jtotal"
     label: "OPT_NORM_VIRTUAL_HOMOTOPY_CONST_INIT_LONG_LIGHT_JTOTAL"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_homotopy"
+    module: "cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_homotopy"
     out_dir: "solutions/sol_dir_opt_norm_virtual_homotopy_const_init_long_light_jtotal"
     optimization:
       epsilon: 0.01
@@ -129,7 +129,7 @@ solvers:
     name: "opt_norm_ildw_mult_gt_init_light_jtotal"
     label: "OPT_NORM_ILDW_MULT_GT_INIT_LIGHT_JTOTAL"
     type: "lbfgsb"
-    module: "solve_rain_lbfgsb_normalized_ildw_multipliers"
+    module: "cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers"
     out_dir: "solutions/sol_dir_opt_norm_ildw_mult_gt_init_light_jtotal"
     optimization:
       epsilon: 0.01

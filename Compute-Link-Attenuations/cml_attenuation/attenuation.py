@@ -21,9 +21,9 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-from intersection import GridSpec, traverse_segment_pixels
-from itu_model import gamma_db_per_km
-from link_geometry import PatchRectRD
+from cml_attenuation.intersection import GridSpec, traverse_segment_pixels
+from cml_attenuation.itu_model import gamma_db_per_km
+from cml_attenuation.link_geometry import PatchRectRD
 
 
 @dataclass(frozen=True)

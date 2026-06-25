@@ -92,8 +92,12 @@ def deep_get(d: dict, path: str, default=None):
     return cur
 
 
+def _module_basename(module_name: str) -> str:
+    return str(module_name or "").strip().rsplit(".", 1)[-1]
+
+
 def objective_scaling_from_module(module_name: str) -> str:
-    m = str(module_name or "").strip()
+    m = _module_basename(module_name)
     normalized_modules = {
         "solve_rain_lbfgsb_normalized_ildw_multipliers",
         "solve_rain_lbfgsb_normalized_ildw_multipliers",
@@ -168,7 +172,7 @@ def objective_term_presence_from_module(module_name: str, *, solver_label: str =
     Infer which objective terms are part of the solver's native objective.
     Keys: J1, J2, J3, J4
     """
-    m = str(module_name or "").strip()
+    m = _module_basename(module_name)
     s = str(solver_label or "").strip().upper()
     if s == "GT":
         return {"J1": True, "J2": True, "J3": True, "J4": True}
@@ -1493,7 +1497,7 @@ def analyze_single_patch(task: Dict[str, Any]) -> Dict[str, Any]:
         need_prob = True
 
     if need_prob:
-        from solve_rain_lbfgsb import load_est_input_json as load_est_for_obj  # type: ignore
+        from cml_attenuation.solvers.solve_rain_lbfgsb import load_est_input_json as load_est_for_obj  # type: ignore
         prob = load_est_for_obj(est_path, warn=False)
 
     if obj_enabled:
@@ -1816,7 +1820,7 @@ def compute_link_terms(est: dict, R_field: np.ndarray) -> Tuple[np.ndarray, np.n
     """
     Returns arrays (A_obs, A_hat, L_km, valid_mask, len_ge10_mask) aligned by link_index.
     """
-    from solve_rain_lbfgsb import k_alpha  # type: ignore
+    from cml_attenuation.itu_r_p_8383 import k_alpha  # type: ignore
 
     links = est["links"]
     segs: Dict[str, list] = est.get("segments_by_link", {})

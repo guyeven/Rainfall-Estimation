@@ -30,7 +30,7 @@ except Exception:  # pragma: no cover
     cKDTree = None
 
 # Reuse ITU + basic geometry helpers from your existing baseline
-from idw_baseline import (
+from cml_attenuation.idw_baseline import (
     itu838_k_alpha,
     link_lengths_km,
     link_midpoints_xy,

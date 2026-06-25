@@ -4,16 +4,27 @@ This folder contains the maintained rainfall-reconstruction pipeline and the Pyt
 
 ## Main Components
 
+- `main.py` is the interactive patch-input generator. It builds per-patch microwave-link attenuation JSONL files from OPERA rainfall patches and 4TU link records.
 - `batch_solve_multi.py` runs one or more solvers over a set of `est_input_*.json` patch files.
 - `batch_analyze_multi.py` compares solver outputs against ground truth and produces analysis caches, tables, and plot inputs.
 - `render_analysis_report.py` renders the cached analysis outputs into figures and spreadsheets.
-- `main.py` is the interactive patch-input generator. It builds per-patch microwave-link attenuation JSONL files from OPERA rainfall patches and 4TU link records.
-- `idw_baseline.py` and `ildw_baseline.py` implement interpolation baselines.
-- `solve_rain_lbfgsb_normalized_ildw_multipliers*.py` implement the optimization-based solver variants.
-- `itu_model.py`, `attenuation.py`, and `link_geometry.py` contain shared forward-model and geometry utilities.
+- `cml_attenuation/` is the reusable Python package used by the entry points. It contains geometry, rainfall preprocessing, attenuation/ITU utilities, interpolation baselines, and optimization solvers.
+- `cml_attenuation/solvers/` contains the L-BFGS-B solver implementations used by the maintained configuration.
 - `HundredPatches/` contains the maintained benchmark configuration and report artifacts.
 
 Older exploratory folders may still exist, but the maintained path is `HundredPatches/pipeline/`.
+
+## Python Package Layout
+
+The reusable implementation lives in `cml_attenuation/` so that command-line entry points can stay small and the same code can be imported consistently from batch jobs, reports, and tests. The main package modules are:
+
+- `cml_attenuation/rainfall_processing.py`: rainfall crop refinement, NaN handling, and smoothing.
+- `cml_attenuation/link_geometry.py` and `cml_attenuation/intersection.py`: patch geometry, link placement, and segment-pixel intersections.
+- `cml_attenuation/attenuation.py`, `cml_attenuation/itu_model.py`, and `cml_attenuation/itu_r_p_8383.py`: forward attenuation model and ITU-R P.838-3 coefficients.
+- `cml_attenuation/idw_baseline.py` and `cml_attenuation/ildw_baseline.py`: interpolation baselines.
+- `cml_attenuation/solvers/`: optimization-based reconstruction modules.
+
+The YAML configs use these package-qualified module names directly, for example `cml_attenuation.idw_baseline` and `cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers`. Run the CLIs from `Compute-Link-Attenuations/` so Python can find the local package without installation.
 
 ## Inputs And Patch Generation
 

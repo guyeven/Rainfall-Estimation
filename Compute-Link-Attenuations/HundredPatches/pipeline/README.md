@@ -4,7 +4,7 @@ This directory contains the maintained 100-patch multi-solver configuration.
 
 ## Files
 
-- `batch_solve_config.yaml`: runs the six maintained solver outputs.
+- `batch_solve_config.yaml`: runs the six maintained solver outputs using package-qualified modules from `../../cml_attenuation/`.
 - `analyze.yaml`: compares the six solver outputs against the ground-truth rainfall patches.
 - `render_report.yaml`: renders figures and spreadsheet outputs from the analysis cache/report artifacts.
 - `report/`: committed report artifacts and figures produced by the maintained configuration.

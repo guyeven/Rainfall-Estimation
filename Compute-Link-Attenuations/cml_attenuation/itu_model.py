@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from itu_r_p_8383 import gamma_specific
+from cml_attenuation.itu_r_p_8383 import gamma_specific
 
 PolHV = Literal["H", "V"]
 

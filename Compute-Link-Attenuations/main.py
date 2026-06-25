@@ -292,10 +292,10 @@ def main() -> None:
         print("No selected patches found. Check that patch ids match between files.")
         return
 
-    from rainfall_processing import prepare_rainfall_for_patch
-    from link_geometry import translate_and_filter_links_for_patch
-    from attenuation import compute_attenuation_for_patch, DebugRequest
-    from estimator_io import write_estimator_input_json, write_ground_truth_npz
+    from cml_attenuation.rainfall_processing import prepare_rainfall_for_patch
+    from cml_attenuation.link_geometry import translate_and_filter_links_for_patch
+    from cml_attenuation.attenuation import compute_attenuation_for_patch, DebugRequest
+    from cml_attenuation.estimator_io import write_estimator_input_json, write_ground_truth_npz
 
     for patch in selected:
         pid = _pid(patch)

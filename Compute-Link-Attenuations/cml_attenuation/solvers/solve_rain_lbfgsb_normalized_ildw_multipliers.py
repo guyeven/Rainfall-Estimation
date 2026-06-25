@@ -8,19 +8,19 @@ from typing import Any, Dict, List, Sequence, Tuple
 import numpy as np
 from scipy.optimize import minimize
 
-from solve_rain_lbfgsb import (  # type: ignore
+from cml_attenuation.solvers.solve_rain_lbfgsb import (  # type: ignore
     _write_opt_diagnostics,
     forward_Ahat_and_r,
     load_est_input_json,
 )
 
 try:
-    from idw_baseline import idw_field_from_est_input  # type: ignore
+    from cml_attenuation.idw_baseline import idw_field_from_est_input  # type: ignore
 except Exception:
     idw_field_from_est_input = None  # type: ignore
 
 try:
-    from ildw_baseline import ildw_field_from_est_input  # type: ignore
+    from cml_attenuation.ildw_baseline import ildw_field_from_est_input  # type: ignore
 except Exception:
     ildw_field_from_est_input = None  # type: ignore
 

@@ -28,8 +28,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.widgets import Button
 
-from rainfall_processing import prepare_rainfall_for_patch
-from link_geometry import patch_rect_rd
+from cml_attenuation.rainfall_processing import prepare_rainfall_for_patch
+from cml_attenuation.link_geometry import patch_rect_rd
 
 
 # ---------------------------------------------------------------------

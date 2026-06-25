@@ -7,8 +7,8 @@ from typing import Any, Dict, Tuple
 
 import numpy as np
 
-from itu_r_p_8383 import k_alpha, k_alpha_H, k_alpha_V
-from solve_rain_lbfgsb import EstProblem, _pol_to_itu
+from cml_attenuation.itu_r_p_8383 import k_alpha, k_alpha_H, k_alpha_V
+from cml_attenuation.solvers.solve_rain_lbfgsb import EstProblem, _pol_to_itu
 
 
 def compute_link_rain_equivalent(prob: EstProblem) -> np.ndarray:
