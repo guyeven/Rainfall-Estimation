@@ -197,7 +197,8 @@ def load_patch_catalog() -> Dict[str, Dict[str, Any]]:
     global _PATCH_CATALOG_CACHE
     if _PATCH_CATALOG_CACHE is not None:
         return _PATCH_CATALOG_CACHE
-    catalog_path = Path(__file__).resolve().parent / "JSON-files" / "benchmark-500-files-758-patches.local.jsonl"
+    repo_root = Path(__file__).resolve().parents[1]
+    catalog_path = repo_root / "Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches.local.jsonl"
     catalog: Dict[str, Dict[str, Any]] = {}
     if catalog_path.exists():
         with catalog_path.open("r", encoding="utf-8") as f:
