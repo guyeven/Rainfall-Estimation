@@ -27,8 +27,8 @@ From `Compute-Link-Attenuations/`:
 
 ```bash
 python batch_solve_multi.py --config HundredPatches/pipeline/batch_solve_config.yaml
-python batch_analyze_multi.py --config HundredPatches/pipeline/analyze.yaml
-python render_analysis_report.py --input HundredPatches/pipeline/report/stats_report_cache.json --config HundredPatches/pipeline/render_report.yaml --out-dir HundredPatches/pipeline/report
+python batch_analyze_multi.py --config HundredPatches/pipeline/analyze.yaml --analyze-only
+python render_analysis_report.py --cache HundredPatches/pipeline/batch_analyze_output/stats_report_cache.json --render-config HundredPatches/pipeline/render_report.yaml --output-dir HundredPatches/pipeline/report
 ```
 
 The generated `batch_analyze_output/` folder is ignored because the cache file can exceed GitHub's normal 100 MB file limit. If code or configuration changes require the cache to be refreshed, rerun `batch_analyze_multi.py` with `analyze.yaml` to recreate it locally.
