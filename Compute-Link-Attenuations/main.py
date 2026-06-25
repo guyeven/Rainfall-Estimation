@@ -247,6 +247,14 @@ def main() -> None:
     attr_ids: Set[str] = {_pid(r) for r in load_jsonl(patch_attr_path) if _pid(r)}
     links = list(load_jsonl(links_path))
 
+    gt_dir = out_dir / "gt_dir"
+    est_dir = out_dir / "est_dir"
+    patch_jsonl_dir = out_dir / "patch_jsonl_files"
+    if export_gt:
+        gt_dir.mkdir(parents=True, exist_ok=True)
+    est_dir.mkdir(parents=True, exist_ok=True)
+    patch_jsonl_dir.mkdir(parents=True, exist_ok=True)
+
     if use_named_patches:
         by_id = {_pid(p): p for p in patches if _pid(p)}
         missing = [pid for pid in named_patch_ids if pid not in by_id]
@@ -318,14 +326,14 @@ def main() -> None:
         )
 
         if export_gt:
-            write_ground_truth_npz(out_dir / f"gt_{pid}.npz", patch_id=pid, R_gt_mmph=gt)
+            write_ground_truth_npz(gt_dir / f"gt_{pid}.npz", patch_id=pid, R_gt_mmph=gt)
 
         dbg = None
         if debug_mode:
             if k == 1 or pid == debug_patch_id:
                 dbg = DebugRequest(patch_id=pid, link_index=int(debug_link_index))
 
-        patch_out = out_dir / f"patch_{pid}.jsonl"
+        patch_out = patch_jsonl_dir / f"patch_{pid}.jsonl"
         link_recs, segments_by_link, _ = compute_attenuation_for_patch(
             patch=patch,
             rect_rd=rect_rd,
@@ -340,7 +348,7 @@ def main() -> None:
                 print(f"[PATCH {pid}] dedup removed {removed} parallel/reversed link(s)")
 
         H, W = gt.shape
-        est_out = out_dir / f"est_input_{pid}.json"
+        est_out = est_dir / f"est_input_{pid}.json"
         write_estimator_input_json(
             est_out,
             patch_id=pid,
@@ -352,7 +360,12 @@ def main() -> None:
             pixel_size_m=125.0,
         )
 
-        print(f"[PATCH {pid}] wrote {patch_out.name} and {est_out.name}" + (f" and gt_{pid}.npz" if export_gt else ""))
+        print(
+            f"[PATCH {pid}] wrote "
+            f"{patch_out.relative_to(out_dir)}, "
+            f"{est_out.relative_to(out_dir)}"
+            + (f", and {(gt_dir / f'gt_{pid}.npz').relative_to(out_dir)}" if export_gt else "")
+        )
 
     print("Done.")
 

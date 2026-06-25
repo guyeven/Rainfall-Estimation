@@ -17,17 +17,17 @@ Older exploratory folders may still exist, but the maintained path is `HundredPa
 
 ## Inputs And Patch Generation
 
-The patch-input generation code computes rain-induced microwave-link attenuation using OPERA rainfall patches and 4TU link data, following ITU-R P.838-3. For each selected rainfall patch, the generator:
+The patch-input generation code computes rain-induced microwave-link attenuation using OPERA rainfall patches and 4TU link data, following ITU-R P.838-3. The patch generator records patch selections as JSONL metadata; each selected patch points back to an OPERA HDF5 source file through its `source_file` field. For each selected rainfall patch, the attenuation generator:
 
-1. Loads the rainfall field from the patch HDF5 source file.
+1. Loads the OPERA rainfall HDF5 file referenced by the patch metadata.
 2. Crops the rainfall field to the patch extent.
 3. Replaces missing or NaN rainfall values with zero.
 4. Refines the OPERA grid from 2 km resolution to 125 m resolution by 16-by-16 inheritance.
-5. Smooths the refined rainfall field with a Gaussian filter using `sigma = 1` refined pixel and `mode = "nearest"`.
+5. Smooths the refined rainfall field with a Gaussian filter using `sigma = 1` refined pixel and `mode = "nearest"`. Here `sigma = 1` means the Gaussian kernel is measured in the 125 m refined-grid pixels, and `mode = "nearest"` means values outside the grid boundary are handled by extending the nearest edge value.
 6. Places the 4TU link geometry into the patch coordinate system using a fixed anchor.
 7. Keeps only links whose endpoints lie inside the patch.
 8. Computes rain attenuation for each retained link with ITU-R P.838-3.
-9. Writes one JSONL file per patch with the resulting link-attenuation observations.
+9. Writes the generated benchmark inputs into structured output folders.
 
 The interactive entry point is:
 
@@ -35,7 +35,13 @@ The interactive entry point is:
 python main.py
 ```
 
-It prompts for the patch-list JSONL, patch-attributes JSONL, 4TU links JSONL, output directory, number of patches, default polarization, and optional debug settings. The maintained 100-patch pipeline normally starts from the already-generated inputs in `HundredPatches/est_dir/` and the ground-truth files in `HundredPatches/gt_dir/`.
+It prompts for the patch-list JSONL, patch-attributes JSONL, 4TU links JSONL, output directory, number of patches, default polarization, and optional debug settings. This is the tool used to generate the benchmark input folders consumed by the maintained solver pipeline. For a chosen output directory, it writes:
+
+- `est_dir/`: `est_input_*.json` files used by `batch_solve_multi.py`.
+- `gt_dir/`: `gt_*.npz` ground-truth rainfall arrays, when ground-truth export is enabled.
+- `patch_jsonl_files/`: `patch_*.jsonl` link-attenuation summaries and optional `debug_*.json` traces.
+
+The maintained 100-patch pipeline normally starts from the already-generated inputs in `HundredPatches/est_dir/`, the ground-truth files in `HundredPatches/gt_dir/`, and the patch JSONL files in `HundredPatches/patch_overview_generation/patch_jsonl_files/`.
 
 When debug mode is enabled, `main.py` can also write a per-link debug JSON file containing intersected refined pixels, rainfall values, segment lengths, ITU specific attenuation, cumulative attenuation, and the total link attenuation. This is useful for validating geometry and attenuation calculations before scaling to many patches.
 
@@ -88,9 +94,11 @@ This renders the configured figures and writes report artifacts under `HundredPa
 
 ## Python Environment
 
-Install the Python dependencies before running the pipeline:
+The repository does not include a committed `.venv/` directory. Create a local environment before running the pipeline, then install the Python dependencies:
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
