@@ -90,3 +90,9 @@ Keep the backend running on port `8300` while using the frontend.
 This folder prepares and inspects link records. The numerical rainfall-reconstruction workflow itself is in `Compute-Link-Attenuations/HundredPatches/pipeline/`.
 
 AI coding agents such as Codex can help adapt the scripts to a different link-data export, but verify coordinate conventions and units carefully: link endpoints are stored as longitude/latitude, while some filtering computations project them to meters.
+
+## Browser Preview
+
+After following the backend and frontend instructions above, the browser app should show a patch rectangle over the map with the retained CML links drawn inside it:
+
+![4TU-NL patch/link browser preview](docs/patch-map-frontend-screenshot.png)

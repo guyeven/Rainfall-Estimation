@@ -101,3 +101,9 @@ Keep the backend running on port `8000` while using the frontend.
 The patch generator is an inspection and selection tool, not the final solver pipeline. The solver benchmark is run from `Compute-Link-Attenuations/HundredPatches/pipeline/`.
 
 AI coding agents such as Codex can be useful for tracing endpoints, adapting paths, or adding export helpers, but patch choices and annotations should still be checked manually because they determine which rainfall cases enter downstream experiments.
+
+## Browser Preview
+
+After following the backend and frontend instructions above, the browser app should show the patch explorer. If local HDF5 files are available under `backend/data/raw/`, they appear in the file list and can be used for detection or benchmark browsing:
+
+![Patch Generator browser preview](docs/patch-generator-frontend-screenshot.png)

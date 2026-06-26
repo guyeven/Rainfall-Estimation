@@ -57,3 +57,9 @@ Keep the backend running on port `8100` while using the frontend.
 The generated layouts are exploratory. They are not required to reproduce the maintained 100-patch benchmark in `Compute-Link-Attenuations/HundredPatches/pipeline/`.
 
 AI coding agents such as Codex can be useful for modifying the generation rules or adding export formats, but check generated geometries and parameter meanings manually before using them in experiments.
+
+## Browser Preview
+
+After following the backend and frontend instructions above, the browser app should open to a parameter form for generating synthetic link layouts:
+
+![Link Generator browser preview](docs/link-generator-screenshot.png)
