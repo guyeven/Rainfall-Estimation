@@ -13,6 +13,7 @@ This folder contains the rainfall-reconstruction pipeline and the reusable Pytho
 - `render_analysis_report.py` renders the cached analysis outputs into figures and spreadsheets.
 - `cml_attenuation/` is the reusable Python package used by the entry points. It contains rainfall preprocessing, link geometry, segment-pixel intersections, attenuation/ITU utilities, IDW/ILDW baselines, and optimization solvers. The YAML configs use package-qualified module names such as `cml_attenuation.idw_baseline` and `cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers`.
 - `HundredPatches/` contains the existing 100-patch benchmark inputs, pipeline configuration, solutions, and report artifacts.
+- `Misc/` contains auxiliary debugging and synthetic-test artifacts that are not part of the maintained benchmark pipeline.
 
 ## Python Environment
 
@@ -49,7 +50,7 @@ python main.py
 
 It prompts for the patch-list JSONL, patch-attributes JSONL, 4TU links JSONL, output directory, number of patches, default polarization, and optional debug settings. In the normal path, the patch-attributes JSONL controls which patch IDs are eligible for processing; when exact patch IDs are entered manually, `main.py` processes those IDs directly.
 
-For the existing 100-patch benchmark generation, the relevant input files are `../Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches.local.jsonl` for the patch list, `../Patch-Generator/Benchmark-Patches/Sorted-benchmark-500-files-758-patches_selected_with_attributes (1).jsonl` for the patch attributes/annotations, and `JSON-files/LIST-OF-LINKS.jsonl` for the 4TU link records, when running from `Compute-Link-Attenuations/`.
+For the existing 100-patch benchmark generation, the relevant input files are `../Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches.local.jsonl` for the patch list, `../Patch-Generator/Benchmark-Patches/Sorted-benchmark-500-files-758-patches_selected_with_attributes (1).jsonl` for the patch attributes/annotations, and `../Links-4TU-NL/LIST-OF-LINKS.jsonl` for the 4TU link records, when running from `Compute-Link-Attenuations/`.
 
 For a chosen output directory, `main.py` writes:
 
