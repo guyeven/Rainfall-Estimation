@@ -10,7 +10,6 @@ Use this folder when you want to inspect the patch-selection process or create a
 - `frontend/`: maintained React/Vite frontend for interactive patch inspection.
 - `Benchmark-Patches/`: JSONL benchmark lists and patch-attribute/annotation files used by downstream scripts.
 - `Tools/benchmark_batch_ui.py`: helper for batch-oriented benchmark inspection.
-- `frontend-v*` and `old-frontend/`: older frontend experiments kept for reference; use `frontend/` unless you specifically need an old view.
 
 ## Data Expected By The Backend
 
