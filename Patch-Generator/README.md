@@ -2,6 +2,8 @@
 
 Tools for selecting, inspecting, and exporting rainfall patches from radar-derived precipitation fields. Patch generation sits upstream of `Compute-Link-Attenuations/HundredPatches/`: the selected patches become the radar-derived rainfall arrays and metadata used by the solver pipeline.
 
+Use this folder when you want to inspect the patch-selection process or create a new patch set beyond the already-generated 100-patch benchmark.
+
 ## Contents
 
 - `backend/`: FastAPI backend for listing rainfall files, detecting candidate patches, saving/loading benchmark selections, and rendering patch images.

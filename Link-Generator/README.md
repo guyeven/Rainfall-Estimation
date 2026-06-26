@@ -1,6 +1,6 @@
 # Link-Generator
 
-Utilities for generating and inspecting synthetic microwave-link geometries. This tool is separate from the maintained 100-patch benchmark, which uses 4TU-derived link geometries under `Compute-Link-Attenuations/HundredPatches/`. Use this folder when you want to experiment with generated link layouts and frequency feasibility.
+This folder contains tools for generating and inspecting synthetic microwave-link layouts. It is separate from the maintained 100-patch benchmark, which uses 4TU-derived link geometries under `Compute-Link-Attenuations/HundredPatches/`. Use it when you want to experiment with generated link networks, inspect their geometry, or check which frequencies are feasible for a proposed layout.
 
 ## Contents
 

@@ -2,7 +2,7 @@
 
 Small calculator/API for ITU-R P.838-3 rain-attenuation coefficients. It is useful for checking the frequency- and polarization-dependent coefficients used by the attenuation forward model in `Compute-Link-Attenuations/`.
 
-The maintained runnable code is the FastAPI backend in `Python-React/backend/`.
+The maintained runnable code has two parts: the FastAPI backend in `Python-React/backend/` and a small React/Vite UI in `Python-React/frontend/`.
 
 ## What It Computes
 
@@ -20,7 +20,7 @@ Available endpoints include:
 - `/itu/gamma-freq`: attenuation curve as frequency varies at fixed rain rate.
 - `/itu/gamma-rain`: attenuation curve as rain rate varies at fixed frequency.
 
-## Setup
+## Backend Setup
 
 From the repository root:
 
@@ -31,10 +31,10 @@ source .venv/bin/activate
 pip install fastapi 'uvicorn[standard]' pydantic
 ```
 
-## Run
+## Run The Backend
 
 ```bash
-python main.py
+python3 main.py
 ```
 
 or equivalently:
@@ -57,12 +57,26 @@ http://127.0.0.1:8000/itu/gamma?f_ghz=25&R_mm_per_h=10&pol=horizontal
 
 Expected output is JSON containing `k`, `alpha`, and `gamma` for the requested frequency, rain rate, and polarization.
 
-## Notes
+## Run The UI
 
-`Python-React/frontend/` currently contains frontend source snippets but not a complete committed React package setup. Treat the backend API as the reliable runnable interface unless a frontend package is added later.
+Keep the backend running at `http://127.0.0.1:8000`. In a second terminal, start the React/Vite frontend:
+
+```bash
+cd ITU-Calculator/Python-React/frontend
+npm install
+npm run dev
+```
+
+Then open:
+
+```text
+http://127.0.0.1:5173/
+```
+
+The UI uses the backend endpoints above to update the current `k`, `alpha`, and `gamma` values and to draw attenuation curves as frequency or rain rate changes. If the UI loads but the numbers or plots do not update, first check that the backend is still running on port `8000`.
 
 ## Browser Preview
 
-After following the backend instructions above, open `/docs` to inspect and try the API endpoints in the browser:
+After following the backend and frontend instructions above, open the UI in the browser:
 
-![ITU calculator API browser preview](docs/itu-calculator-api-screenshot.png)
+![ITU calculator UI browser preview](docs/itu-calculator-ui-screenshot.png)
