@@ -60,3 +60,9 @@ Expected output is JSON containing `k`, `alpha`, and `gamma` for the requested f
 ## Notes
 
 `Python-React/frontend/` currently contains frontend source snippets but not a complete committed React package setup. Treat the backend API as the reliable runnable interface unless a frontend package is added later.
+
+## Browser Preview
+
+After following the backend instructions above, open `/docs` to inspect and try the API endpoints in the browser:
+
+![ITU calculator API browser preview](docs/itu-calculator-api-screenshot.png)
