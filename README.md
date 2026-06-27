@@ -30,6 +30,6 @@ The intended flow is:
 1. Select or inspect rainfall patches with `Patch-Generator/`.
 2. Prepare or inspect CML link geometries with `Links-4TU-NL/` or, for synthetic experiments, `Link-Generator/`.
 3. Run the maintained reconstruction benchmark from `Compute-Link-Attenuations/HundredPatches/pipeline/`.
-4. Use `Compute-Link-Attenuations/HundredPatches/pipeline/report/` and `Latex/` for result inspection and write-up artifacts.
+4. Use `Compute-Link-Attenuations/HundredPatches/pipeline/report/` for result inspection.
 
 The pipeline uses six solver outputs: IDW, ILDW, Solver(ILDW), Convex Solver, Homotopy Solver, and Solver(GT). When modifying or re-running the project, it is reasonable to use AI coding agents such as Codex to help navigate the scripts and configs, but the commands and expected inputs are documented in the folder READMEs so the workflow is not dependent on an agent.
