@@ -6,5 +6,6 @@ The maintained pipeline remains under `../HundredPatches/pipeline/`, with entry 
 
 ## Contents
 
+- `fullarea_d3_links/`: standalone helper for mosaicking patch-level distance-to-third-closest-link bins and overlaying retained links across a larger area.
 - `link_diagnostics_report/`: a one-off diagnostic report script for inspecting per-link attenuation errors and related link-crowding summaries.
 - `synthetic_tests/`: small synthetic rainfall/link fixtures used for controlled checks of attenuation and input-generation behavior.
