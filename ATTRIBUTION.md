@@ -22,11 +22,11 @@ The raw 4TU/RAINLINK link records are converted into JSONL files containing sele
 ## EURADCLIM / OPERA radar-derived precipitation data
 
 - **Source**: EURADCLIM / KNMI radar-derived precipitation fields used by `Patch-Generator/` and `Compute-Link-Attenuations/`.
-- **Creator(s)**: Overeem, Aart; van den Besselaar, Else; van der Schrier, Gerard; Meirink, Jan Fokke; van der Plas, Emil; Leijnse, Hidde.
+- **Creator(s)**: Overeem, Aart; Leijnse, Hidde; van den Besselaar, Else; van der Schrier, Gerard; Meirink, Jan Fokke.
 - **Title**: *EURADCLIM: The European climatological gauge-adjusted radar precipitation dataset (1-h accumulations)*.
-- **Version**: 2.0.
-- **Repository**: Royal Netherlands Meteorological Institute (KNMI).
-- **Dataset DOI**: <https://doi.org/10.21944/ymrk-mr24>.
+- **Version**: 3.0.
+- **Repository**: KNMI Radar Team / Royal Netherlands Meteorological Institute (KNMI).
+- **Dataset DOI**: <https://doi.org/10.21944/1rxx-ev62>.
 - **License**: Creative Commons Attribution 4.0 International, <https://creativecommons.org/licenses/by/4.0/>.
 - **Required upstream attribution note**: Based on EUMETNET/OPERA radar data and ECA&D rain-gauge data.
 
