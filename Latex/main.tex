@@ -68,8 +68,8 @@
 \newcommand{\thesistitle}{Optimization-Based Precipitation Estimation from Commercial Microwave Links}
 \newcommand{\thesistype}{Master's Thesis}
 \newcommand{\thesisauthor}{Iván Soto}
-\newcommand{\thesissubmissiondate}{June 2026}
-\newcommand{\thesisadvisor}{Prof. Guy Even}
+\newcommand{\thesissubmissiondate}{July 2026}
+\newcommand{\thesisadvisor}{Prof. Dr.-Ing. Andreas Karrenbauer}
 \newcommand{\thesisfirstreviewer}{Prof. Dr. Kurt Mehlhorn (First Examiner)}
 \newcommand{\thesissecondreviewer}{(Second Examiner)}
 
@@ -110,10 +110,21 @@
 }
 
 
+
+\newcommand{\makethesisacknowledgments}{%
+  \clearpage
+  \section*{Acknowledgments}
+  \addcontentsline{toc}{section}{Acknowledgments}
+  I am very grateful to Guy Even for wholeheartedly bringing me on board for this project, putting lots of effort into convincing me that this was something exciting to work on, spending so much time with me along the way to push it forward, and sharing so much of his wisdom in every meeting we had.
+  
+I also thank Andreas Karrenbauer for serving as the official advisor for this thesis as part of the requirements for submission of this work.
+}
+
 \newcommand{\makefrontmatter}{%
   \pagenumbering{roman}
   \setcounter{page}{1}
   \makethesisabstract
+  \makethesisacknowledgments
   \makeblankpage
   \tableofcontents
   \makeblankpage
@@ -129,16 +140,16 @@
   \section*{Eidesstattliche Erklärung}
   Hiermit erkläre ich, dass ich die vorliegende Arbeit selbstständig und ohne unzulässige Hilfe verfasst habe, und dass ich keine anderen als die angegebenen Quellen und Hilfsmittel benutzt habe.
   Alle Stellen der Arbeit, die wörtlich oder sinngemäß aus Veröffentlichungen oder aus anderweitigen fremden Äußerungen entnommen wurden, sind als solche kenntlich gemacht.
-  Diese Arbeit wurde unter der Betreuung von Prof. Guy Even geschrieben und profitierte von fachlichen Diskussionen mit Projektbeteiligten; diese Betreuung und Diskussionen ersetzen jedoch nicht meine Verantwortung für die vorliegende Ausarbeitung.
+  Diese Arbeit hat sehr von der engen wissenschaftlichen Begleitung durch Guy Even und von Forschungsdiskussionen mit Projektbeteiligten profitiert; diese Begleitung und diese Diskussionen ersetzen nicht meine Verantwortung für die eingereichte Arbeit.
   Insbesondere bestätige ich hiermit, dass ich künstliche Intelligenz betriebene Software, einschließlich OpenAI ChatGPT/Codex, als Hilfsmittel verwendet habe, wie in der separaten Erklärung zur Nutzung generativer digitaler Assistenten beschrieben.
   Alle fachlichen Entscheidungen, Auswertungen, Interpretationen und die Endfassung der Arbeit wurden von mir geprüft und verantwortet.
   Mir ist bewusst, dass der Verstoß gegen diese Versicherung zum Nichtbestehen der Prüfung bis hin zum Verlust des Prüfungsanspruchs führen kann.
 
-  \vspace{3ex}
+  \vspace{6ex}
   \section*{Declaration of Original Authorship}
   I hereby declare that this thesis is my own original work and was completed independently, without unauthorized assistance or unacknowledged sources.
   Any content derived from publications or other external sources, whether quoted verbatim or paraphrased, has been duly acknowledged and clearly marked as such.
-  This thesis was written under the supervision of Prof. Guy Even and benefited from research discussions with project collaborators; this supervision and these discussions do not replace my responsibility for the submitted work.
+  This thesis greatly benefited from close scientific guidance by Guy Even and from research discussions with project collaborators; this guidance and these discussions do not replace my responsibility for the submitted work.
   I hereby confirm that I used artificial intelligence-based software, including OpenAI ChatGPT/Codex, as a resource, as described in the separate statement on the usage of generative digital assistants.
   All scientific decisions, analyses, interpretations, and the final version of the thesis were reviewed and are my responsibility.
   I acknowledge that any breach of this declaration may result in failing the examination and, in severe cases, the right to be examined may be revoked.
