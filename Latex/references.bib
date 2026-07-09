@@ -21,8 +21,8 @@
 }
 
 @article{zhu1997algorithm,
-  author    = {Zhu, Ciyou and Byrd, Richard H. and Nocedal, Jorge and Morales, Jos{\'e} Luis},
-  title     = {Algorithm 778: L-BFGS-B: Fortran Subroutines for Large-Scale Bound-Constrained Optimization},
+  author    = {Zhu, Ciyou and Byrd, Richard H. and Lu, Peihuang and Nocedal, Jorge},
+  title     = {Algorithm 778: {L-BFGS-B}: {Fortran} Subroutines for Large-Scale Bound-Constrained Optimization},
   journal   = {ACM Transactions on Mathematical Software},
   volume    = {23},
   number    = {4},
@@ -32,7 +32,7 @@
 }
 
 @article{goldshtein2009rain,
-  author  = {Goldshtein, Oren and Messer, Hagit and Zinevich, Anat},
+  author  = {Goldshtein, Oren and Messer, Hagit and Zinevich, Artem},
   title   = {Rain Rate Estimation Using Measurements From Commercial Telecommunications Links},
   journal = {IEEE Transactions on Signal Processing},
   volume  = {57},
@@ -44,7 +44,7 @@
 
 @article{olsen1978rain,
   author  = {Olsen, R. L. and Rogers, D. V. and Hodge, D. B.},
-  title   = {The aRb Relation in the Calculation of Rain Attenuation},
+  title   = {The {$aR^b$} Relation in the Calculation of Rain Attenuation},
   journal = {IEEE Transactions on Antennas and Propagation},
   volume  = {26},
   number  = {2},
@@ -54,7 +54,7 @@
 }
 
 @article{messer2006environmental,
-  author  = {Messer, Hagit and Zinevich, Anat and Alpert, Pinhas},
+  author  = {Messer, Hagit and Zinevich, Artem and Alpert, Pinhas},
   title   = {Environmental Monitoring by Wireless Communication Networks},
   journal = {Science},
   volume  = {312},
@@ -66,7 +66,7 @@
 
 @article{eshel2020idw,
   author  = {Eshel, Adam and Ostrometzky, Jonatan and Gat, Shani and Alpert, Pinhas and Messer, Hagit},
-  title   = {Spatial Reconstruction of Rain Fields from Wireless Telecommunication Networks--Scenario-Dependent Analysis of IDW-Based Algorithms},
+  title   = {Spatial Reconstruction of Rain Fields from Wireless Telecommunication Networks--Scenario-Dependent Analysis of {IDW}-Based Algorithms},
   journal = {IEEE Geoscience and Remote Sensing Letters},
   volume  = {17},
   number  = {5},
@@ -77,7 +77,7 @@
 
 @article{roversi2020northernitaly,
   author  = {Roversi, Giacomo and Alberoni, Pier Paolo and Fornasiero, Anna and Porc{\`u}, Federico},
-  title   = {Commercial microwave links as a tool for operational rainfall monitoring in Northern Italy},
+  title   = {Commercial Microwave Links as a Tool for Operational Rainfall Monitoring in {Northern Italy}},
   journal = {Atmospheric Measurement Techniques},
   volume  = {13},
   number  = {11},
@@ -90,8 +90,10 @@
   author  = {Olsson, Jonas and Horv{\'a}th-Varga, Laura and van de Beek, Remco and Graf, Maximilian and Overeem, Aart and Szaton, Magdalena and Bare{\v s}, Vojt{\v e}ch and Bezak, Nejc and Chwala, Christian and De Michele, Carlo and Fencl, Martin and Seidel, Jochen and Todorovi{\'c}, Andrijana},
   title   = {How Close Are Opportunistic Rainfall Observations to Providing Societal Benefit?},
   journal = {Journal of Hydrometeorology},
+  volume  = {26},
+  number  = {11},
+  pages   = {1585--1602},
   year    = {2025},
-  note    = {Early online release},
   doi     = {10.1175/JHM-D-25-0043.1}
 }
 
@@ -107,7 +109,7 @@
 }
 
 @article{lian2022cmlreview,
-  author  = {Lian, Bin and Wei, Zhongcheng and Sun, Xiang and Li, Zhihua},
+  author  = {Lian, Bin and Wei, Zhongcheng and Sun, Xiang and Li, Zhihua and Zhao, Jijun},
   title   = {A Review on Rainfall Measurement Based on Commercial Microwave Links in Wireless Cellular Networks},
   journal = {Sensors},
   volume  = {22},
@@ -137,11 +139,38 @@
   doi       = {10.1137/1.9780898719154}
 }
 
+@techreport{itu2005p838,
+  author      = {{International Telecommunication Union}},
+  title       = {Recommendation {ITU-R P.838-3}: Specific Attenuation Model for Rain for Use in Prediction Methods},
+  institution = {International Telecommunication Union},
+  number      = {ITU-R P.838-3},
+  year        = {2005},
+  url         = {https://www.itu.int/rec/R-REC-P.838-3-200503-I/en}
+}
+
+@misc{overeem2023cml,
+  author       = {Overeem, Aart},
+  title        = {Commercial Microwave Link Data for Rainfall Monitoring},
+  howpublished = {4TU.Centre for Research Data, Version 2},
+  year         = {2023},
+  note         = {\doi{10.4121/7a692e36-c32f-4916-813b-c62d2566e8d8.v2}}
+}
+
+@misc{overeem2025euradclim,
+  author       = {Overeem, Aart and Leijnse, Hidde and van den Besselaar, Else and van der Schrier, Gerard and Meirink, Jan Fokke},
+  title        = {{EURADCLIM}: The European Climatological Gauge-Adjusted Radar Precipitation Dataset (1-h Accumulations)},
+  howpublished = {KNMI Radar Team, Version 3.0},
+  year         = {2025},
+  note         = {\doi{10.21944/1rxx-ev62}}
+}
+
 @misc{moufad2026bayesian,
   author        = {Moufad, Badr and Ilina, Albina and Habi, Hai Victor and Lahlou, Salem and Janati, Yazid and Messer, Hagit and Moulines, Eric},
   title         = {Bayesian Rain Field Reconstruction using Commercial Microwave Links and Diffusion Model Priors},
   year          = {2026},
   eprint        = {2605.05520},
   archivePrefix = {arXiv},
-  primaryClass  = {cs.LG}
+  primaryClass  = {cs.LG},
+  note          = {arXiv:2605.05520},
+  url           = {https://arxiv.org/abs/2605.05520}
 }

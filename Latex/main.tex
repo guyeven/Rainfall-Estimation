@@ -35,11 +35,12 @@
   \renewcommand{\footrulewidth}{0pt}
 }
 \renewcommand{\sectionmark}[1]{\markboth{Chapter \thesection\ #1}{}}
+\newcommand{\chapteropeningtopspace}{\vspace*{0.02\textheight}}
 
 \titleformat{name=\section}
   [display]
   {\normalfont\bfseries\thispagestyle{plain}}
-  {\vspace*{0.02\textheight}\Huge Chapter \thesection}
+  {\chapteropeningtopspace\Huge Chapter \thesection}
   {7.0ex}
   {\Huge}
 \titleformat{name=\section,numberless}
@@ -100,6 +101,8 @@
 
 \newcommand{\makethesisabstract}{%
   \clearpage
+  \phantomsection
+  \chapteropeningtopspace
   \section*{Abstract}
   \addcontentsline{toc}{section}{Abstract}
   Commercial microwave links provide an opportunistic source of rainfall information: rain attenuates the transmitted signal along each link path, and these attenuation measurements can be used to infer rainfall. Many existing CML rainfall-mapping approaches rely on link-level rain-rate estimates followed by spatial interpolation. In this thesis, we study optimization-based rainfall reconstruction from commercial microwave links as an alternative to purely interpolation-based map construction.
@@ -113,6 +116,8 @@
 
 \newcommand{\makethesisacknowledgments}{%
   \clearpage
+  \phantomsection
+  \chapteropeningtopspace
   \section*{Acknowledgments}
   \addcontentsline{toc}{section}{Acknowledgments}
   I am very grateful to Guy Even for wholeheartedly bringing me on board for this project, putting lots of effort into convincing me that this was something exciting to work on, spending so much time with me along the way to push it forward, and sharing so much of his wisdom in every meeting we had.
@@ -124,8 +129,10 @@ I also thank Andreas Karrenbauer for serving as the official advisor for this th
   \pagenumbering{roman}
   \setcounter{page}{1}
   \makethesisabstract
+  \makeblankpage
   \makethesisacknowledgments
   \makeblankpage
+  \chapteropeningtopspace
   \tableofcontents
   \makeblankpage
   \pagenumbering{arabic}
@@ -135,30 +142,57 @@ I also thank Andreas Karrenbauer for serving as the official advisor for this th
 \newcommand{\makeauthorshipdeclaration}{%
   \clearpage
   \thispagestyle{empty}
-  \newgeometry{bottom=1.0in}
+  \newgeometry{top=0.62in,bottom=0.62in}
+  \begingroup
+  \fontsize{10}{12}\selectfont
 
-  \section*{Eidesstattliche Erklärung}
-  Hiermit erkläre ich, dass ich die vorliegende Arbeit selbstständig und ohne unzulässige Hilfe verfasst habe, und dass ich keine anderen als die angegebenen Quellen und Hilfsmittel benutzt habe.
+  \vspace*{1.0cm}
+  \begin{center}
+    \begin{tabular}{@{}c@{\hspace{2em}}c@{}}
+      {\large\bfseries Eidesstattliche Erklärung} &
+      {\large\bfseries  \textcolor{gray}{Declaration of Original Authorship}}
+    \end{tabular}
+  \end{center}
+  \vspace{1.2ex}
+
+  Hiermit erkläre ich, dass ich die vorliegende Arbeit selbstständig und ohne unzulässige Hilfe verfasst habe und keine anderen als die angegebenen Quellen und Hilfsmittel benutzt habe.
   Alle Stellen der Arbeit, die wörtlich oder sinngemäß aus Veröffentlichungen oder aus anderweitigen fremden Äußerungen entnommen wurden, sind als solche kenntlich gemacht.
-  Diese Arbeit hat sehr von der engen wissenschaftlichen Begleitung durch Guy Even und von Forschungsdiskussionen mit Projektbeteiligten profitiert; diese Begleitung und diese Diskussionen ersetzen nicht meine Verantwortung für die eingereichte Arbeit.
-  Insbesondere bestätige ich hiermit, dass ich künstliche Intelligenz betriebene Software, einschließlich OpenAI ChatGPT/Codex, als Hilfsmittel verwendet habe, wie in der separaten Erklärung zur Nutzung generativer digitaler Assistenten beschrieben.
-  Alle fachlichen Entscheidungen, Auswertungen, Interpretationen und die Endfassung der Arbeit wurden von mir geprüft und verantwortet.
+  Ich habe KI-basierte Software, einschließlich OpenAI ChatGPT und OpenAI Codex, wie in der separaten Erklärung zur Nutzung generativer digitaler Assistenten beschrieben verwendet.
+  Ich habe die eingereichte Arbeit geprüft und übernehme die volle Verantwortung für ihren Inhalt, einschließlich der Richtigkeit und Vollständigkeit ihrer Zitate und Literaturangaben.
+  Ich erkläre mich damit einverstanden, dass meine Arbeit mithilfe von Plagiats- und KI-Erkennungssoftware überprüft werden darf.
   Mir ist bewusst, dass der Verstoß gegen diese Versicherung zum Nichtbestehen der Prüfung bis hin zum Verlust des Prüfungsanspruchs führen kann.
 
-  \vspace{6ex}
-  \section*{Declaration of Original Authorship}
-  I hereby declare that this thesis is my own original work and was completed independently, without unauthorized assistance or unacknowledged sources.
+  \vspace{1.8ex}
+  \textcolor{gray}{I hereby declare that this thesis is my own original work and was completed independently, without unauthorized assistance or unacknowledged sources.
   Any content derived from publications or other external sources, whether quoted verbatim or paraphrased, has been duly acknowledged and clearly marked as such.
-  This thesis greatly benefited from close scientific guidance by Guy Even and from research discussions with project collaborators; this guidance and these discussions do not replace my responsibility for the submitted work.
-  I hereby confirm that I used artificial intelligence-based software, including OpenAI ChatGPT/Codex, as a resource, as described in the separate statement on the usage of generative digital assistants.
-  All scientific decisions, analyses, interpretations, and the final version of the thesis were reviewed and are my responsibility.
-  I acknowledge that any breach of this declaration may result in failing the examination and, in severe cases, the right to be examined may be revoked.
+  I used artificial intelligence-based software, including OpenAI ChatGPT and OpenAI Codex, as described in the separate Statement on the Usage of Generative Digital Assistants.
+  I reviewed the submitted work and take full responsibility for its content, including the accuracy and completeness of its citations and references.
+  I consent that my thesis may be checked using plagiarism and AI detection software.
+  I acknowledge that any breach of this declaration may result in failing the examination and, in severe cases, the right to be examined may be revoked.}
 
-  \vspace*{\fill}
-  \noindent\begin{tabular}{ll}
-  \makebox[2.5in]{\hrulefill} & \makebox[2.5in]{\hrulefill}\\
-  Ort/Place, Datum/Date & Unterschrift/Signature\\[8ex]
+  \vspace{5.0ex}
+  \noindent\begin{tabular}{@{}ll@{}}
+  \makebox[2.7in]{\hrulefill} & \hspace{1.5em}\makebox[2.7in]{\hrulefill}\\
+  Saarbrücken, Datum/Date & \hspace{1.5em}Unterschrift/Signature\\
   \end{tabular}
+
+  \vspace{5.1ex}
+  \begin{center}
+    {\large\bfseries Einverständniserklärung (optional)\quad \textcolor{gray}{Declaration of Consent (optional)}}
+  \end{center}
+  \vspace{1.0ex}
+
+  Ich bin damit einverstanden, dass meine bestandene Arbeit in beiden Versionen in die Bibliothek der Informatik aufgenommen und damit veröffentlicht wird.
+
+  \vspace{1.5ex}
+  \textcolor{gray}{I consent to having both the printed and digital versions of my thesis, which has been examined and awarded at least a passing grade, added to the Computer Science Department's library and thus made publicly accessible.}
+
+  \vspace{5.0ex}
+  \noindent\begin{tabular}{@{}ll@{}}
+  \makebox[2.7in]{\hrulefill} & \hspace{1.5em}\makebox[2.7in]{\hrulefill}\\
+  Saarbrücken, Datum/Date & \hspace{1.5em}Unterschrift/Signature\\
+  \end{tabular}
+  \endgroup
   \restoregeometry
   \clearpage
 }
@@ -220,14 +254,13 @@ Rainfall is one of the most important variables in meteorology, yet measuring it
 
 Reconstructing rainfall fields from microwave-link data has already been studied in the literature, often through interpolation-based methods that first convert each link into a representative rain-rate value and then spread those values across a region. Simple interpolation rules such as inverse-distance weighting (IDW) are attractive because they are straightforward to implement and provide a practical baseline for rainfall mapping \citep{lian2022cmlreview}.
 
-In this thesis, we study whether rainfall reconstruction can be improved by replacing purely interpolative map construction with optimization-based inverse reconstruction. Rather than treating the rainfall map only as an interpolation problem, we formulate reconstruction as an optimization problem that balances agreement with the observed link attenuations against terms that encourage spatially coherent rainfall fields. We evaluate several solver variants derived from this formulation and compare them against IDW, a standard interpolation baseline.
+In this thesis, we study whether rainfall reconstruction can be improved by replacing purely interpolative map construction with optimization-based reconstruction. Rather than treating the rainfall map only as an interpolation problem, we formulate reconstruction as an optimization problem that balances agreement with the observed link attenuations against terms that encourage spatially coherent rainfall fields. We evaluate several solver variants derived from this formulation and compare them against IDW, a standard interpolation baseline.
 
 To test this question, we construct a 100-patch benchmark from radar-derived rainfall fields. We then simulate microwave-link attenuations with a physical model relating rainfall to link attenuation and compare IDW, ILDW, and several solver variants derived from the optimization-based formulation.
 
 With this setup in place, the remainder of the thesis reviews the background and prior work, presents the benchmark and methods, reports the empirical comparison, and closes with a discussion of the main conclusions and limitations.
 
-For reproducibility, the code, experiment configuration files, and generated report artifacts used for this thesis are available in the project repository.\\[0.35ex]
-\url{https://github.com/guyeven/Rainfall-Estimation}.
+For reproducibility, the code, experiment configuration files, and generated report artifacts used for this thesis are available in the project repository at \url{https://github.com/guyeven/Rainfall-Estimation}.
 
 \cleartorecto
 \section{Background and Related Work}
@@ -239,18 +272,18 @@ In most settings, rainfall is measured primarily with rain gauges and weather ra
 
 \paragraph*{What information a link carries.} In the present context, a link is modeled geometrically as the line segment connecting its two endpoints. Besides those endpoint coordinates, each link carries a carrier frequency and a polarization. The frequency determines the microwave band at which the signal is transmitted. The polarization describes the orientation of the electric field of the transmitted wave, typically horizontal or vertical. Both frequency and polarization matter because the ITU attenuation coefficients depend on them: the same rain rate leads to different specific attenuation at different frequencies and polarizations.
 
-\paragraph*{From link attenuation to rainfall maps.} A microwave link does not provide a point measurement of rainfall. Instead, its attenuation reflects the combined effect of rain along the path between its two antennas, so different spatial rainfall patterns can produce similar link measurements. This ambiguity makes map reconstruction difficult. In practice, many approaches handle the problem with simple but scalable map-construction strategies. A common approach is to turn each link into a representative rainfall value and then interpolate those values across space, for example with Kriging or inverse-distance weighting (IDW) \citep{chwala2019cml,olsson2025societal}. These methods are attractive because they are easy to implement, computationally light, and well suited to larger networks. In the present thesis, this motivates the use of IDW as the main interpolation baseline. We also evaluate ILDW, a link-aware variant that keeps the full link segment in the interpolation step; both methods are defined in the methodology section.
+\paragraph*{From link attenuation to rainfall maps.} A microwave link does not provide a point measurement of rainfall. Instead, its attenuation reflects the combined effect of rain along the path between its two antennas, so different spatial rainfall patterns can produce similar link measurements. This ambiguity makes map reconstruction difficult. In practice, many approaches handle the problem with simple but scalable map-construction strategies. A common approach is to turn each link into a representative rainfall value and then interpolate those values across space, for example with Kriging or inverse-distance weighting (IDW) \citep{chwala2019cml,olsson2025societal}. These methods are attractive because they are easy to implement, computationally light, and well suited to larger networks. We use IDW as the main interpolation baseline because it is a simple representative of this interpolation-based approach. We also evaluate ILDW, a link-aware variant that keeps the full link segment in the interpolation step; both methods are defined in the methodology section.
 
-\paragraph*{What has been done before.} The use of CMLs for rainfall estimation has developed from early signal-processing demonstrations to larger mapping studies and operational assessments. Early work showed that measurements from commercial telecommunication links can be converted into useful rain-rate estimates over two-dimensional domains \citep{goldshtein2009rain}. Later studies tested these ideas on larger link networks; for example, Roversi et al. applied the RAINLINK workflow to 357 links in northern Italy and found that CML-based estimates can complement radar products \citep{roversi2020northernitaly}. At a broader level, Olsson et al. survey opportunistic rainfall observations, including CML-based approaches, and emphasize both their scientific promise and the remaining challenges in data access, quality assurance, and operational integration \citep{olsson2025societal}.
+\paragraph*{What has been done before.} Early work first showed that CML signal measurements could be used to estimate rainfall over two-dimensional domains \citep{goldshtein2009rain}. Later studies tested these ideas on larger link networks and in settings closer to operational rainfall monitoring. For example, Roversi et al. applied the RAINLINK workflow to 357 links in northern Italy and compared the resulting CML-derived rainfall maps with operational radar products from the regional weather service. They found that the CML-derived maps showed rainfall patterns broadly consistent with the radar products, while also providing an independent estimate of rainfall from the link network \citep{roversi2020northernitaly}. At a broader level, Olsson et al. survey opportunistic rainfall observations, including CML-based approaches, and emphasize both their scientific promise and the remaining challenges in data access, quality assurance, and operational integration \citep{olsson2025societal}.
 
 The literature establishes CMLs as useful opportunistic rain sensors, but it also leaves methodological choices in how link measurements are turned into maps. In this thesis, we use a controlled CML rainfall-mapping benchmark to ask whether optimization-based reconstruction can improve on interpolation-based map construction.
 
 \cleartorecto
 \section{Methodology}
 \subsection{Data and Benchmark Construction}
-Our benchmark is built patch by patch. A \emph{patch} is a rectangular crop of an hourly rainfall accumulation map from the OPERA European weather-radar product, selected to capture a detected rain event, with the patch width and height constrained to lie between 50 km and 95 km. For each patch in the benchmark list, we first extract the corresponding rainfall crop from the OPERA map. We then refine that crop from the native \SI{2}{km} grid to a finer \SI{125}{m} grid by splitting each coarse OPERA pixel into smaller subpixels and assigning each subpixel the parent pixel's rainfall value. We then smooth this refined field. This smoothed high-resolution rainfall field serves as ground truth for both simulating link attenuations and evaluating the solvers.
+Our benchmark is built patch by patch. A \emph{patch} is a rectangular crop of an hourly rainfall accumulation map from the EURADCLIM/OPERA European weather-radar product \citep{overeem2025euradclim}, selected to capture a detected rain event, with the patch width and height constrained to lie between 50 km and 95 km. For each patch in the benchmark list, we first extract the corresponding rainfall crop from the OPERA map. We then refine that crop from the native \SI{2}{km} grid to a finer \SI{125}{m} grid by splitting each coarse OPERA pixel into smaller subpixels and assigning each subpixel the parent pixel's rainfall value. We then smooth this refined field. This smoothed high-resolution rainfall field serves as ground truth for both simulating link attenuations and evaluating the solvers.
 
-The microwave-link geometry is not geographically co-located with the selected OPERA patch locations. Instead, we use the 4TU-NL data as a source of realistic CML endpoint geometry and frequencies, place the resulting link network in the coordinate system of each selected patch, and retain only links whose endpoints fall inside the patch. Each retained link preserves the frequency and relative path geometry of the 4TU-derived record, but its attenuation is simulated from the radar-derived rainfall field on the selected OPERA patch rather than taken from an operational CML measurement at that location.
+The microwave-link geometry is not geographically co-located with the selected OPERA patch locations. Instead, we use the 4TU-NL data \citep{overeem2023cml} as a source of realistic CML endpoint geometry and frequencies, place the resulting link network in the coordinate system of each selected patch, and retain only links whose endpoints fall inside the patch. Each retained link preserves the frequency and relative path geometry of the 4TU-derived record, but its attenuation is simulated from the radar-derived rainfall field on the selected OPERA patch rather than taken from an operational CML measurement at that location.
 The 4TU-derived link file used in this benchmark does not specify polarization, so the patch-export pipeline supplies a default polarization when missing. In the present benchmark, that default is set to horizontal ($\mathrm{H}$), and the forward model therefore uses the ITU coefficients corresponding to horizontal polarization. Because the patch detector is designed to capture rainy events rather than dry background, the benchmark is rain-dominated: across the 100 patches, the mean non-rainy proportion is about \SI{10.50}{\percent}, where non-rainy pixels are those with very little or no rainfall.
 
 This benchmark design differs from much of the earlier literature in a useful way. Some influential studies work directly with operational microwave-link measurements and validate against radar and gauges \citep{messer2006environmental,roversi2020northernitaly}, while others study interpolation behavior on synthetic rain fields and synthetic CML networks \citep{eshel2020idw}. Here we instead begin from a radar-derived rainfall field that is treated as known ground truth, synthesize the corresponding link attenuations under a shared forward model, and then compare the inverse solvers under that controlled setup. This gives us exact access to both the rainfall field and the attenuation field for every test case, which makes solver-to-solver comparisons cleaner. It also yields a relatively large patch-wise reconstruction benchmark: the present data set contains 100 patches, with between 939 and 1996 links per patch (mean 1324), and the largest-area patch contains 1894 links. For comparison, \citet{roversi2020northernitaly} evaluate their operational study on 357 links in northern Italy. The comparison is not one-to-one, but it helps place the scale of the present benchmark.
@@ -311,7 +344,7 @@ In the data set, link multiplicities were either 1 or 2, with approximately $10\
 
 
 \subsection{Forward Model}
-In the benchmark, link-level observations (attenuation and link metadata) are generated from the known ground-truth rainfall field via a forward model. Starting from the ground-truth rainfall map, each link is represented as a line segment between its endpoints, and attenuation is computed using ITU-R P.838-3, the standard relation for rain-induced specific attenuation in microwave links. In this model, the specific attenuation (dB/km) is
+In the benchmark, link-level observations (attenuation and link metadata) are generated from the known ground-truth rainfall field via a forward model. Starting from the ground-truth rainfall map, each link is represented as a line segment between its endpoints, and attenuation is computed using ITU-R P.838-3, the standard relation for rain-induced specific attenuation in microwave links \citep{itu2005p838}. In this model, the specific attenuation (dB/km) is
 \[
 \gamma_R = \kappa(f,\mathrm{pol})\,R^{\alpha(f,\mathrm{pol})},
 \]
@@ -1049,11 +1082,12 @@ Taken together, these appendix case studies support the main-text interpretation
 
 For this thesis, I used OpenAI ChatGPT and OpenAI Codex as generative digital assistants. Their use included support for programming and debugging Python and LaTeX code, rendering and checking report artifacts, converting numerical summaries into LaTeX tables, comparing generated figures and output files, and revising explanatory prose for clarity, structure, and readability.
 
-The tools were used as assistants rather than as independent scientific sources. Mathematical formulations, empirical results, numerical values, figures, citations, and final interpretations were checked against the project code, generated artifacts, local files, and the cited literature. I reviewed and edited the thesis text and take responsibility for the submitted content.
+The tools were used as assistants rather than as independent scientific sources. Mathematical formulations, empirical results, numerical values, figures, citations, and final interpretations were checked against the project code, generated artifacts, local files, and the cited literature. I reviewed and edited the thesis text and take full responsibility for the submitted content, including the accuracy and completeness of its citations and references.
 
 I am aware of the potential risks of using generative digital assistants, including incorrect suggestions, hallucinated claims, and over-polished wording that may obscure uncertainty. For this reason, I used them with caution and critical review.
 
 \clearpage
+\cleartorecto
 \bibliographystyle{plainnat}
 \bibliography{references}
 \end{document}
