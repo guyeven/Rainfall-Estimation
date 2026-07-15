@@ -170,7 +170,7 @@ I also thank Andreas Karrenbauer for serving as the official advisor for this th
   I consent that my thesis may be checked using plagiarism and AI detection software.
   I acknowledge that any breach of this declaration may result in failing the examination and, in severe cases, the right to be examined may be revoked.}
 
-  \vspace{5.0ex}
+  \vspace{6.0ex}
   \noindent\begin{tabular}{@{}ll@{}}
   \makebox[2.7in]{\hrulefill} & \hspace{1.5em}\makebox[2.7in]{\hrulefill}\\
   Saarbrücken, Datum/Date & \hspace{1.5em}Unterschrift/Signature\\
@@ -187,7 +187,7 @@ I also thank Andreas Karrenbauer for serving as the official advisor for this th
   \vspace{1.5ex}
   \textcolor{gray}{I consent to having both the printed and digital versions of my thesis, which has been examined and awarded at least a passing grade, added to the Computer Science Department's library and thus made publicly accessible.}
 
-  \vspace{5.0ex}
+  \vspace{6.0ex}
   \noindent\begin{tabular}{@{}ll@{}}
   \makebox[2.7in]{\hrulefill} & \hspace{1.5em}\makebox[2.7in]{\hrulefill}\\
   Saarbrücken, Datum/Date & \hspace{1.5em}Unterschrift/Signature\\
@@ -283,7 +283,7 @@ The literature establishes CMLs as useful opportunistic rain sensors, but it als
 \subsection{Data and Benchmark Construction}
 Our benchmark is built patch by patch. A \emph{patch} is a rectangular crop of an hourly rainfall accumulation map from the OPERA-based EURADCLIM radar rainfall dataset\footnote{OPERA (Operational Programme for the Exchange of Weather Radar Information) is a programme of EUMETNET, a network of European national meteorological and hydrological services, that coordinates the exchange and compositing of weather-radar observations across Europe. EURADCLIM (European Climatological Gauge-Adjusted Radar Precipitation Dataset) is a processed historical precipitation dataset derived from OPERA radar composites, which are further cleaned and adjusted using rain-gauge observations.} \citep{overeem2025euradclim}, selected to capture a detected rain event, with the patch width and height constrained to lie between 50 km and 95 km. The 100 patches are extracted from 84 distinct hourly EURADCLIM maps: 70 maps contribute one patch, 12 maps contribute two patches, and 2 maps contribute three patches. Because the patch detector is designed to capture rainy events rather than dry background, the benchmark is rain-dominated: across the 100 patches, the mean non-rainy proportion is about 10.50\%, where non-rainy pixels are those with very little or no rainfall.
 
-For each patch in the benchmark list, we first extract the corresponding rainfall crop from the EURADCLIM map. We then refine that crop from the native \SI{2}{km} grid to a finer \SI{125}{m} grid by splitting each coarse EURADCLIM pixel into smaller subpixels and assigning each subpixel the parent pixel's rainfall value. We then smooth this refined field. This smoothed high-resolution rainfall field serves as ground truth for both simulating link attenuations and evaluating the solvers.
+For each patch in the benchmark list, we first extract the corresponding rainfall crop from the EURADCLIM map. We then refine that crop from the native \SI{2}{km} grid to a finer \SI{125}{m} grid by splitting each coarse EURADCLIM pixel into smaller subpixels and assigning each subpixel the parent pixel's rainfall value. We then smooth the refined field with a Gaussian filter whose standard deviation is one refined pixel (\SI{125}{m}), so that nearby pixels receive greater weight than more distant pixels. The filter uses a $7\times7$-pixel neighborhood, extending up to three refined pixels (\SI{375}{m}) in each grid direction, and repeats the nearest boundary value where this neighborhood extends beyond the patch. Because the Gaussian weights are normalized to sum to one, this smoothing redistributes rainfall among neighboring pixels rather than systematically scaling it, although exact preservation of total rainfall is not guaranteed at the patch boundaries, where nearest-value padding can count boundary values multiple times. This smoothing is a pragmatic preprocessing step: it softens the artificial block boundaries created by subdividing each coarse pixel, but it does not recover information about how rainfall actually varies within each original \SI{2}{km} pixel. The resulting high-resolution rainfall field serves as ground truth for both simulating link attenuations and evaluating the solvers.
 
 The microwave-link geometry is not geographically co-located with the selected EURADCLIM patch locations. Instead, we use records from the 4TU-NL dataset \citep{overeem2023cml}, which contains observations and metadata from an operational CML network covering the Netherlands. We use the recorded endpoint geometry and frequencies as a realistic network template, place this network in the coordinate system of each selected patch, and retain only links whose endpoints fall inside the patch. Thus, the link geometries and frequencies are derived from actual Dutch CML infrastructure, whereas their placement relative to the EURADCLIM rainfall fields is synthetic. The attenuation of each retained link is then simulated from the radar-derived rainfall field rather than taken from the original operational CML measurements. Across the 100 patches, this procedure retains between 939 and 1996 links per patch (mean 1324).
 
