@@ -566,7 +566,7 @@ This run uses information unavailable in practice, so it is not a deployable rec
 \cleartorecto
 \section{Evaluation}
 \subsection{Evaluation Protocol}
-We evaluate each solver in four ways: overall agreement with the ground-truth rainfall map, how errors change as distance from links increases, wet/dry classification behavior, and agreement with observed link attenuations under the forward model. We first report patch-level summaries across all 100 benchmark patches, and then provide qualitative case studies in the appendix. All optimization-based results reported below use the same objective terms and weights described above, with a maximum budget of 2000 optimizer iterations per patch.
+We evaluate each solver in four ways: overall agreement with the ground-truth rainfall map, how errors change as distance from links increases, wet/dry classification behavior, and agreement with observed link attenuations under the forward model. We first report patch-level summaries across all 100 benchmark patches, and then provide qualitative case studies in the appendix. We additionally report end-to-end runtime for IDW, ILDW, and Convex Solver to provide an initial indication of their computational cost. All optimization-based results reported below use the same objective terms and weights described above, with a maximum budget of 2000 optimizer iterations per patch.
 
 \subsubsection{Optimization Stopping Criteria}
 The 2000-iteration budget was used as a cap rather than as a fixed number of iterations. Each optimized patch reconstruction used the same L-BFGS-B stopping tolerances, with relative objective-reduction tolerance $\mathrm{ftol}=10^{-6}$ and projected-gradient tolerance $\mathrm{gtol}=10^{-6}$. Let $J_k$ denote the objective value at iteration $k$. The $\mathrm{ftol}$ criterion stops the solve when the relative objective decrease between two successive iterations is small,
@@ -593,6 +593,24 @@ where $g^{\mathrm{proj}}_{k+1}$ is the gradient projected according to the bound
   \end{tabular}
   \caption{Iteration counts for the optimization-based reconstruction runs across the 100 evaluated patches. The standard deviation is computed across patches. No optimized run reached the 2000-iteration cap; all runs stopped because either the relative objective-reduction tolerance $\mathrm{ftol}=10^{-6}$ or the projected-gradient tolerance $\mathrm{gtol}=10^{-6}$ was met.}
   \label{tab:optimization_iterations}
+\end{table}
+
+\subsubsection{Reconstruction Runtime}
+To quantify the time required to reconstruct a rainfall map, we timed each of the 100 benchmark patches using IDW, ILDW, and Convex Solver. The patches and methods were processed sequentially on an Apple M2 MacBook Air with an 8-core CPU and 8 GB of memory. Each measurement is an end-to-end wall-clock time that includes input loading, initialization, reconstruction, and writing the reconstructed rainfall map and associated solver outputs. The resulting runtime summaries are reported in \Cref{tab:runtime_summary}.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lrrr}
+    \toprule
+    Solver & Mean $\pm$ SD (s) & Median (s) & Min--max (s) \\
+    \midrule
+    IDW & $7.53 \pm 2.43$ & $7.10$ & $4.01$--$14.18$ \\
+    ILDW & $18.69 \pm 6.20$ & $18.25$ & $8.67$--$38.19$ \\
+    Convex Solver & $76.03 \pm 27.08$ & $71.31$ & $32.76$--$153.12$ \\
+    \bottomrule
+  \end{tabular}
+  \caption{End-to-end wall-clock reconstruction times across the 100 benchmark patches. The methods and patches were run sequentially on an Apple M2 MacBook Air with an 8-core CPU and 8 GB of memory.}
+  \label{tab:runtime_summary}
 \end{table}
 
 
@@ -889,6 +907,8 @@ False negatives are especially important in this wet/dry view because they corre
 This thesis compared interpolation and optimization-based reconstruction strategies on a 100-patch benchmark built from OPERA rainfall maps and simulated microwave-link attenuations. Across the reported experiments, the optimized solvers achieved lower attenuation mismatch than IDW under the shared forward model. Convex Solver and Homotopy Solver also had lower map-level RMSE, lower mean signed bias, and higher Pearson correlation summaries than both IDW and the ILDW-initialized nonlinear solver. Solver(GT) had the strongest reported map-level summaries, but it is initialized from the ground truth and therefore is not a deployable method. At the same time, the comparison between Solver(GT) and the convex solvers shows that the rainfall field closest to the radar-derived ground truth is not always the field that best matches the link observations under the chosen forward model. ILDW remained a useful link-aware IDW modification: it preserves the simplicity of IDW-style interpolation while making better use of the fact that each CML observation belongs to a full link path rather than only to a midpoint.
 
 {\color{black}An important next step is to repeat the comparison of reconstruction methods using measurements from an operational CML network. In the current benchmark, the observed attenuations are generated by applying the same forward model used by the solvers to the radar-derived ground-truth rainfall fields, producing clean and model-consistent observations. In a real-time application, the attenuation-mismatch term would instead be driven by rain-induced attenuations estimated from current CML signal measurements, while independent radar or rain-gauge observations would be used only as reference data for evaluation. Such an experiment is needed to determine whether the improvements over IDW persist in the presence of measurement noise, changing link availability, wet-antenna attenuation, baseline drift, and mismatch between the forward model and real signal behavior.}
+
+The runtime results in \Cref{tab:runtime_summary} provide an initial indication of the computational feasibility of such an application. On the benchmark hardware, Convex Solver reconstructed a patch in an average of $76.03$ seconds (median $71.31$ seconds; range $32.76$--$153.12$ seconds). This suggests that the solver runtime may be compatible with near-real-time reconstruction at the benchmark scale, although operational latency would also include signal acquisition, preprocessing, and data transfer.
 
 {\color{black}Beyond this operational validation, one direction is to move from single-time reconstruction to longer event sequences over the same region and fixed link network. Even without changing the objective, this would show whether the method behaves stably over time or produces frame-to-frame artifacts when applied independently to consecutive observations. A second step would be to incorporate temporal structure directly. In meteorology, \emph{optical flow} refers to methods that estimate an apparent motion field between consecutive images \citep{ayzel2019optical}. For CML-based nowcasting, each set of link measurements at a discrete time would first be reconstructed into a rainfall map, and a sequence of these reconstructed maps would be used to estimate the motion field. Advecting the latest reconstructed map according to this field would provide a short-term forecast. Once the next set of CML measurements becomes available, the advected map could serve as a temporal prior: the reconstruction would be encouraged to remain close to the forecast, while the attenuation-mismatch term would allow it to depart where the new observations indicate that the forecast is inaccurate.}
 
