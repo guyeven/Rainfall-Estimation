@@ -64,7 +64,7 @@ When debug mode is enabled, `main.py` can also write a per-link debug JSON file 
 
 ### Implementation Notes
 
-The generated rainfall arrays use image-style grid indices `[i, j]`, where `i` increases downward/southward and `j` increases rightward/eastward. The OPERA rainfall crop is refined from the native 2 km grid to a 125 m grid and then smoothed with a Gaussian filter (`sigma = 1` refined pixel, `mode = "nearest"`) before link attenuations are simulated. Link geometry is handled in EPSG:28992 (RD New) meter coordinates; the 4TU link network is placed into each selected patch coordinate system using a fixed anchor, and link lengths are converted to kilometers before applying the ITU-R P.838-3 attenuation model.
+The generated rainfa"ll arrays use image-style grid indices `[i, j]`, where `i` increases downward/southward and `j` increases rightward/eastward. The OPERA rainfall crop is refined from the native 2 km grid to a 125 m grid and then smoothed with a Gaussian filter (`sigma = 1` refined pixel, `mode = "nearest"`) before link attenuations are simulated. The smoothing is implemented by [`smooth_refined_gaussian()`](cml_attenuation/rainfall_processing.py#L113) in `cml_attenuation/rainfall_processing.py`. Link geometry is handled in EPSG:28992 (RD New) meter coordinates; the 4TU link network is placed into each selected patch coordinate system using a fixed anchor, and link lengths are converted to kilometers before applying the ITU-R P.838-3 attenuation model.
 
 ## How To Run The Existing 100-Patch Benchmark
 
