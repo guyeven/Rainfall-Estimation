@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -251,6 +252,7 @@ def solve_lbfgsb_and_save(
         iter_trace.append(row)
         f_history.append(float(row["J_weighted_sum"]))
 
+    optimizer_started = time.perf_counter()
     res = minimize(
         fun,
         x0,
@@ -265,6 +267,7 @@ def solve_lbfgsb_and_save(
             "maxls": int(maxls),
         },
     )
+    optimizer_seconds = time.perf_counter() - optimizer_started
 
     r_hat = res.x.reshape(prob_real.H, prob_real.W).astype(np.float32)
     a_hat_real, r_real = forward_Ahat_and_r(prob_real, res.x)
@@ -288,6 +291,8 @@ def solve_lbfgsb_and_save(
         gtol=gtol,
         maxls=maxls,
     )
+    opt_diag["optimizer_seconds"] = float(optimizer_seconds)
+    optinfo_path.write_text(json.dumps(opt_diag, indent=2), encoding="utf-8")
 
     final_iter = int(getattr(res, "nit", iter_idx))
     if not iter_trace or int(iter_trace[-1].get("iter", -1)) != final_iter:
@@ -342,6 +347,7 @@ def solve_lbfgsb_and_save(
         meta_message=str(res.message),
         meta_nit=int(getattr(res, "nit", -1)),
         meta_fun=float(res.fun),
+        meta_optimizer_seconds=float(optimizer_seconds),
         meta_H=int(prob_real.H),
         meta_W=int(prob_real.W),
         meta_L=int(prob_real.L),
@@ -406,6 +412,15 @@ def solve_lbfgsb_and_save(
         "message": str(res.message),
         "nit": int(getattr(res, "nit", -1)),
         "fun": float(res.fun),
+        "nfev": int(getattr(res, "nfev", -1)),
+        "njev": int(getattr(res, "njev", -1)),
+        "stop_reason": str(opt_diag.get("stop_reason", "other")),
+        "optimizer_seconds": float(optimizer_seconds),
+        "H": int(prob_real.H),
+        "W": int(prob_real.W),
+        "num_pixels": int(prob_real.P),
+        "num_links": int(prob_real.L),
+        "num_valid_links": int(np.sum(prob_real.valid_links)),
         "out_npz": str(npz_out),
         "optinfo_json": str(optinfo_path),
         "itertrace_json": str(itertrace_path),
