@@ -977,6 +977,9 @@ Another possible direction is to compare the deterministic solvers studied here 
 \setcounter{figure}{0}
 \renewcommand{\thefigure}{\thesection.\arabic{figure}}
 \renewcommand{\theHfigure}{\thesection.\arabic{figure}}
+\setcounter{table}{0}
+\renewcommand{\thetable}{\thesection.\arabic{table}}
+\renewcommand{\theHtable}{\thesection.\arabic{table}}
 \section[Supplementary Analyses]{\textcolor{black}{Supplementary Analyses}}
 \subsection{Largest-Patch Link-Network Summary}
 {\color{black}This appendix summarizes the link-network properties of the largest evaluated patch shown in \Cref{fig:largest_patch_distance_bins}. Selected by physical area, this is the \SI{88}{km} by \SI{88}{km} patch from January 29, 2023 at 19:00, with an area of \SI{7744}{km^2} and 1,894 retained links. The distance-bin map shows which pixels are close to or far from nearby links, but it does not by itself describe the link network that produced that geometry.}
@@ -1061,32 +1064,37 @@ Link length matters because longer links average rainfall over longer paths and 
 \subsection{Case Studies}
 {\color{black}Across the patches inspected manually, two recurring qualitative patterns emerged. In the first, Solver(GT) remains close to the ground-truth rainfall field while Convex Solver differs visibly. In the second, Solver(GT) and Convex Solver produce similar reconstructions, both visibly different from the ground-truth rainfall field. The two cases below illustrate these patterns.}
 
-The first example illustrates the first pattern. In the Black Sea coast, Romania case study, Solver(GT) closely resembles the ground-truth rainfall field, while Convex Solver gives a visibly different reconstruction. The table compares their final fields using \textcolor{black}{$J_{\mathrm{atten}}$}:
-{\color{black}
-\[
-\begin{array}{lcc}
+The first example illustrates the first pattern. In the Black Sea coast, Romania case study, Solver(GT) closely resembles the ground-truth rainfall field, while Convex Solver gives a visibly different reconstruction. \Cref{tab:black_sea_common_measures} compares their final fields using \textcolor{black}{$J_{\mathrm{atten}}$} and RMSE.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
 \toprule
-\text{Solver} & {\color{black}J_{\mathrm{atten}}} & \text{RMSE (mm/h)} \\
+Solver & $J_{\mathrm{atten}}$ & RMSE (mm/h) \\
 \midrule
-\text{Solver(GT)} & 1.81\times10^{-5} & 0.102 \\
-\text{Convex Solver} & 4.06\times10^{-6} & 0.702 \\
+Solver(GT) & $1.81\times10^{-5}$ & $0.102$ \\
+Convex Solver & $4.06\times10^{-6}$ & $0.702$ \\
 \bottomrule
-\end{array}
-\]
-}
-{\color{black}For a complementary within-solver view, Solver(GT)'s own weighted objective evolves as follows:}
-{\color{black}
-\[
-\begin{array}{lcc}
+\end{tabular}
+\caption{Shared post-hoc evaluation measures for the final Solver(GT) and Convex Solver fields in the Black Sea coast, Romania case study.}
+\label{tab:black_sea_common_measures}
+\end{table}
+
+{\color{black}For a complementary within-solver view, \Cref{tab:black_sea_solver_gt_state} reports Solver(GT)'s weighted objective at initialization and after reconstruction.}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
 \toprule
-\text{Solver(GT) state} & \text{Solver(GT) weighted objective} & \text{RMSE (mm/h)} \\
+Solver(GT) state & Solver(GT) weighted objective & RMSE (mm/h) \\
 \midrule
-\text{Ground-truth initialization} & 2.832 & 0.000 \\
-\text{Final reconstruction} & 1.485 & 0.102 \\
+Ground-truth initialization & $2.832$ & $0.000$ \\
+Final reconstruction & $1.485$ & $0.102$ \\
 \bottomrule
-\end{array}
-\]
-}
+\end{tabular}
+\caption{Solver(GT) weighted objective and RMSE at initialization and after reconstruction in the Black Sea coast, Romania case study.}
+\label{tab:black_sea_solver_gt_state}
+\end{table}
 Convex Solver has the lower \textcolor{black}{$J_{\mathrm{atten}}$}, but Solver(GT) is substantially closer to the radar-derived ground-truth field. Thus, stronger consistency with the link observations does not necessarily imply lower pixelwise reconstruction error. Moreover, Solver(GT)'s increasing RMSE as its own objective decreases shows that this distinction also arises within a single formulation.
 
 \begin{figure}[H]
@@ -1117,32 +1125,37 @@ Convex Solver has the lower \textcolor{black}{$J_{\mathrm{atten}}$}, but Solver(
 {\color{black}The traces show that most of the objective reduction occurs early. For Convex Solver, the objective continues to decrease after several hundred iterations, but the visible change after the first few hundred iterations is small and is driven mainly by the first-difference penalty $J_{1d}$. Solver(GT) stops after 47 iterations when the $\mathrm{ftol}$ criterion is met, following the initial objective reduction.}
 \medskip
 
-The second example illustrates the second pattern. In the Northern Norway case study, Solver(GT) and Convex Solver closely resemble each other and have similar \textcolor{black}{$J_{\mathrm{atten}}$} and RMSE values:
-{\color{black}
-\[
-\begin{array}{lcc}
+The second example illustrates the second pattern. In the Northern Norway case study, Solver(GT) and Convex Solver closely resemble each other and have similar \textcolor{black}{$J_{\mathrm{atten}}$} and RMSE values, as shown in \Cref{tab:norway_common_measures}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
 \toprule
-\text{Solver} & {\color{black}J_{\mathrm{atten}}} & \text{RMSE (mm/h)} \\
+Solver & $J_{\mathrm{atten}}$ & RMSE (mm/h) \\
 \midrule
-\text{Solver(GT)} & 1.24\times10^{-6} & 0.552 \\
-\text{Convex Solver} & 2.50\times10^{-6} & 0.565 \\
+Solver(GT) & $1.24\times10^{-6}$ & $0.552$ \\
+Convex Solver & $2.50\times10^{-6}$ & $0.565$ \\
 \bottomrule
-\end{array}
-\]
-}
-{\color{black}Solver(GT)'s own trajectory is:}
-{\color{black}
-\[
-\begin{array}{lcc}
+\end{tabular}
+\caption{Shared post-hoc evaluation measures for the final Solver(GT) and Convex Solver fields in the Northern Norway case study.}
+\label{tab:norway_common_measures}
+\end{table}
+
+{\color{black}Solver(GT)'s own trajectory is summarized in \Cref{tab:norway_solver_gt_state}.}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
 \toprule
-\text{Solver(GT) state} & \text{Solver(GT) weighted objective} & \text{RMSE (mm/h)} \\
+Solver(GT) state & Solver(GT) weighted objective & RMSE (mm/h) \\
 \midrule
-\text{Ground-truth initialization} & 3.142 & 0.000 \\
-\text{Final reconstruction} & 0.289 & 0.552 \\
+Ground-truth initialization & $3.142$ & $0.000$ \\
+Final reconstruction & $0.289$ & $0.552$ \\
 \bottomrule
-\end{array}
-\]
-}
+\end{tabular}
+\caption{Solver(GT) weighted objective and RMSE at initialization and after reconstruction in the Northern Norway case study.}
+\label{tab:norway_solver_gt_state}
+\end{table}
 {\color{black}Here Solver(GT) is slightly better than Convex Solver on both common evaluation measures, although the differences are small. As in the first case, however, Solver(GT) moves away from its exact ground-truth initialization while lowering its own weighted objective.}
 
 \begin{figure}[H]
