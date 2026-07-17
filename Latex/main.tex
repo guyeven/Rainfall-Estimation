@@ -973,6 +973,9 @@ Another possible direction is to compare the deterministic solvers studied here 
 \pagestyle{plain}
 \appendix
 \thesisappendixtrue
+\setcounter{figure}{0}
+\renewcommand{\thefigure}{\thesection.\arabic{figure}}
+\renewcommand{\theHfigure}{\thesection.\arabic{figure}}
 \section[Supplementary Analyses]{\textcolor{black}{Supplementary Analyses}}
 \subsection{Largest-Patch Link-Network Summary}
 {\color{black}This appendix summarizes the link-network properties of the largest evaluated patch shown in \Cref{fig:largest_patch_distance_bins}. Selected by physical area, this is the \SI{88}{km} by \SI{88}{km} patch from January 29, 2023 at 19:00, with an area of \SI{7744}{km^2} and 1,894 retained links. The distance-bin map shows which pixels are close to or far from nearby links, but it does not by itself describe the link network that produced that geometry.}
