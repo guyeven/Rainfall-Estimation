@@ -284,9 +284,9 @@ The literature establishes CMLs as useful opportunistic rain sensors, but it als
 \cleartorecto
 \section{Methodology}
 \subsection{Data and Benchmark Construction}
-Our benchmark is built patch by patch. A \emph{patch} is a rectangular crop of an hourly rainfall accumulation map from the OPERA-based EURADCLIM radar rainfall dataset\footnote{OPERA (Operational Programme for the Exchange of Weather Radar Information) is a programme of EUMETNET, a network of European national meteorological and hydrological services, that coordinates the exchange and compositing of weather-radar observations across Europe. EURADCLIM (European Climatological Gauge-Adjusted Radar Precipitation Dataset) is a processed historical precipitation dataset derived from OPERA radar composites, which are further cleaned and adjusted using rain-gauge observations.} \citep{overeem2025euradclim}, selected to capture a detected rain event, with the patch width and height constrained to lie between 50 km and 95 km. The 100 patches are extracted from 84 distinct hourly EURADCLIM maps: 70 maps contribute one patch, 12 maps contribute two patches, and 2 maps contribute three patches. Because the patch detector is designed to capture rainy events rather than dry background, the benchmark is rain-dominated: across the 100 patches, the mean non-rainy proportion is about 10.50\%, where a pixel is classified as non-rainy when its ground-truth rain rate is below 0.6 mm/h.
+Our benchmark is built patch by patch. A \emph{patch} is {\color{black}a rectangular crop from a one-hour rainfall accumulation map in the OPERA-based EURADCLIM radar rainfall dataset}\footnote{OPERA (Operational Programme for the Exchange of Weather Radar Information) is a programme of EUMETNET, a network of European national meteorological and hydrological services, that coordinates the exchange and compositing of weather-radar observations across Europe. EURADCLIM (European Climatological Gauge-Adjusted Radar Precipitation Dataset) is a processed historical precipitation dataset derived from OPERA radar composites, which are further cleaned and adjusted using rain-gauge observations.} \citep{overeem2025euradclim}{\color{black}, with accumulation expressed in millimetres.} Each patch is selected to capture a detected rain event, with its width and height constrained to lie between 50 km and 95 km. The 100 patches are extracted from 84 distinct hourly EURADCLIM maps: 70 maps contribute one patch, 12 maps contribute two patches, and 2 maps contribute three patches. Because the patch detector is designed to capture rainy events rather than dry background, the benchmark is rain-dominated: across the 100 patches, the mean non-rainy proportion is about 10.50\%, where a pixel is classified as non-rainy when its ground-truth rain rate is below 0.6 mm/h.
 
-For each benchmark patch, we extract the corresponding rainfall crop from the EURADCLIM map and place it on a finer \SI{125}{m} grid by dividing each \SI{2}{km} pixel into $16\times16$ subpixels, each assigned its parent pixel's rainfall value. We smooth this field with a normalized Gaussian filter having a standard deviation of one refined pixel (\SI{125}{m}). The filter uses a $7\times7$-pixel neighborhood, extending \SI{375}{m} in each grid direction, and nearest-value padding at the patch boundaries. It redistributes rainfall among neighboring pixels, although the boundary padding means that the total rainfall is not necessarily preserved exactly. This pragmatic smoothing step softens the artificial block boundaries created by the subdivision. The resulting refined rainfall field serves as the benchmark ground truth for simulating link attenuations and evaluating the solvers.
+For each benchmark patch, we extract the corresponding rainfall crop from the EURADCLIM map. We then place this field on a finer \SI{125}{m} grid by dividing each \SI{2}{km} pixel into $16\times16$ subpixels, each assigned its parent pixel's rainfall value. We smooth this field with a normalized Gaussian filter having a standard deviation of one refined pixel (\SI{125}{m}). The filter uses a $7\times7$-pixel neighborhood, extending \SI{375}{m} in each grid direction, and nearest-value padding at the patch boundaries. It redistributes rainfall among neighboring pixels, although the boundary padding means that the total rainfall is not necessarily preserved exactly. This pragmatic smoothing step softens the artificial block boundaries created by the subdivision. The resulting refined rainfall field serves as the benchmark ground truth for simulating link attenuations and evaluating the solvers.
 
 The microwave-link geometry is not geographically co-located with the selected EURADCLIM patch locations. Instead, we use records from the 4TU-NL dataset \citep{overeem2023cml}, which describes an operational CML network covering the Netherlands and provides the endpoint locations and operating frequencies of its links. We use these endpoint locations and frequencies as a realistic network template, place this network in the coordinate system of each selected patch, and retain only links whose endpoints fall inside the patch. Thus, the link geometries and frequencies are derived from actual Dutch CML infrastructure, whereas their placement relative to the EURADCLIM rainfall fields is synthetic. Across the 100 patches, this procedure retains between 939 and 1996 links per patch (mean 1324). The attenuation of each retained link is then simulated from the radar-derived rainfall field rather than taken from the original operational CML measurements.
 
@@ -352,7 +352,7 @@ In the benchmark, link attenuations are generated from the known benchmark groun
 \[
 \gamma_R = \kappa(f,\mathrm{pol})\,R^{\alpha(f,\mathrm{pol})},
 \]
-where $R$ is rain rate (mm/h), and $(\kappa,\alpha)$ depend on link frequency and polarization. The total link attenuation is then the line integral of specific attenuation along the propagation path,
+where $R$ is rain rate (mm/h), and $(\kappa,\alpha)$ depend on link frequency and polarization. {\color{black}For this calculation, each one-hour accumulation value is treated as the corresponding hourly mean rain rate.} The total link attenuation is then the line integral of specific attenuation along the propagation path,
 \[
 A_\ell \triangleq \int_{\ell} \gamma_R\bigl(R(s)\bigr)\,\mathrm{d}s.
 \]
@@ -549,7 +549,7 @@ For Convex Solver, the attenuation weight is normalized within the virtual-link 
 \triangleq
 \frac{1}{J_{\mathrm{atten}}^{\mathrm{virtual}}(r_{\mathrm{ILDW}})},
 \]
-where $J_{\mathrm{atten}}^{\mathrm{virtual}}$ is evaluated using the virtual link set $\mathcal{L}^0$ and virtual observed attenuations $A_\ell^0$. {\color{blue}Thus, the ILDW rainfall field remains the reference field for normalization, but the denominator is its attenuation mismatch under the virtual-link model rather than $J_{\mathrm{atten}}(r_{\mathrm{ILDW}})$ for the original links.}
+where $J_{\mathrm{atten}}^{\mathrm{virtual}}$ is evaluated using the virtual link set $\mathcal{L}^0$ and virtual observed attenuations $A_\ell^0$. {\color{black}Thus, the ILDW rainfall field remains the reference field for normalization, but the denominator is its attenuation mismatch under the virtual-link model rather than $J_{\mathrm{atten}}(r_{\mathrm{ILDW}})$ for the original links.}
 
 \paragraph*{Homotopy Solver}
 The third variant uses homotopy continuation \citep{allgower2003continuation} to move gradually from the convex surrogate problem back toward the original nonconvex formulation. For $\lambda\in[0,1]$, define a virtual link set $\mathcal{L}^{\lambda}$ in which each link keeps the same geometry, length, and polarization as the original link, but has interpolated frequency
@@ -658,7 +658,7 @@ pattern).
   \centering
   \begin{tabular}{lccc}
     \toprule
-    Solver & RMSE & Bias & Correlation \\
+    Solver & \textcolor{black}{RMSE (mm/h)} & \textcolor{black}{Signed bias (mm/h)} & Correlation \\
     \midrule
     IDW & $1.307 \pm 1.234$ & $0.034 \pm 0.296$ & $0.866 \pm 0.059$ \\
     ILDW & $1.239 \pm 1.182$ & $0.047 \pm 0.261$ & $0.878 \pm 0.055$ \\
@@ -668,7 +668,7 @@ pattern).
     Solver(GT) & $0.503 \pm 0.369$ & $0.009 \pm 0.030$ & $0.961 \pm 0.032$ \\
     \bottomrule
   \end{tabular}
-  \caption{Descriptive patch-level summary of three global map metrics across the 100 evaluated patches. Each entry reports mean $\pm$ standard deviation across patches. Here RMSE and Bias are computed in the same rainfall units as $R_P$ and $\widehat{R}_{P,s}$, while Correlation is the Pearson correlation coefficient between the predicted and ground-truth rainfall fields within each patch.}
+  \caption{Descriptive patch-level summary of three global map metrics across the 100 evaluated patches. Each entry reports mean $\pm$ standard deviation across patches. Here \textcolor{black}{RMSE and signed bias} are computed in the same rainfall units as $R_P$ and $\widehat{R}_{P,s}$, while Correlation is the Pearson correlation coefficient between the predicted and ground-truth rainfall fields within each patch.}
   \label{tab:patch_map_metrics}
 \end{table}
 
@@ -714,14 +714,14 @@ where a negative value means that Convex Solver is closer to zero bias on patch 
 \subsubsection{Attenuation Mismatch}
 The previous metrics compare each reconstructed rainfall map directly to the ground-truth radar field. We also evaluate the reconstructions from the point of view of the CML observations themselves: if a predicted rainfall field is passed through the forward attenuation model, how closely does it reproduce the observed link attenuations? This matters because a useful reconstruction should not only resemble the radar field pixelwise, but should also remain consistent with the link observations that drive the inverse problem.
 
-{\color{blue}We report two complementary attenuation-mismatch summaries in the same table. The mean absolute attenuation error per kilometer gives a directly interpretable link-level discrepancy in dB/km, while $J_{\mathrm{atten}}$ gives a squared attenuation-mismatch measure. For every solver, both measures are evaluated using the original link frequencies, polarizations, and observed attenuations. Thus, $J_{\mathrm{atten}}$ is a shared post-hoc evaluation measure rather than necessarily the attenuation term optimized internally by a given solver. In particular, Convex Solver optimizes $J_{\mathrm{atten}}^{\mathrm{virtual}}$, while Homotopy Solver successively optimizes $J_{\mathrm{atten}}^\lambda$ for multiple values of $\lambda$; the final reconstructions from both methods are evaluated here using $J_{\mathrm{atten}}$.}
+{\color{black}We report two complementary attenuation-mismatch summaries in the same table. The mean absolute attenuation error per kilometer gives a directly interpretable link-level discrepancy in dB/km, while $J_{\mathrm{atten}}$ gives a squared attenuation-mismatch measure. For every solver, both measures are evaluated using the original link frequencies, polarizations, and observed attenuations. Thus, $J_{\mathrm{atten}}$ is a shared post-hoc evaluation measure rather than necessarily the attenuation term optimized internally by a given solver. In particular, Convex Solver optimizes $J_{\mathrm{atten}}^{\mathrm{virtual}}$, while Homotopy Solver successively optimizes $J_{\mathrm{atten}}^\lambda$ for multiple values of $\lambda$; the final reconstructions from both methods are evaluated here using $J_{\mathrm{atten}}$.}
 
 \begin{table}[H]
   \centering
   \small
   \begin{tabular}{lcccc}
     \toprule
-    Solver & Abs. err. mean & Abs. err. SD & \textcolor{blue}{$J_{\mathrm{atten}}$ mean} & \textcolor{blue}{$J_{\mathrm{atten}}$ SD} \\
+    Solver & Abs. err. mean & Abs. err. SD & \textcolor{black}{$J_{\mathrm{atten}}$ mean} & \textcolor{black}{$J_{\mathrm{atten}}$ SD} \\
     & (dB/km) & (dB/km) & (dB$^2$/km) & (dB$^2$/km) \\
     \midrule
     IDW & 0.05034 & 0.03396 & 0.05284 & 0.13575 \\
@@ -732,7 +732,7 @@ The previous metrics compare each reconstructed rainfall map directly to the gro
     Solver(GT) & 0.00129 & 0.00166 & 0.00004951 & 0.0001492 \\
     \bottomrule
   \end{tabular}
-  \caption{{\color{blue}Patch-level attenuation-mismatch summaries across the 100 evaluated patches. For a given patch and solver $s$, the absolute-error columns summarize $\frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{|\hat{A}_{\ell,s} - A_\ell^{\mathrm{obs}}|}{|\ell|}$, while $J_{\mathrm{atten}} = \frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left(\hat{A}_{\ell,s} - A_\ell^{\mathrm{obs}}\right)^2}{|\ell|}$. Here $\hat{A}_{\ell,s}$ is recomputed from the rainfall field estimated by solver $s$ using the original link frequencies and polarizations, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. Lower values indicate better agreement with the observed link attenuations.}}
+  \caption{{\color{black}Patch-level attenuation-mismatch summaries across the 100 evaluated patches. For a given patch and solver $s$, the absolute-error columns summarize $\frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{|\hat{A}_{\ell,s} - A_\ell^{\mathrm{obs}}|}{|\ell|}$, while $J_{\mathrm{atten}} = \frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left(\hat{A}_{\ell,s} - A_\ell^{\mathrm{obs}}\right)^2}{|\ell|}$. Here $\hat{A}_{\ell,s}$ is recomputed from the rainfall field estimated by solver $s$ using the original link frequencies and polarizations, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. Lower values indicate better agreement with the observed link attenuations.}}
 \end{table}
 
 Together, these attenuation-based summaries show that the optimized solvers match the observed link attenuations much more closely than IDW and ILDW, with Convex Solver and Homotopy Solver giving the smallest mismatches. They also add a useful qualification to the map-level results above: pixelwise agreement with the radar-derived ground truth and consistency with the simulated CML observations are two measures that capture different aspects of reconstruction quality. Solver(GT) remains closest to the radar field, but Convex Solver and Homotopy Solver better satisfy the link observations under the forward model. Thus, the field closest to the radar ground truth is not necessarily the field that minimizes attenuation mismatch. In addition, although Homotopy Solver does not improve the RMSE, bias, or correlation summaries relative to Convex Solver, it does provide a small gain in link consistency.
@@ -883,33 +883,35 @@ To make the distance-conditioned summaries easier to interpret geometrically, we
   \label{fig:largest_patch_distance_bins}
 \end{figure}
 
-\subsection{\textcolor{blue}{Wet/Dry Confusion Analysis}}
+\subsection{\textcolor{black}{Wet/Dry Confusion Analysis}}
 Beyond pixel-level error magnitudes, we also summarize whether each method preserves the basic wet/dry structure of the rainfall field. Using the same 0.6 mm/h threshold as above, each pixel is classified as wet or dry in both the ground truth and the reconstruction. This gives patch-level true-positive, false-negative, false-positive, and true-negative fractions, summarized in \Cref{tab:wetdry_confusion}.
 
 \begin{table}[!t]
   \centering
   \scriptsize
+  {\color{black}
   \begin{tabular}{lcccc}
     \toprule
     Solver & $\mathrm{TP}/|P|$ & $\mathrm{FN}/|P|$ & $\mathrm{FP}/|P|$ & $\mathrm{TN}/|P|$ \\
     \midrule
-    IDW & $0.893 \pm 0.013$ & $0.002 \pm 0.000$ & $0.040 \pm 0.004$ & $0.065 \pm 0.010$ \\
-    ILDW & $0.892 \pm 0.013$ & $0.003 \pm 0.000$ & $0.037 \pm 0.004$ & $0.068 \pm 0.010$ \\
-    Solver(ILDW) & $0.892 \pm 0.013$ & $0.003 \pm 0.000$ & $0.032 \pm 0.004$ & $0.073 \pm 0.010$ \\
-    Convex Solver & $0.891 \pm 0.013$ & $0.004 \pm 0.000$ & $0.023 \pm 0.002$ & $0.082 \pm 0.011$ \\
-    Homotopy Solver & $0.891 \pm 0.013$ & $0.004 \pm 0.000$ & $0.023 \pm 0.002$ & $0.082 \pm 0.011$ \\
-    Solver(GT) & $0.893 \pm 0.013$ & $0.002 \pm 0.000$ & $0.011 \pm 0.001$ & $0.094 \pm 0.012$ \\
+    IDW & $0.8926 \pm 0.0126$ & $0.0024 \pm 0.0004$ & $0.0396 \pm 0.0039$ & $0.0654 \pm 0.0096$ \\
+    ILDW & $0.8921 \pm 0.0127$ & $0.0029 \pm 0.0004$ & $0.0370 \pm 0.0037$ & $0.0680 \pm 0.0097$ \\
+    Solver(ILDW) & $0.8919 \pm 0.0127$ & $0.0031 \pm 0.0004$ & $0.0324 \pm 0.0036$ & $0.0726 \pm 0.0098$ \\
+    Convex Solver & $0.8912 \pm 0.0127$ & $0.0038 \pm 0.0005$ & $0.0228 \pm 0.0022$ & $0.0823 \pm 0.0109$ \\
+    Homotopy Solver & $0.8912 \pm 0.0127$ & $0.0038 \pm 0.0005$ & $0.0228 \pm 0.0022$ & $0.0822 \pm 0.0109$ \\
+    Solver(GT) & $0.8929 \pm 0.0125$ & $0.0021 \pm 0.0003$ & $0.0114 \pm 0.0013$ & $0.0936 \pm 0.0123$ \\
     \bottomrule
   \end{tabular}
+  }
   \caption{Patch-averaged wet/dry confusion matrix entries at a threshold of $0.6$ mm/h, where a pixel is called wet if its rainfall is at least $0.6$ mm/h and dry otherwise. For each patch, pixels are first assigned to the four confusion categories defined by the ground-truth and predicted wet/dry labels. The count in each category is then divided by the total number of pixels in that patch, producing a patch-level pixel fraction. The table entries report the mean of those patch-level fractions across the 100 evaluated patches, together with the standard error of the mean (SEM).}
   \label{tab:wetdry_confusion}
 \end{table}
 
-False negatives are especially important in this wet/dry view because they correspond to missed rain: pixels that are rainy in the ground truth but classified as dry by the reconstruction. Because these rain-event patches contain approximately $89.5\%$ wet pixels on average, normalizing all four entries by the total patch size makes the false-positive fractions shown in \Cref{tab:wetdry_confusion} appear relatively small. Conditional on ground-truth dry pixels, the mean of the patch-level conditional false-positive rates is approximately $59.8\%$ for IDW and $40.0\%$ for Convex Solver. Conditional on ground-truth wet pixels, the mean of the corresponding patch-level conditional false-negative rates remains small, at approximately $0.32\%$ and $0.50\%$, respectively. Thus, Convex Solver reduces false wet-area detection relative to IDW, although a substantial fraction of the comparatively scarce dry pixels is still classified as wet.
+{\color{black}False negatives warrant particular attention because they correspond to missed rain, while false positives create spurious wet areas. Wet/dry rainfall classification generally involves a trade-off between these errors, and their relative importance depends on the intended application \citep{polz2020rainevent}. Because these rain-event patches contain approximately $89.5\%$ wet pixels on average, normalizing all four entries by the total patch size makes the false-positive fractions shown in \Cref{tab:wetdry_confusion} appear relatively small. Conditional on ground-truth dry pixels, the mean of the patch-level conditional false-positive rates is approximately $59.8\%$ for IDW and $40.0\%$ for Convex Solver. Conditional on ground-truth wet pixels, the mean of the corresponding patch-level conditional false-negative rates remains small, at approximately $0.32\%$ and $0.50\%$, respectively, meaning that both methods identify at least $99.5\%$ of ground-truth wet pixels. Thus, Convex Solver remains close to IDW in wet-pixel detection, with a slightly higher false-negative rate, while substantially reducing false wet-area detection.}
 
 \FloatBarrier
 \subsection{Reconstruction Runtime}
-{\color{blue}Having compared reconstruction quality across the preceding analyses, we next assess the computational feasibility of Convex Solver for near-real-time applications. We timed each of the 100 benchmark patches using Convex Solver, with IDW and ILDW included for comparison. This focused experiment was not intended as an exhaustive runtime comparison across all solver variants; Solver(ILDW), Homotopy Solver, and the diagnostic Solver(GT) were therefore not timed.} The patches and methods were processed sequentially on an Apple M2 MacBook Air with an 8-core CPU and 8 GB of memory. Each measurement is an end-to-end wall-clock time that includes input loading, initialization, reconstruction, and writing the reconstructed rainfall map and associated solver outputs. The resulting runtime summaries are reported in \Cref{tab:runtime_summary}.
+{\color{black}Having compared reconstruction quality across the preceding analyses, we next assess the computational feasibility of Convex Solver for near-real-time applications. We timed each of the 100 benchmark patches using Convex Solver, with IDW and ILDW included for comparison. This focused experiment was not intended as an exhaustive runtime comparison across all solver variants; Solver(ILDW), Homotopy Solver, and the diagnostic Solver(GT) were therefore not timed.} The patches and methods were processed sequentially on an Apple M2 MacBook Air with an 8-core CPU and 8 GB of memory. Each measurement is an end-to-end wall-clock time that includes input loading, initialization, reconstruction, and writing the reconstructed rainfall map and associated solver outputs. The resulting runtime summaries are reported in \Cref{tab:runtime_summary}.
 
 \begin{table}[H]
   \centering
@@ -926,10 +928,10 @@ False negatives are especially important in this wet/dry view because they corre
   \label{tab:runtime_summary}
 \end{table}
 
-{\color{blue}
-\paragraph*{Summary of findings.} Across the benchmark, the optimized solvers have lower patch-level RMSE and higher Pearson correlation than IDW, with Convex Solver and Homotopy Solver giving stronger rainfall-map agreement than Solver(ILDW) while also preserving strong attenuation consistency. Homotopy Solver does not improve the map-level RMSE, bias, or correlation summaries relative to Convex Solver, although it does provide a small gain in attenuation consistency. Solver(GT) has the strongest RMSE, bias, and correlation summaries, but Convex Solver and Homotopy Solver achieve lower attenuation mismatch, showing that pixelwise agreement with the radar-derived ground truth and consistency with the link observations are two measures that capture different aspects of reconstruction quality.
+{\color{black}
+\paragraph*{Summary of findings.} Across the benchmark, the optimized solvers have lower patch-level RMSE and higher Pearson correlation than IDW. Convex Solver and Homotopy Solver also give stronger rainfall-map agreement than Solver(ILDW) while maintaining strong attenuation consistency. Homotopy Solver offers no map-level improvement over Convex Solver, only a small gain in attenuation consistency. Solver(GT) has the strongest map-level summaries, whereas Convex Solver and Homotopy Solver achieve lower attenuation mismatch, confirming that the map-level and link-based measures capture different aspects of reconstruction quality.
 
-Across the distance bins, errors generally increase as nearby-link coverage becomes weaker, while the optimized solvers retain lower median errors than IDW in the low-coverage bins. In the wet/dry analysis, Convex Solver reduces false wet-area detection relative to IDW, although it still classifies a substantial fraction of dry pixels as wet. Convex Solver required an average of $76.03$ seconds per patch on the benchmark hardware, suggesting that its reconstruction time may be compatible with near-real-time use at the benchmark scale.
+Errors generally increase as nearby-link coverage becomes weaker, but the optimized solvers retain lower median errors than IDW in the low-coverage bins. Convex Solver reduces false wet-area detection relative to IDW at the cost of a small increase in missed-rain pixels. \textcolor{black}{Its $76.03$-second mean runtime suggests potential for near-real-time use at the benchmark scale.}
 }
 
 
@@ -945,7 +947,7 @@ Across the distance bins, errors generally increase as nearby-link coverage beco
 
 This thesis compared interpolation and optimization-based reconstruction strategies on a 100-patch benchmark constructed from the OPERA-based EURADCLIM dataset and simulated microwave-link attenuations. Across the reported experiments, the optimized solvers achieved lower attenuation mismatch than IDW when all final reconstructions were evaluated using the attenuation model with each link's original frequency and polarization. Convex Solver and Homotopy Solver also had lower map-level RMSE, lower mean signed bias, and higher Pearson correlation summaries than both IDW and the ILDW-initialized nonlinear solver. Solver(GT) had the strongest reported map-level summaries, but it is initialized from the ground truth and therefore is not a deployable method. At the same time, the comparison between Solver(GT) and the convex solvers shows that the rainfall field closest to the radar-derived ground truth is not always the field that best matches the link observations under the chosen forward model. ILDW remained a useful link-aware IDW modification: it preserves the simplicity of IDW-style interpolation while making better use of the fact that each CML observation belongs to a full link path rather than only to a midpoint.
 
-{\color{black}An important next step is to repeat the comparison of reconstruction methods using measurements from an operational CML network. In the current benchmark, the observed attenuations are generated from the radar-derived ground-truth rainfall fields using the attenuation model with each link's original frequency and polarization, producing clean and model-consistent observations. In a real-time application, the attenuation-mismatch term would instead be driven by rain-induced attenuations estimated from current CML signal measurements, while independent radar or rain-gauge observations would be withheld from the reconstruction and used only afterward as reference data for evaluating the resulting rainfall estimates. Such an experiment is needed to determine whether the improvements over IDW persist in the presence of measurement noise, changing link availability, wet-antenna attenuation, baseline drift, and mismatch between the forward model and real signal behavior.}
+{\color{black}An important next step is to repeat the comparison of reconstruction methods using measurements from an operational CML network. In the current benchmark, the observed attenuations are generated from the radar-derived ground-truth rainfall fields using the attenuation model with each link's original frequency and polarization, producing clean and model-consistent observations. In a real-time application, the attenuation-mismatch term would instead be driven by rain-induced attenuations estimated from current CML signal measurements, while independent radar or rain-gauge observations would be withheld from the reconstruction and used only afterward as reference data for evaluating the resulting rainfall estimates. {\color{black}Moreover, operational CMLs record attenuation as rainfall varies at shorter time scales. Because the rain-rate--attenuation relation is nonlinear, attenuation computed from an hourly mean rain rate is not generally equal to the mean attenuation produced by the varying rain rates within that hour.} Such an experiment is needed to determine whether the improvements over IDW persist in the presence of measurement noise, changing link availability, wet-antenna attenuation, baseline drift, mismatch between the forward model and real signal behavior, and {\color{black}temporal aggregation effects.}}
 
 The runtime results in \Cref{tab:runtime_summary} provide an initial indication of the computational feasibility of such an application. On the benchmark hardware, Convex Solver reconstructed a patch in an average of $76.03$ seconds (median $71.31$ seconds; range $32.76$--$153.12$ seconds). This suggests that the solver runtime may be compatible with near-real-time reconstruction at the benchmark scale, although operational latency would also include collecting, delivering, and preprocessing the CML measurements.
 
@@ -1044,12 +1046,12 @@ Link length matters because longer links average rainfall over longer paths and 
 \subsection{Case Studies}
 {\color{black}Across the patches inspected manually, two recurring qualitative patterns emerged. In the first, Solver(GT) remains close to the ground-truth rainfall field while Convex Solver differs visibly. In the second, Solver(GT) and Convex Solver produce similar reconstructions, both visibly different from the ground-truth rainfall field. The two cases below illustrate these patterns.}
 
-The first example illustrates the first pattern. In the Black Sea coast, Romania case study, Solver(GT) closely resembles the ground-truth rainfall field, while Convex Solver gives a visibly different reconstruction. The table compares their final fields using \textcolor{blue}{$J_{\mathrm{atten}}$}:
+The first example illustrates the first pattern. In the Black Sea coast, Romania case study, Solver(GT) closely resembles the ground-truth rainfall field, while Convex Solver gives a visibly different reconstruction. The table compares their final fields using \textcolor{black}{$J_{\mathrm{atten}}$}:
 {\color{black}
 \[
 \begin{array}{lcc}
 \toprule
-\text{Solver} & {\color{blue}J_{\mathrm{atten}}} & \text{RMSE (mm/h)} \\
+\text{Solver} & {\color{black}J_{\mathrm{atten}}} & \text{RMSE (mm/h)} \\
 \midrule
 \text{Solver(GT)} & 1.81\times10^{-5} & 0.102 \\
 \text{Convex Solver} & 4.06\times10^{-6} & 0.702 \\
@@ -1070,7 +1072,7 @@ The first example illustrates the first pattern. In the Black Sea coast, Romania
 \end{array}
 \]
 }
-Convex Solver has the lower \textcolor{blue}{$J_{\mathrm{atten}}$}, but Solver(GT) is substantially closer to the radar-derived ground-truth field. Thus, stronger consistency with the link observations does not necessarily imply lower pixelwise reconstruction error. Moreover, Solver(GT)'s increasing RMSE as its own objective decreases shows that this distinction also arises within a single formulation.
+Convex Solver has the lower \textcolor{black}{$J_{\mathrm{atten}}$}, but Solver(GT) is substantially closer to the radar-derived ground-truth field. Thus, stronger consistency with the link observations does not necessarily imply lower pixelwise reconstruction error. Moreover, Solver(GT)'s increasing RMSE as its own objective decreases shows that this distinction also arises within a single formulation.
 
 \begin{figure}[H]
   \centering
@@ -1100,12 +1102,12 @@ Convex Solver has the lower \textcolor{blue}{$J_{\mathrm{atten}}$}, but Solver(G
 {\color{black}The traces show that most of the objective reduction occurs early. For Convex Solver, the objective continues to decrease after several hundred iterations, but the visible change after the first few hundred iterations is small and is driven mainly by the first-difference penalty $J_{1d}$. Solver(GT) stops after 47 iterations when the $\mathrm{ftol}$ criterion is met, following the initial objective reduction.}
 \medskip
 
-The second example illustrates the second pattern. In the Northern Norway case study, Solver(GT) and Convex Solver closely resemble each other and have similar \textcolor{blue}{$J_{\mathrm{atten}}$} and RMSE values:
+The second example illustrates the second pattern. In the Northern Norway case study, Solver(GT) and Convex Solver closely resemble each other and have similar \textcolor{black}{$J_{\mathrm{atten}}$} and RMSE values:
 {\color{black}
 \[
 \begin{array}{lcc}
 \toprule
-\text{Solver} & {\color{blue}J_{\mathrm{atten}}} & \text{RMSE (mm/h)} \\
+\text{Solver} & {\color{black}J_{\mathrm{atten}}} & \text{RMSE (mm/h)} \\
 \midrule
 \text{Solver(GT)} & 1.24\times10^{-6} & 0.552 \\
 \text{Convex Solver} & 2.50\times10^{-6} & 0.565 \\
@@ -1159,7 +1161,7 @@ The second example illustrates the second pattern. In the Northern Norway case s
 {\color{black}As in the Black Sea case, the first few hundred Convex Solver iterations account for most of the visible objective reduction, with the remaining gradual decrease driven mainly by the first-difference penalty $J_{1d}$.}
 \medskip
 
-Taken together, these appendix case studies support the main-text interpretation that agreement with the link observations and pixelwise agreement with the radar-derived ground truth capture different aspects of reconstruction quality. In the first case, Convex Solver has lower \textcolor{blue}{$J_{\mathrm{atten}}$} but substantially higher RMSE than Solver(GT); in the second, the two methods are close on both measures and produce similar reconstructions. In both cases, Solver(GT) reduces its own objective while increasing its pixelwise error from zero.
+Taken together, these appendix case studies support the main-text interpretation that agreement with the link observations and pixelwise agreement with the radar-derived ground truth capture different aspects of reconstruction quality. In the first case, Convex Solver has lower \textcolor{black}{$J_{\mathrm{atten}}$} but substantially higher RMSE than Solver(GT); in the second, the two methods are close on both measures and produce similar reconstructions. In both cases, Solver(GT) reduces its own objective while increasing its pixelwise error from zero.
 
 % \begin{table}[H]
 %   \centering
