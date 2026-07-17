@@ -3,7 +3,7 @@
 \usepackage{amssymb}
 \usepackage[round,authoryear]{natbib}
 \usepackage{siunitx}
-\usepackage[letterpaper,twoside,inner=1.18in,outer=0.95in,top=1in,bottom=1in]{geometry}
+\usepackage[a4paper,twoside,inner=35mm,outer=25mm,top=25mm,bottom=25mm]{geometry}
 \usepackage{graphicx}
 \usepackage{booktabs}
 \usepackage{float}
@@ -352,7 +352,7 @@ In the benchmark, link attenuations are generated from the known benchmark groun
 \[
 \gamma_R = \kappa(f,\mathrm{pol})\,R^{\alpha(f,\mathrm{pol})},
 \]
-where $R$ is rain rate (mm/h), and $(\kappa,\alpha)$ depend on link frequency and polarization. {\color{black}For this calculation, each one-hour accumulation value is treated as the corresponding hourly mean rain rate.} The total link attenuation is then the line integral of specific attenuation along the propagation path,
+where $R$ is rain rate (mm/h), and $(\kappa,\alpha)$ depend on link frequency and polarization. For this calculation, each one-hour accumulation value is treated as the corresponding hourly mean rain rate. The link attenuation is then computed as the line integral of specific attenuation along the propagation path,
 \[
 A_\ell \triangleq \int_{\ell} \gamma_R\bigl(R(s)\bigr)\,\mathrm{d}s.
 \]
@@ -445,7 +445,7 @@ At the algorithmic level, ILDW differs from Algorithm~1 only in how link geometr
 
 
 \subsubsection{Optimization-Based Reconstruction}
-The optimization-based reconstructions explore a different approach from purely interpolation-based rainfall mapping. IDW and ILDW first reduce each link attenuation to a single link-level rain-rate estimate and then spread that information spatially by geometric weighting. In contrast, the optimization-based methods treat the rainfall value in every pixel as an unknown and choose the full rainfall field by minimizing an objective that combines agreement with the observed link attenuations with terms that encourage spatially coherent solutions.
+The optimization-based reconstructions take a different approach from interpolation. IDW and ILDW first reduce each link attenuation to a single link-level rain-rate estimate and then spread that information spatially by geometric weighting. In contrast, the optimization-based methods treat the rainfall value in every pixel as an unknown and choose the full rainfall field by minimizing an objective that combines agreement with the observed link attenuations with terms that encourage spatially coherent solutions.
 
 \paragraph*{Optimization Objective}
 For each patch $P$, we identify $P$ with its set of pixels, and denote by $\mathcal{L}(P)$ the set of links contained in $P$. Let $r\in\mathbb{R}_{\ge 0}^{|P|}$ denote the unknown rainfall field written as a vector over pixels. We solve the constrained optimization problem
@@ -697,6 +697,7 @@ where a negative value means that Convex Solver is closer to zero bias on patch 
 \begin{table}[H]
   \centering
   \small
+  \setlength{\tabcolsep}{3.5pt}
   \begin{tabular}{lcccp{0.32\textwidth}}
     \toprule
     Metric & Better direction & Convex wins & IDW wins & Patch-level evidence \\
@@ -732,6 +733,7 @@ The previous metrics compare each reconstructed rainfall map directly to the gro
     Solver(GT) & 0.00129 & 0.00166 & 0.00004951 & 0.0001492 \\
     \bottomrule
   \end{tabular}
+  \captionsetup{justification=raggedright,singlelinecheck=false}
   \caption{{\color{black}Patch-level attenuation-mismatch summaries across the 100 evaluated patches. For a given patch and solver $s$, the absolute-error columns summarize $\frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{|\hat{A}_{\ell,s} - A_\ell^{\mathrm{obs}}|}{|\ell|}$, while $J_{\mathrm{atten}} = \frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left(\hat{A}_{\ell,s} - A_\ell^{\mathrm{obs}}\right)^2}{|\ell|}$. Here $\hat{A}_{\ell,s}$ is recomputed from the rainfall field estimated by solver $s$ using the original link frequencies and polarizations, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. Lower values indicate better agreement with the observed link attenuations.}}
 \end{table}
 
@@ -777,7 +779,11 @@ P_{\mathrm{rain}},\ d_3(p)\in B_i
 
 In \Cref{fig:RAE}, these patch-level medians are compared across the full benchmark collection $\mathcal{P}$ of $100$ patches. There, the displayed distance bins are
 \[
-[0,125]\ \text{m},\ (125,375]\ \text{m},\ (375,750]\ \text{m},\ (750,1500]\ \text{m},\ (1500,3125]\ \text{m},\ (3125,6000]\ \text{m},\ (6000,\infty)\ \text{m}.
+\begin{gathered}
+\relax [0,125]\ \text{m},\quad (125,375]\ \text{m},\quad (375,750]\ \text{m},\\
+(750,1500]\ \text{m},\quad (1500,3125]\ \text{m},\\
+(3125,6000]\ \text{m},\quad (6000,\infty)\ \text{m}.
+\end{gathered}
 \]
 In the box-and-whisker plot, the two sparsely populated tail bins $(6000,9000]$ m and $(9000,\infty)$ are merged and displayed as a single $(6000,\infty)$ m bin. The count table below still reports these two tail bins separately.
 
@@ -852,6 +858,8 @@ of patch-level non-rainy-pixel median AE values across patches. {\color{black}As
 
 \begin{table}[H]
   \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
     \begin{tabular}{l
                   l
                   S[table-format=5.1]}
@@ -1001,7 +1009,7 @@ Link length matters because longer links average rainfall over longer paths and 
     \centering
     \begin{tikzpicture}
       \begin{axis}[
-        width=0.88\linewidth,
+        width=0.80\linewidth,
         height=4.7cm,
         ybar,
         bar width=10pt,
@@ -1180,7 +1188,7 @@ Taken together, these appendix case studies support the main-text interpretation
 % \end{table}
 \clearpage
 \vspace*{4ex}
-\section*{Statement on the Usage of Generative Digital Assistants}
+\section*{{\Large Statement on the Usage of Generative Digital Assistants}}
 \addcontentsline{toc}{section}{Statement on the Usage of Generative Digital Assistants}
 
 For this thesis, I used OpenAI ChatGPT and OpenAI Codex as generative digital assistants. Their use included support for programming and debugging Python and LaTeX code, rendering and checking report artifacts, converting numerical summaries into LaTeX tables, comparing generated figures and output files, and revising explanatory prose for clarity, structure, and readability.
