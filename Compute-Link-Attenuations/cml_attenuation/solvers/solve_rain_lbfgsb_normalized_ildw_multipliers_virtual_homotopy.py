@@ -26,15 +26,14 @@ except Exception:
 
 def _beta_schedule(delta: float) -> List[float]:
     delta = float(delta)
-    if delta <= 0.0:
-        raise ValueError("beta_delta must be positive.")
-    betas: List[float] = []
-    beta = 0.0
-    while beta < 1.0:
-        betas.append(float(beta))
-        beta += delta
-    if not betas or betas[-1] != 1.0:
-        betas.append(1.0)
+    if not np.isfinite(delta) or delta <= 0.0:
+        raise ValueError("beta_delta must be finite and positive.")
+
+    # Integer multiplication avoids a duplicate near-final stage caused by
+    # repeatedly adding values such as 0.1 in floating-point arithmetic.
+    n_full_steps = int(np.floor(1.0 / delta))
+    betas = [float(i * delta) for i in range(n_full_steps + 1) if i * delta < 1.0]
+    betas.append(1.0)
     return betas
 
 

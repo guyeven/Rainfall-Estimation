@@ -112,6 +112,13 @@ def list_est_inputs(est_dir: Path, pattern: str, recursive: bool) -> List[Path]:
     return sorted(est_dir.glob(pattern))
 
 
+def duplicate_input_stems(paths: Iterable[Path]) -> Dict[str, List[Path]]:
+    by_stem: Dict[str, List[Path]] = {}
+    for path in paths:
+        by_stem.setdefault(path.stem, []).append(path)
+    return {stem: items for stem, items in by_stem.items() if len(items) > 1}
+
+
 def normalize_solvers_cfg(solvers_cfg: Any) -> List[dict]:
     """
     Accept solvers as list[dict] or dict[str, dict].
@@ -723,6 +730,18 @@ def main() -> int:
     if not est_files:
         raise SystemExit(f"No files found under {est_dir} with pattern {pattern} (recursive={recursive}).")
 
+    duplicate_stems = duplicate_input_stems(est_files)
+    if duplicate_stems:
+        separator = ", "
+        examples = "; ".join(
+            f"{stem}: {separator.join(str(path.relative_to(est_dir)) for path in paths)}"
+            for stem, paths in sorted(duplicate_stems.items())
+        )
+        raise SystemExit(
+            "Input files must have unique stems because solver outputs are written to a flat directory. "
+            f"Duplicate stem(s): {examples}"
+        )
+
     solvers_cfg_raw = deep_get(cfg, "solvers", None)
     solvers = normalize_solvers_cfg(solvers_cfg_raw)
     if not solvers:
@@ -739,9 +758,10 @@ def main() -> int:
     patch_workers = max(1, int(deep_get(cfg, "parallel.patch_workers", 1)))
     timing_cfg = deep_get(cfg, "timing", {}) or {}
 
+    total_failures = 0
     if solver_workers <= 1:
         for s in solvers:
-            run_solver_batch(
+            _, failures, _ = run_solver_batch(
                 s,
                 est_files=est_files,
                 base_dir=base_dir,
@@ -750,6 +770,7 @@ def main() -> int:
                 timing_cfg=timing_cfg,
                 config_path=cfg_path.resolve(),
             )
+            total_failures += failures
     else:
         print(f"Running solvers in parallel with {solver_workers} worker(s).")
         futures = {}
@@ -769,10 +790,15 @@ def main() -> int:
             for fut in as_completed(futures):
                 label = futures[fut]
                 try:
-                    fut.result()
+                    _, failures, _ = fut.result()
+                    total_failures += failures
                 except Exception as e:
+                    total_failures += 1
                     print(f"[{label}] ABORTED: {e}")
 
+    if total_failures:
+        print(f"Batch completed with {total_failures} failed patch run(s) or aborted solver(s).")
+        return 1
     return 0
 
 

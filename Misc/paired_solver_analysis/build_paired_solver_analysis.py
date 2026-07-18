@@ -12,8 +12,8 @@ from typing import Any
 import numpy as np
 
 
-ROOT = Path(__file__).resolve().parents[1]
-NOTE_DIR = ROOT / "paired_solver_analysis"
+ROOT = Path(__file__).resolve().parents[2]
+NOTE_DIR = Path(__file__).resolve().parent
 CACHE_PATH = (
     ROOT
     / "Compute-Link-Attenuations/HundredPatches/pipeline/batch_analyze_output"
@@ -31,7 +31,7 @@ from batch_analyze_multi import (  # noqa: E402
 SOLVERS = [
     ("IDW", "IDW"),
     ("ILDW", "ILDW"),
-    ("OPT_NORM_ILDW_MULT_ILDW_INIT", "Nonlinear Optimizer (300 iters, normal shrinkage)"),
+    ("OPT_NORM_ILDW_MULT_ILDW_INIT_LIGHT_JTOTAL_LONG", "Solver(ILDW)"),
     (
         "OPT_NORM_VIRTUAL_CONVEX_CONST_INIT_LONG_LIGHT_JTOTAL",
         "Virtual Convex Light Shrinkage (2000 iters)",
@@ -45,7 +45,7 @@ SOLVERS = [
 TABLE_SOLVER_NAMES = {
     "IDW": "IDW",
     "ILDW": "ILDW",
-    "OPT_NORM_ILDW_MULT_ILDW_INIT": "Nonlinear Opt.",
+    "OPT_NORM_ILDW_MULT_ILDW_INIT_LIGHT_JTOTAL_LONG": "Solver(ILDW)",
     "OPT_NORM_VIRTUAL_CONVEX_CONST_INIT_LONG_LIGHT_JTOTAL": "VC Light Shrinkage",
     "OPT_NORM_VIRTUAL_HOMOTOPY_CONST_INIT_LONG_LIGHT_JTOTAL": "Homotopy Light Shrinkage",
 }
@@ -56,7 +56,7 @@ BASELINES = [
 ]
 
 CANDIDATES = [
-    ("OPT_NORM_ILDW_MULT_ILDW_INIT", "Nonlinear Optimizer (300 iters, normal shrinkage)"),
+    ("OPT_NORM_ILDW_MULT_ILDW_INIT_LIGHT_JTOTAL_LONG", "Solver(ILDW)"),
     (
         "OPT_NORM_VIRTUAL_CONVEX_CONST_INIT_LONG_LIGHT_JTOTAL",
         "Virtual Convex Light Shrinkage (2000 iters)",
@@ -75,7 +75,7 @@ TEST_COMPARISONS = [
 
 METRICS = {
     "rmse_mmph": "RMSE",
-    "bias_mmph": "Bias",
+    "abs_bias_mmph": "Absolute Bias",
     "pearson_corr": "Pearson $r$",
 }
 
@@ -591,8 +591,27 @@ def main() -> None:
         paired_t_row(metrics, a_key, b_key, a_name, b_name, "rmse_mmph", alternative="less")
         for a_key, b_key, a_name, b_name in TEST_COMPARISONS
     ]
+    absolute_bias_metrics: dict[str, dict[str, list[Any]]] = {
+        key: {
+            "abs_bias_mmph": [
+                abs(float(value))
+                if isinstance(value, (int, float)) and math.isfinite(value)
+                else value
+                for value in metrics[key]["bias_mmph"]
+            ]
+        }
+        for key, _ in SOLVERS
+    }
     bias_rows = [
-        paired_t_row(metrics, a_key, b_key, a_name, b_name, "bias_mmph", alternative="less")
+        paired_t_row(
+            absolute_bias_metrics,
+            a_key,
+            b_key,
+            a_name,
+            b_name,
+            "abs_bias_mmph",
+            alternative="less",
+        )
         for a_key, b_key, a_name, b_name in TEST_COMPARISONS
     ]
 
@@ -615,7 +634,7 @@ def main() -> None:
     ]
 
     write_csv(NOTE_DIR / "paired_t_rmse.csv", rmse_rows)
-    write_csv(NOTE_DIR / "paired_t_bias.csv", bias_rows)
+    write_csv(NOTE_DIR / "paired_t_absolute_bias.csv", bias_rows)
     write_csv(NOTE_DIR / "paired_fisher_z_correlation.csv", corr_z_rows)
     write_csv(NOTE_DIR / "sign_test_correlation.csv", sign_rows)
     write_csv(NOTE_DIR / "binned_patch_metrics_by_patch.csv", binned_patch_rows)
@@ -648,13 +667,13 @@ d_P = M_A(P) - M_B(P).
 \]
 The descriptive mean/SD table is useful for orientation, but significance depends on the variance of these paired differences, not on the separate solver standard deviations. The inferential tables below compare the optimization solvers against the two interpolation baselines, IDW and ILDW.
 
-The one-sided $t$ tests for RMSE and signed Bias use
+The one-sided $t$ tests for RMSE and absolute Bias use
 \[
 H_0:\mathbb{{E}}[d]\ge 0,\qquad H_1:\mathbb{{E}}[d]<0.
 \]
 The paired-test tables use $\alpha=0.01$. The one-sided $p$-value is the probability, under the boundary null $\mathbb{{E}}[d]=0$, of observing a test statistic at least as favorable to solver $A$ as the one observed. The p-value rule is to reject when the one-sided $p$-value is at most $0.01$.
 
-The 99\% one-sided bound is a confidence-bound version of the same test. For RMSE and signed Bias, the table reports an upper bound for the true mean paired difference $\mathbb{{E}}[d]$; if that upper bound is below zero, then the whole 99\% one-sided confidence region lies in the ``solver $A$ is smaller'' direction. For Pearson correlation, the table reports a lower bound; if that lower bound is above zero, then the whole 99\% one-sided confidence region lies in the ``solver $A$ has higher correlation'' direction. These bound rules and the $p \le 0.01$ rule give the same decisions because they are two equivalent forms of the same one-sided $t$ test at the same 1\% significance level.
+The 99\% one-sided bound is a confidence-bound version of the same test. For RMSE and absolute Bias, the table reports an upper bound for the true mean paired difference $\mathbb{{E}}[d]$; if that upper bound is below zero, then the whole 99\% one-sided confidence region lies in the ``solver $A$ is smaller'' direction. For Pearson correlation, the table reports a lower bound; if that lower bound is above zero, then the whole 99\% one-sided confidence region lies in the ``solver $A$ has higher correlation'' direction. These bound rules and the $p \le 0.01$ rule give the same decisions because they are two equivalent forms of the same one-sided $t$ test at the same 1\% significance level.
 
 {table_binned_patch_metrics(binned_summary_rows)}
 
@@ -665,10 +684,10 @@ For RMSE, negative differences mean that solver $A$ has lower RMSE than solver $
 
 {table_paired_t(rmse_rows, "Paired $t$ comparisons for patchwise RMSE differences.")}
 
-\section*{{Paired $t$ analysis for Bias}}
-For Bias, the difference is the signed bias difference $Bias_A-Bias_B$. The one-sided lower-tail test asks whether solver $A$ has a smaller signed bias than solver $B$. This is not the same as testing which solver is closer to zero bias; for that question, use paired differences of absolute bias instead.
+\section*{{Paired $t$ analysis for Absolute Bias}}
+For absolute Bias, the paired difference is $|Bias_A|-|Bias_B|$. A negative value means that solver $A$ is closer to zero bias than solver $B$, so the one-sided lower-tail test asks whether solver $A$ has lower absolute bias on average.
 
-{table_paired_t(bias_rows, "Paired $t$ comparisons for patchwise signed-bias differences.")}
+{table_paired_t(bias_rows, "Paired $t$ comparisons for patchwise absolute-bias differences.")}
 
 \section*{{Paired Fisher-$z$ analysis for correlation}}
 For Pearson correlation, first apply the Fisher transform

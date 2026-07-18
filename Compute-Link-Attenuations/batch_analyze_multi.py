@@ -1008,7 +1008,7 @@ def append_native_objective_definition_rows(rows: List[Dict[str, Any]]) -> List[
         dict(
             patch_key="DEFINITION",
             solver="J_atten",
-            definition="J_atten = sum over valid links of ((A_hat - A_obs)/L_km)^2, normalized by #valid_links in this sheet.",
+            definition="J_atten = sum over valid links of (A_hat - A_obs)^2/L_km, normalized by #valid_links in this sheet.",
         ),
         dict(
             patch_key="DEFINITION",
