@@ -29,6 +29,57 @@ POST http://127.0.0.1:8100/generate_links
 
 It accepts geometry parameters such as patch width/height, grid scale, candidate frequencies, rain-rate assumptions, attenuation limit, and optional random seed. The response contains generated points, links, link lengths, and assigned/allowed frequencies.
 
+## How A Synthetic Network Is Generated
+
+Each request generates one structured random link network inside a local
+`w`-by-`h` rectangle measured in kilometres. The rectangle is not tied to a
+longitude/latitude, map projection, or geographic offset. Its bounds are:
+
+```text
+lower-left:  (0, 0)
+lower-right: (w, 0)
+upper-left:  (0, h)
+upper-right: (w, h)
+```
+
+The backend constructs the network as follows:
+
+1. It divides the rectangle into a grid. The grid dimensions are derived from
+   `w`, `h`, and the scale parameter `l`, and the cells are resized to fill the
+   rectangle exactly.
+2. It defines a smaller centered region inside each grid cell, controlled by
+   `inner_cell_frac`, and randomly places one center point within that region.
+3. It generates several star links from each center. Their orientations,
+   angular spacing, and lengths are sampled randomly subject to the configured
+   angle and length constraints. Both endpoints are kept inside the rectangle;
+   the backend resamples or, as a fallback, clips a link to the boundary.
+4. It randomly selects some center points and adds center-to-center links using
+   a minimum spanning tree. These are reported as `ring` links, although they
+   do not necessarily form a closed ring.
+5. For every generated link, it selects the highest candidate frequency whose
+   predicted rain attenuation does not exceed `attenuation_max` under the
+   configured `Rmax` and polarization.
+
+The backend accepts an optional `seed` for reproducible generation. Without a
+seed, repeated requests with the same parameters normally produce different
+networks. The current frontend does not expose or send the seed, so clicking
+**Generate** repeatedly produces new layouts.
+
+## Relationship To The 4TU Link Data
+
+The generated layouts can serve as a synthetic alternative to the
+Netherlands-derived 4TU link geometry in future experiments. They are not used
+by the maintained 100-patch benchmark, which instead uses
+`Links-4TU-NL/LIST-OF-LINKS.jsonl`.
+
+Link-Generator is also not currently a drop-in replacement for that file. Its
+response describes endpoints with local kilometre coordinates such as
+`from_coord` and `to_coord`, whereas the benchmark-generation workflow expects
+`XStart`, `YStart`, `XEnd`, and `YEnd` as WGS 84 longitude/latitude. The
+response schema also differs from the 4TU JSONL schema. Using these synthetic
+networks in that workflow therefore requires an adapter or a compatible export
+mode that performs the necessary coordinate placement and field conversion.
+
 ## Setup And Run The Frontend
 
 In another terminal:
