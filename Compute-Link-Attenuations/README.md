@@ -97,13 +97,43 @@ For a chosen output directory, `main.py` writes:
 - `gt_dir/`: `gt_*.npz` ground-truth rainfall arrays, when ground-truth export is enabled.
 - `patch_jsonl_files/`: `patch_*.jsonl` link-attenuation summaries and optional `debug_*.json` traces.
 
+The estimator input and ground truth are deliberately stored separately. Each
+`est_input_*.json` contains the reconstruction-grid dimensions and pixel size,
+link endpoint coordinates in the patch-local frame, frequency, polarization,
+simulated attenuation (`A_db`), and the grid cells and segment lengths
+intersected by each link. It does not contain the ground-truth rainfall field.
+Ordinary solvers use these simulated link observations and geometry to estimate
+the unknown rainfall grid.
+
+The corresponding `gt_*.npz` contains the radar-derived rainfall field used to
+simulate those attenuation observations. It is normally read later by the
+analysis stage to compare the reconstructed and true rainfall fields:
+
+```text
+ground-truth rainfall
+        ↓ ITU attenuation simulation
+simulated link observations in est_input_*.json
+        ↓ reconstruction solver
+estimated rainfall field
+        ↓ evaluation against gt_*.npz
+benchmark metrics
+```
+
+The maintained solver set has one explicit exception:
+`Solver(GT)` (`R0_from_GT: true`) reads the complete ground-truth field and
+uses it as the initial state of its optimization. It is an oracle/diagnostic
+reference rather than a blind reconstruction method with the same information
+as IDW, ILDW, Solver(ILDW), the Convex Solver, or the Homotopy Solver. Those
+ordinary methods do not receive the ground-truth rainfall field during
+reconstruction.
+
 The existing 100-patch pipeline normally starts from the already-generated inputs in `HundredPatches/est_dir/`, the ground-truth files in `HundredPatches/gt_dir/`, and the patch JSONL files in `HundredPatches/patch_overview_generation/patch_jsonl_files/`.
 
 When debug mode is enabled, `main.py` can also write a per-link debug JSON file containing intersected refined pixels, rainfall values, segment lengths, ITU specific attenuation, cumulative attenuation, and the total link attenuation. This is useful for validating geometry and attenuation calculations before scaling to many patches.
 
 ### Implementation Notes
 
-The generated rainfa"ll arrays use image-style grid indices `[i, j]`, where `i` increases downward/southward and `j` increases rightward/eastward. The OPERA rainfall crop is refined from the native 2 km grid to a 125 m grid and then smoothed with a Gaussian filter (`sigma = 1` refined pixel, `mode = "nearest"`) before link attenuations are simulated. The smoothing is implemented by [`smooth_refined_gaussian()`](cml_attenuation/rainfall_processing.py#L113) in `cml_attenuation/rainfall_processing.py`. Link geometry is handled in EPSG:28992 (RD New) meter coordinates; the 4TU link network is placed into each selected patch coordinate system using a fixed anchor, and link lengths are converted to kilometers before applying the ITU-R P.838-3 attenuation model.
+The generated rainfall arrays use image-style grid indices `[i, j]`, where `i` increases downward/southward and `j` increases rightward/eastward. The OPERA rainfall crop is refined from the native 2 km grid to a 125 m grid and then smoothed with a Gaussian filter (`sigma = 1` refined pixel, `mode = "nearest"`) before link attenuations are simulated. The smoothing is implemented by [`smooth_refined_gaussian()`](cml_attenuation/rainfall_processing.py#L113) in `cml_attenuation/rainfall_processing.py`. Link geometry is handled in EPSG:28992 (RD New) meter coordinates; the 4TU link network is placed into each selected patch coordinate system using a fixed anchor, and link lengths are converted to kilometers before applying the ITU-R P.838-3 attenuation model.
 
 ## How To Run The Existing 100-Patch Benchmark
 
