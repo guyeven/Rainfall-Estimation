@@ -77,7 +77,7 @@ Compute-Link-Attenuations/main.py
           ↓
 gt_*.npz + est_input_*.json + patch_*.jsonl
           ↓
-reconstruction solvers and benchmark analysis
+separate solver, evaluation, and inspection workflows
 ```
 
 `Patch-Generator` does not create the simulated CML observations or final
@@ -110,6 +110,22 @@ For a chosen output directory, `main.py` writes:
 - `est_dir/`: `est_input_*.json` files used by `batch_solve_multi.py`.
 - `gt_dir/`: `gt_*.npz` ground-truth rainfall arrays, when ground-truth export is enabled.
 - `patch_jsonl_files/`: `patch_*.jsonl` link-attenuation summaries and optional `debug_*.json` traces.
+
+The three generated artifact types have different consumers:
+
+| Artifact | Primary consumer | Purpose |
+| --- | --- | --- |
+| `est_input_*.json` | `batch_solve_multi.py` and every solver | Reconstruction grid, link geometry, attenuation observations, and pixel intersections |
+| `gt_*.npz` | `batch_analyze_multi.py`; additionally `Solver(GT)` | Evaluation ground truth; `Solver(GT)` also uses it as its optimization initialization |
+| `patch_*.jsonl` | Viewer, debugging, and patch-overview tools | Rich per-link generation records; not used by the ordinary solvers |
+
+The ordinary solver stage therefore requires only `est_input_*.json`.
+`Solver(GT)` also reads the corresponding `gt_*.npz`. The `patch_*.jsonl`
+files support traceability and visual inspection; for example,
+[`Misc/patch_viewers/view_patch.py`](Misc/patch_viewers/README.md) overlays
+their links on the rainfall field and lets the user inspect individual link
+metadata. If the estimator inputs already exist, these patch JSONL files are
+not required to run the ordinary solvers.
 
 The estimator input and ground truth are deliberately stored separately. Each
 `est_input_*.json` contains the reconstruction-grid dimensions and pixel size,
