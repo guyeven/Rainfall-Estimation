@@ -39,11 +39,7 @@ and do not encode values. Clicking near a link highlights it and displays its
 index, simulated attenuation, length, frequency, polarization, and original
 source index.
 
-<img
-  src="docs/view-patch-screenshot.png"
-  alt="Interactive view_patch.py preview"
-  width="720"
->
+<img src="./docs/view-patch-screenshot.png" alt="Interactive view_patch.py preview" width="720" />
 
 ## Status
 
