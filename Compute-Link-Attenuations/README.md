@@ -36,6 +36,20 @@ The main dependencies are NumPy, SciPy, h5py, pyproj, Matplotlib, PyYAML, and op
 
 `main.py` and the patch-input generation utilities compute rain-induced microwave-link attenuation using OPERA rainfall patches and 4TU link data, following ITU-R P.838-3. This stage is what produces the `est_input_*.json` and `gt_*.npz` files later consumed by the solver pipeline.
 
+The OPERA HDF5 rainfall source files are stored at:
+
+```text
+../Patch-Generator/backend/data/raw/
+```
+
+when viewed from this folder. Patch-list records refer back to individual
+files in that directory through their `source_file` fields. The current
+dataset consists of hourly files named like:
+
+```text
+RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301010000.h5
+```
+
 This is downstream of `../Patch-Generator/`; the two components have different
 responsibilities:
 

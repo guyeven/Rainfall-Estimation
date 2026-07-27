@@ -23,6 +23,31 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## Obtain The Raw CML Data
+
+The repository includes the processed `unique_links.jsonl` and
+`LIST-OF-LINKS.jsonl` catalogues, but it does not include the original CML
+archives because they are very large. Download them from the official
+4TU.ResearchData dataset:
+
+```text
+https://data.4tu.nl/datasets/be252844-b672-471e-8d69-27269a862ec1
+```
+
+The dataset provides:
+
+- `IDRawCMLdata.zip` (approximately 9.47 GB), already converted to RAINLINK
+  format.
+- `RawCMLdata.zip` (approximately 12.57 GB), containing the original gzipped
+  vendor CSV files.
+- `RawCML_to_RAINLINKFormat.R`, the original format-conversion script.
+- `README.pdf`, the source-dataset documentation.
+
+Either ZIP archive can be passed to `read-links.py`. The processed RAINLINK
+archive is smaller and is generally the more convenient input when the
+original vendor-file structure is not needed. Consult the dataset page for its
+current download instructions, citation, and licence.
+
 ## Convert Raw Link Data
 
 If you have a raw ZIP from the 4TU/RAINLINK data source, convert it to a unique-link JSONL with:
