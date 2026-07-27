@@ -4,6 +4,44 @@ Tools for selecting, inspecting, and exporting rainfall patches from radar-deriv
 
 Use this folder when you want to inspect the patch-selection process or create a new patch set beyond the already-generated 100-patch benchmark.
 
+## Relationship To `Compute-Link-Attenuations/main.py`
+
+Although both components refer to generating patch inputs, they operate at
+different stages:
+
+- `Patch-Generator` decides **which rainfall regions become benchmark cases**.
+  It reads OPERA HDF5 rainfall maps, detects rectangular candidate regions,
+  supports visual inspection and annotation, and exports patch-list and
+  patch-attribute JSONL files.
+- `Compute-Link-Attenuations/main.py` decides **what microwave links would
+  observe in each selected rainfall region**. It consumes the exported patch
+  records, reopens and preprocesses the referenced rainfall crop, places the
+  4TU microwave-link network into the patch, simulates rain attenuation, and
+  writes the ground-truth and estimator-input files used by the reconstruction
+  solvers.
+
+The end-to-end flow is:
+
+```text
+OPERA HDF5 rainfall maps
+          ↓
+Patch-Generator
+(detect, inspect, select, and annotate rainfall rectangles)
+          ↓
+patch-list JSONL + patch-attributes JSONL
+          ↓
+Compute-Link-Attenuations/main.py
+(extract rainfall, place 4TU links, and simulate attenuation)
+          ↓
+gt_*.npz + est_input_*.json + patch_*.jsonl
+          ↓
+reconstruction solvers and benchmark analysis
+```
+
+The JSONL files exported here describe which source file and pixel/geographic
+bounds define each selected rainfall patch. They are not yet reconstruction
+solver inputs and do not contain simulated microwave-link observations.
+
 ## Contents
 
 - `backend/`: FastAPI backend for listing rainfall files, detecting candidate patches, saving/loading benchmark selections, and rendering patch images.
@@ -94,8 +132,13 @@ Keep the backend running on port `8000` while using the frontend.
 2. Start the backend.
 3. Start the frontend.
 4. Inspect detected patches and benchmark selections.
-5. Save/export patch selections as JSONL/benchmark artifacts.
-6. Use the selected patch JSONL files as inputs to the attenuation and reconstruction workflow under `Compute-Link-Attenuations/HundredPatches/`.
+5. Save/export patch selections as patch-list and patch-attribute
+   JSONL/benchmark artifacts.
+6. Pass those JSONL files to `Compute-Link-Attenuations/main.py`, together with
+   the 4TU link records, to produce ground truth, simulated link observations,
+   and estimator inputs.
+7. Run the resulting benchmark through the reconstruction workflow under
+   `Compute-Link-Attenuations/HundredPatches/`.
 
 ## Notes
 

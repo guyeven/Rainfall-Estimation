@@ -7,7 +7,11 @@ This folder contains the rainfall-reconstruction pipeline and the reusable Pytho
 
 ## Main Components
 
-- `main.py` is the interactive patch-input generator. It builds per-patch microwave-link attenuation JSONL files from OPERA rainfall patches and 4TU link records.
+- `main.py` is the interactive reconstruction-benchmark input builder. It
+  consumes rainfall-patch selections produced by `Patch-Generator`, places
+  4TU microwave-link geometry into each selected patch, simulates rain
+  attenuation, and writes the ground-truth and estimator-input files used by
+  the reconstruction pipeline.
 - `batch_solve_multi.py` runs one or more solvers over a set of `est_input_*.json` patch files.
 - `batch_analyze_multi.py` compares solver outputs against ground truth and produces analysis caches, tables, and plot inputs.
 - `render_analysis_report.py` renders the cached analysis outputs into figures and spreadsheets.
@@ -31,6 +35,41 @@ The main dependencies are NumPy, SciPy, h5py, pyproj, Matplotlib, PyYAML, and op
 ## How To Create Patch Inputs
 
 `main.py` and the patch-input generation utilities compute rain-induced microwave-link attenuation using OPERA rainfall patches and 4TU link data, following ITU-R P.838-3. This stage is what produces the `est_input_*.json` and `gt_*.npz` files later consumed by the solver pipeline.
+
+This is downstream of `../Patch-Generator/`; the two components have different
+responsibilities:
+
+- `Patch-Generator` decides **which rainfall regions become benchmark cases**.
+  It detects, displays, selects, and annotates rectangular regions in OPERA
+  rainfall maps, then exports patch-list and patch-attribute JSONL files.
+- `Compute-Link-Attenuations/main.py` decides **what microwave links would
+  observe in each selected rainfall region**. It consumes those JSONL
+  selections, extracts and preprocesses the corresponding rainfall crop,
+  places the 4TU link network into the patch, simulates link attenuation, and
+  creates the files consumed by the reconstruction solvers.
+
+The complete handoff is:
+
+```text
+OPERA HDF5 rainfall maps
+          ↓
+Patch-Generator
+(detect, inspect, select, and annotate rainfall rectangles)
+          ↓
+patch-list JSONL + patch-attributes JSONL
+          ↓
+Compute-Link-Attenuations/main.py
+(extract rainfall, place 4TU links, and simulate attenuation)
+          ↓
+gt_*.npz + est_input_*.json + patch_*.jsonl
+          ↓
+reconstruction solvers and benchmark analysis
+```
+
+`Patch-Generator` does not create the simulated CML observations or final
+solver inputs. Conversely, `main.py` does not perform the original rainfall
+region detection and interactive benchmark selection; it starts from patch
+records that have already been selected.
 
 Patch candidates are read from a patch-list JSONL file. Each patch record points back to an OPERA HDF5 source file through its `source_file` field. A second patch-attributes JSONL file is used during normal generation as an ID allow-list: only patch IDs that appear in that attributes file are processed. Some of those records contain manual annotations such as area type, rain type, intensity, notes, and an `approved` flag. The current `main.py` filtering step only checks whether a patch ID appears in the attributes file; it does not interpret the annotation fields or the `approved` value. If exact patch IDs are provided interactively, that attributes-file filter is bypassed.
 
