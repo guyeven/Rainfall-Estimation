@@ -31,6 +31,21 @@ or pass a config file:
 python Misc/patch_viewers/view_patch.py --config /path/to/view_patch_config.json
 ```
 
+## Interactive Viewer Preview
+
+`view_patch.py` displays the refined and smoothed rainfall field as the
+background and overlays the retained microwave links. The color bar shows rain
+rate in mm/h. Clicking near a link highlights it and opens an annotation with
+its link index, simulated attenuation, length, frequency, polarization, and
+original source index.
+
+The background shows the refined and smoothed rain rate, with links overlaid in
+RD New (`EPSG:28992`) coordinates. Link colors are only for visual distinction
+and do not encode values; clicking a link displays its geometry and attenuation
+metadata.
+
+![Interactive view_patch.py preview](docs/view-patch-screenshot.png)
+
 ## Status
 
 Treat these as optional manual tools. They are intended for quick inspection and debugging rather than for regenerating the benchmark, solving patches, or rendering the report artifacts.
