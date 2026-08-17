@@ -1,9 +1,12 @@
 # Attribution and Data Sources
 
-This repository is licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0):
-<https://creativecommons.org/licenses/by/4.0/>.
+Unless stated otherwise, original code, documentation, and research artifacts
+in this repository are licensed under [CC BY 4.0](LICENSE). Third-party
+materials retain their upstream terms.
 
-The workflow uses or derives artifacts from external data sources that are also understood to be distributed under CC BY 4.0. When reusing this repository or generated benchmark artifacts, cite the original data sources as well as this repository.
+The workflow uses or derives artifacts from external data sources distributed
+under CC BY 4.0. When reusing generated benchmark artifacts, cite the original
+data sources as well as this repository.
 
 ## 4TU commercial microwave-link data
 

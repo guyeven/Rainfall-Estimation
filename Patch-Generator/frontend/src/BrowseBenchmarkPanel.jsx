@@ -20,7 +20,8 @@ function normalizeApiBase(maybeBase) {
 
 import BenchmarkToolbar from "./BenchmarkToolbar";
 import PatchListVirtual from "./PatchListVirtual";
-import AttributesBox, { defaultAttrs, isAttrsValid } from "./AttributesBox";
+import AttributesBox from "./AttributesBox";
+import { defaultAttrs, isAttrsValid } from "./attributeUtils";
 import { downloadTextFile, toNdjsonLines } from "./jsonl";
 import { parsePatchesNdjsonFromFile } from "./patchFile";
 import { importAttributesNdjsonFromFile } from "./attrsImport";

@@ -26,10 +26,14 @@ The repository does not include a committed `.venv/` directory. Create a local e
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-lock.txt
 ```
 
 The main dependencies are NumPy, SciPy, h5py, pyproj, Matplotlib, PyYAML, and openpyxl.
+
+`requirements.txt` records the supported direct dependency ranges for normal
+development. `requirements-lock.txt` is the validated exact environment
+snapshot used for reproducible benchmark work and CI.
 
 
 ## How To Create Patch Inputs
@@ -103,7 +107,7 @@ python main.py
 
 It prompts for the patch-list JSONL, patch-attributes JSONL, 4TU links JSONL, output directory, number of patches, default polarization, and optional debug settings. In the normal path, the patch-attributes JSONL controls which patch IDs are eligible for processing; when exact patch IDs are entered manually, `main.py` processes those IDs directly.
 
-For the existing 100-patch benchmark generation, the relevant input files are `../Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches.local.jsonl` for the patch list, `../Patch-Generator/Benchmark-Patches/Sorted-benchmark-500-files-758-patches_selected_with_attributes (1).jsonl` for the patch attributes/annotations, and `../Links-4TU-NL/LIST-OF-LINKS.jsonl` for the 4TU link records, when running from `Compute-Link-Attenuations/`.
+For the existing 100-patch benchmark generation, the relevant input files are `../Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches.local.jsonl` for the patch list, `../Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches-selected-with-attributes.jsonl` for the patch attributes/annotations, and `../Links-4TU-NL/LIST-OF-LINKS.jsonl` for the 4TU link records, when running from `Compute-Link-Attenuations/`.
 
 For a chosen output directory, `main.py` writes:
 

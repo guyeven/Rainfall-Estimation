@@ -17,7 +17,7 @@ From the repository root:
 cd Link-Generator/backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-lock.txt
 uvicorn app:app --reload --port 8100
 ```
 
@@ -86,7 +86,7 @@ In another terminal:
 
 ```bash
 cd Link-Generator/frontend
-npm install
+npm ci
 npm run dev
 ```
 

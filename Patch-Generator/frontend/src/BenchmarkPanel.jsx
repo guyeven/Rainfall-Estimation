@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { API_BASE } from "./apiBase";
 
 function fmtNum(v) {
   if (v === undefined || v === null || Number.isNaN(Number(v))) return "—";

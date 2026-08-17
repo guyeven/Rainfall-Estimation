@@ -3,7 +3,7 @@
 React/Vite frontend for inspecting link geometries.
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 

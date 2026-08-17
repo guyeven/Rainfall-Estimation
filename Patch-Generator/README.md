@@ -68,7 +68,7 @@ Patch-Generator/Benchmark-Patches/
 The most relevant files for the maintained 100-patch workflow are:
 
 - `benchmark-500-files-758-patches.local.jsonl`: candidate patch list with local source-file paths.
-- `Sorted-benchmark-500-files-758-patches_selected_with_attributes (1).jsonl`: selected/annotated patch attributes.
+- `benchmark-500-files-758-patches-selected-with-attributes.jsonl`: selected/annotated patch attributes.
 
 ## Backend Setup
 
@@ -78,7 +78,7 @@ From the repository root:
 cd Patch-Generator/backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-lock.txt
 ```
 
 ## Run The Backend
@@ -114,7 +114,7 @@ In another terminal:
 
 ```bash
 cd Patch-Generator/frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -125,6 +125,10 @@ http://127.0.0.1:5173
 ```
 
 Keep the backend running on port `8000` while using the frontend.
+
+The backend binds to loopback and accepts the local Vite origins by default.
+To use another development origin, set a comma-separated `CORS_ORIGINS`
+environment variable explicitly.
 
 ## Typical Workflow
 

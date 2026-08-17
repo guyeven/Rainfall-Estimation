@@ -1,18 +1,9 @@
 import React, { useMemo } from "react";
+import { defaultAttrs, isAttrsValid } from "./attributeUtils";
 
 const AREA_TYPES = ["lake","sea","land","urban","desert","mountain","forest","agriculture","other"];
 const RAIN_TYPES = ["convective","stratiform","frontal","orographic","cyclone","mixed","spiral"];
 const INTENSITIES = ["light","moderate","heavy","extreme"];
-
-export function defaultAttrs() {
-  return { area_type: [], rain_type: [], intensity: "", notes: "", approved: false };
-}
-
-export function isAttrsValid(a) {
-  if (!a) return false;
-  const hasNotes = String(a.notes || "").trim().length > 0;
-  return (a.area_type?.length || 0) > 0 || (a.rain_type?.length || 0) > 0 || Boolean(a.intensity) || hasNotes;
-}
 
 export default function AttributesBox({ patchId, attrs, onChange }) {
   const valid = useMemo(() => isAttrsValid(attrs), [attrs]);

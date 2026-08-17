@@ -72,10 +72,10 @@ def _find_solution_npz(sol_dir: Path) -> Dict[str, Path]:
 
 
 def _load_r_hat(npz_path: Path) -> np.ndarray:
-    z = np.load(npz_path, allow_pickle=True)
-    if "R_hat" not in z.files:
-        raise ValueError(f"Missing R_hat in {npz_path}")
-    r = np.asarray(z["R_hat"], dtype=np.float64)
+    with np.load(npz_path, allow_pickle=False) as z:
+        if "R_hat" not in z.files:
+            raise ValueError(f"Missing R_hat in {npz_path}")
+        r = np.asarray(z["R_hat"], dtype=np.float64)
     if r.ndim != 2:
         raise ValueError(f"R_hat must be 2D in {npz_path}, got shape {r.shape}")
     return r

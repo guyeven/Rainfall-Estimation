@@ -11,7 +11,9 @@ from patches import RainPatch
 
 
 def _benchmark_path(name: str) -> Path:
-    safe = "".join(c for c in name if c.isalnum() or c in ("-", "_"))
+    filename = Path(name).name
+    stem = Path(filename).stem if filename.lower().endswith(".npz") else filename
+    safe = "".join(c for c in stem if c.isalnum() or c in ("-", "_"))
     if not safe:
         safe = "benchmark"
     return BENCHMARK_DIR / f"{safe}.npz"
@@ -24,9 +26,9 @@ def save_benchmark_npz(name: str, patches: List[RainPatch], ids: List[str]) -> d
         return {"status": "empty", "message": "No matching patches to save."}
 
     n = len(selected)
-    ids_arr = np.array([p.id for p in selected], dtype=object)
-    source_files = np.array([p.source_file for p in selected], dtype=object)
-    timestamps = np.array([p.timestamp.isoformat() for p in selected], dtype=object)
+    ids_arr = np.asarray([p.id for p in selected], dtype=np.str_)
+    source_files = np.asarray([p.source_file for p in selected], dtype=np.str_)
+    timestamps = np.asarray([p.timestamp.isoformat() for p in selected], dtype=np.str_)
     y_min = np.array([p.y_min for p in selected])
     y_max = np.array([p.y_max for p in selected])
     x_min = np.array([p.x_min for p in selected])
@@ -36,7 +38,7 @@ def save_benchmark_npz(name: str, patches: List[RainPatch], ids: List[str]) -> d
     area_km2 = np.array([p.area_km2 for p in selected])
     mean_rainfall = np.array([p.mean_rainfall for p in selected])
     max_rainfall = np.array([p.max_rainfall for p in selected])
-    nearest_cities = np.array([p.nearest_city for p in selected], dtype=object)
+    nearest_cities = np.asarray([p.nearest_city for p in selected], dtype=np.str_)
 
     np.savez_compressed(
         path,
@@ -67,20 +69,20 @@ def load_benchmark_npz(name: str) -> List[RainPatch]:
     if not path.exists():
         raise FileNotFoundError(path)
 
-    npz = np.load(path, allow_pickle=True)
-    ids = npz["ids"]
-    source_files = npz["source_files"]
-    timestamps = npz["timestamps"]
-    y_min = npz["y_min"]
-    y_max = npz["y_max"]
-    x_min = npz["x_min"]
-    x_max = npz["x_max"]
-    width_km = npz["width_km"]
-    height_km = npz["height_km"]
-    area_km2 = npz["area_km2"]
-    mean_rainfall = npz["mean_rainfall"]
-    max_rainfall = npz["max_rainfall"]
-    nearest_cities = npz["nearest_cities"]
+    with np.load(path, allow_pickle=False) as npz:
+        ids = npz["ids"]
+        source_files = npz["source_files"]
+        timestamps = npz["timestamps"]
+        y_min = npz["y_min"]
+        y_max = npz["y_max"]
+        x_min = npz["x_min"]
+        x_max = npz["x_max"]
+        width_km = npz["width_km"]
+        height_km = npz["height_km"]
+        area_km2 = npz["area_km2"]
+        mean_rainfall = npz["mean_rainfall"]
+        max_rainfall = npz["max_rainfall"]
+        nearest_cities = npz["nearest_cities"]
 
     patches: List[RainPatch] = []
     for i in range(len(ids)):
@@ -105,4 +107,3 @@ def load_benchmark_npz(name: str) -> List[RainPatch]:
         patches.append(p)
 
     return patches
-

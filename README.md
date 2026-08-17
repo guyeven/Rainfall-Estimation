@@ -32,9 +32,35 @@ The intended flow is:
 3. Run the maintained reconstruction benchmark from `Compute-Link-Attenuations/HundredPatches/pipeline/`.
 4. Use `Compute-Link-Attenuations/HundredPatches/pipeline/report/` for result inspection.
 
+## Development and verification
+
+Python 3.11–3.14 and Node.js 22–24 are supported. Exact Python environment
+snapshots are stored beside each component as `requirements-lock.txt`; npm
+applications use committed lock files. To reproduce the maintained numerical
+pipeline environment and install all frontend dependencies:
+
+```bash
+make bootstrap-python
+make bootstrap-frontends
+```
+
+Run the same tests, hygiene checks, lints, builds, and compilation checks used
+by CI with:
+
+```bash
+make check
+```
+
+Large source data and benchmark artifacts are being separated from ordinary
+Git history. See [docs/artifact-storage.md](docs/artifact-storage.md) for the
+storage policy, checksum tooling, and coordinated migration procedure.
+
 The pipeline uses six solver outputs: IDW, ILDW, Solver(ILDW), Convex Solver, Homotopy Solver, and Solver(GT). When modifying or re-running the project, it is reasonable to use AI coding agents such as Codex to help navigate the scripts and configs, but the commands and expected inputs are documented in the folder READMEs so the workflow is not dependent on an agent.
 
-## License and Attribution
+## License and attribution
 
-This repository is distributed under the Creative Commons Attribution 4.0 International License (CC BY 4.0). See [LICENSE](LICENSE). The benchmark workflow uses 4TU-derived commercial microwave-link geometries and EURADCLIM/OPERA radar-derived precipitation fields; the radar-derived precipitation data are based on EUMETNET/OPERA radar data and ECA&D rain-gauge data. See [ATTRIBUTION.md](ATTRIBUTION.md) for source credits, license links, data modifications, and the no-endorsement notice.
-
+Unless stated otherwise, original code, documentation, and research artifacts
+in this repository are distributed under [CC BY 4.0](LICENSE). Third-party
+materials retain their upstream terms. See [ATTRIBUTION.md](ATTRIBUTION.md) for
+source credits, required notices, data modifications, and the no-endorsement
+statement.

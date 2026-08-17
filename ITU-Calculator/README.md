@@ -28,7 +28,7 @@ From the repository root:
 cd ITU-Calculator/Python-React/backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install fastapi 'uvicorn[standard]' pydantic
+pip install -r requirements-lock.txt
 ```
 
 ## Run The Backend
@@ -63,7 +63,7 @@ Keep the backend running at `http://127.0.0.1:8000`. In a second terminal, start
 
 ```bash
 cd ITU-Calculator/Python-React/frontend
-npm install
+npm ci
 npm run dev
 ```
 

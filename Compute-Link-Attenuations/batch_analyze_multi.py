@@ -51,6 +51,16 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from cml_attenuation.analysis_metrics import (
+    absolute_difference_summary as abs_diff_summary,
+    attenuation_error_per_km as abs_attn_error_per_km_metrics,
+    attenuation_l1_and_legacy_j1 as attn_l1_and_J1,
+    distribution_stats as stats_row,
+    pixel_errors as compute_pixel_errors,
+)
+from cml_attenuation.config_io import deep_get, load_config_file, resolve_path
+from cml_attenuation.pipeline_validation import validate_analysis_config
+
 DEFAULT_REFERENCE_W_SMOOTH = 1.0
 DEFAULT_REFERENCE_W_SHRINK = 1.0
 DEFAULT_REFERENCE_W_SECOND_DER = 1.0
@@ -60,37 +70,6 @@ DEFAULT_REFERENCE_EPS = 0.01
 # ----------------------------
 # Config utilities
 # ----------------------------
-
-def load_config_file(path: str | Path) -> dict:
-    path = Path(path)
-    suf = path.suffix.lower()
-    if suf in (".yaml", ".yml"):
-        try:
-            import yaml  # type: ignore
-        except Exception as e:
-            raise RuntimeError("YAML config requires PyYAML (pip install pyyaml).") from e
-        with path.open("r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
-        return {} if cfg is None else cfg
-    if suf == ".json":
-        with path.open("r", encoding="utf-8") as f:
-            cfg = json.load(f)
-        if cfg is None:
-            return {}
-        if not isinstance(cfg, dict):
-            raise ValueError("JSON config must parse to a dict at top level.")
-        return cfg
-    raise ValueError("Config must be .yaml/.yml or .json")
-
-
-def deep_get(d: dict, path: str, default=None):
-    cur: Any = d
-    for part in path.split("."):
-        if not isinstance(cur, dict) or part not in cur:
-            return default
-        cur = cur[part]
-    return cur
-
 
 def _module_basename(module_name: str) -> str:
     return str(module_name or "").strip().rsplit(".", 1)[-1]
@@ -259,15 +238,6 @@ def summarize_solver_settings(meta: Dict[str, float]) -> str:
     return "; ".join(parts)
 
 
-def resolve_path(p: str | Path | None, *, base_dir: Path) -> Optional[Path]:
-    if p is None:
-        return None
-    pp = Path(str(p))
-    if pp.is_absolute():
-        return pp
-    return (base_dir / pp).resolve()
-
-
 def normalize_solvers(obj: Any, *, path_for_err: str) -> List[dict]:
     """
     Accept either:
@@ -323,16 +293,15 @@ def progress_iter(items: Iterable[Any], *, total: Optional[int] = None, desc: st
 # ----------------------------
 
 def load_npz_first_key(path: Path, key_preference: Sequence[str]) -> np.ndarray:
-    z = np.load(path, allow_pickle=True)
-    for k in key_preference:
-        if k in z:
-            arr = z[k]
-            return np.asarray(arr)
-    # fallback: first ndarray-like key
-    for k in z.files:
-        if isinstance(z[k], np.ndarray):
-            return np.asarray(z[k])
-    raise KeyError(f"None of keys {list(key_preference)} found in {path.name}; keys={z.files}")
+    with np.load(path, allow_pickle=False) as z:
+        for k in key_preference:
+            if k in z:
+                return np.asarray(z[k])
+        # fallback: first ndarray-like key
+        for k in z.files:
+            if isinstance(z[k], np.ndarray):
+                return np.asarray(z[k])
+        raise KeyError(f"None of keys {list(key_preference)} found in {path.name}; keys={z.files}")
 
 
 def list_npz(dirp: Path, prefix: str) -> List[Path]:
@@ -362,18 +331,18 @@ def load_npz_meta_scalars(path: Path) -> Dict[str, float]:
     Read scalar meta_* fields from solver npz, if present.
     """
     out: Dict[str, float] = {}
-    z = np.load(path, allow_pickle=True)
-    for k in z.files:
-        if not str(k).startswith("meta_"):
-            continue
-        try:
-            v = z[k]
-            if np.isscalar(v):
-                out[str(k)] = float(v)
-            elif isinstance(v, np.ndarray) and v.size == 1:
-                out[str(k)] = float(v.reshape(-1)[0])
-        except Exception:
-            continue
+    with np.load(path, allow_pickle=False) as z:
+        for k in z.files:
+            if not str(k).startswith("meta_"):
+                continue
+            try:
+                v = z[k]
+                if np.isscalar(v):
+                    out[str(k)] = float(v)
+                elif isinstance(v, np.ndarray) and v.size == 1:
+                    out[str(k)] = float(v.reshape(-1)[0])
+            except (TypeError, ValueError):
+                continue
     return out
 
 
@@ -386,7 +355,7 @@ def load_npz_optional_link_arrays(path: Path) -> Dict[str, np.ndarray]:
     )
     out: Dict[str, np.ndarray] = {}
     try:
-        with np.load(path, allow_pickle=True) as z:
+        with np.load(path, allow_pickle=False) as z:
             for name in wanted:
                 if name in z.files:
                     out[name] = np.asarray(z[name])
@@ -901,47 +870,6 @@ def coverage_bin_label(v: int, exact: List[int], ge: Optional[int]) -> Optional[
 # Stats helpers
 # ----------------------------
 
-def stats_row(
-    err_signed: np.ndarray,
-    err_abs: np.ndarray,
-    *,
-    l1_rae_sum: float,
-    l1_abs_mmph_sum: float,
-) -> Dict[str, Any]:
-    if err_abs.size == 0:
-        return dict(
-            n_pixels=0,
-            mean_signed=0.0, median_signed=0.0,
-            mean_abs=0.0, std_abs=0.0,
-            median_abs=0.0, p90_abs=0.0, p95_abs=0.0, p99_abs=0.0, linf_abs=0.0,
-            l1_rae_sum=0.0,
-            l1_abs_mmph_sum=0.0,
-        )
-    mean_signed = float(np.mean(err_signed))
-    median_signed = float(np.median(err_signed))
-    mean_abs = float(np.mean(err_abs))
-    std_abs = float(np.std(err_abs, ddof=0))
-    median_abs = float(np.median(err_abs))
-    p90 = float(np.percentile(err_abs, 90))
-    p95 = float(np.percentile(err_abs, 95))
-    p99 = float(np.percentile(err_abs, 99))
-    linf = float(np.max(err_abs))
-    return dict(
-        n_pixels=int(err_abs.size),
-        mean_signed=mean_signed,
-        median_signed=median_signed,
-        mean_abs=mean_abs,
-        std_abs=std_abs,
-        median_abs=median_abs,
-        p90_abs=p90,
-        p95_abs=p95,
-        p99_abs=p99,
-        linf_abs=linf,
-        l1_rae_sum=float(l1_rae_sum),
-        l1_abs_mmph_sum=float(l1_abs_mmph_sum),
-    )
-
-
 def append_average_rows(
     rows: List[Dict[str, Any]],
     *,
@@ -1171,31 +1099,6 @@ def enrich_overall_by_solver_ratios(rows: List[Dict[str, Any]]) -> List[Dict[str
             r[f"{m}_over_IDW"] = _safe_ratio(v_alg, v_idw)
             r[f"{m}_over_ILDW"] = _safe_ratio(v_alg, v_ildw)
     return out
-
-
-def compute_pixel_errors(gt: np.ndarray, pred: np.ndarray, mask_rainy: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Returns:
-      signed_rainy, abs_rainy, signed_nonrainy, abs_nonrainy
-    """
-    gt = gt.astype(np.float64)
-    pred = pred.astype(np.float64)
-    rainy = mask_rainy
-
-    # rainy: relative
-    gt_r = gt[rainy]
-    pred_r = pred[rainy]
-    denom = np.where(gt_r == 0.0, 1.0, gt_r)
-    signed_r = (gt_r - pred_r) / denom
-    abs_r = np.abs(signed_r)
-
-    # nonrainy: absolute difference
-    gt_n = gt[~rainy]
-    pred_n = pred[~rainy]
-    signed_n = (pred_n - gt_n)
-    abs_n = np.abs(signed_n)
-
-    return signed_r, abs_r, signed_n, abs_n
 
 
 def evaluate_objective_values(
@@ -1885,54 +1788,6 @@ def compute_link_terms(est: dict, R_field: np.ndarray) -> Tuple[np.ndarray, np.n
     valid = L_km > 0
     ge10 = (L_km >= 10.0) & valid
     return A_obs, A_hat, L_km, valid, ge10
-
-
-def attn_l1_and_J1(A_obs: np.ndarray, A_hat: np.ndarray, L_km: np.ndarray, mask: np.ndarray) -> Tuple[float, float, int]:
-    idx = np.where(mask)[0]
-    if idx.size == 0:
-        return 0.0, 0.0, 0
-    diff = A_hat[idx] - A_obs[idx]
-    attn_l1 = float(np.sum(np.abs(diff)))
-    J1 = float(np.sum((diff / L_km[idx]) ** 2))
-    return attn_l1, J1, int(idx.size)
-
-
-def abs_attn_error_per_km_metrics(
-    A_obs: np.ndarray,
-    A_hat: np.ndarray,
-    L_km: np.ndarray,
-    mask: np.ndarray,
-) -> Tuple[float, float]:
-    """
-    Returns two per-patch attenuation error summaries on the selected links:
-      1. mean over valid links of |A_hat - A_obs| / L_km
-      2. sum |A_hat - A_obs| / sum L_km
-    """
-    idx = np.where(mask)[0]
-    if idx.size == 0:
-        return 0.0, 0.0
-    diff_abs = np.abs(A_hat[idx] - A_obs[idx])
-    lengths = L_km[idx]
-    mean_per_link = float(np.mean(diff_abs / lengths))
-    total_len = float(np.sum(lengths))
-    length_weighted = float(np.sum(diff_abs) / total_len) if total_len > 0.0 else 0.0
-    return mean_per_link, length_weighted
-
-
-def abs_diff_summary(A_obs: np.ndarray, A_hat: np.ndarray, mask: np.ndarray) -> Tuple[float, float, float]:
-    """
-    Summary stats over |A_hat - A_obs| on links selected by mask:
-      max, p95, p99
-    """
-    idx = np.where(mask)[0]
-    if idx.size == 0:
-        return 0.0, 0.0, 0.0
-    abs_diff = np.abs(A_hat[idx] - A_obs[idx])
-    return (
-        float(np.max(abs_diff)),
-        float(np.percentile(abs_diff, 95)),
-        float(np.percentile(abs_diff, 99)),
-    )
 
 
 def jatten_attributed_pixel_map(
@@ -3411,6 +3266,7 @@ def main() -> int:
 
     cfg_path = Path(args.config)
     cfg = load_config_file(cfg_path)
+    validate_analysis_config(cfg)
     base_dir = cfg_path.resolve().parent
 
     # inputs

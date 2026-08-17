@@ -27,7 +27,7 @@ function SafeFitBounds({ geo }) {
 
   try {
     map.fitBounds(bounds, { padding: [15, 15] });
-  } catch (_) {
+  } catch {
     // ignore leaflet errors
   }
 

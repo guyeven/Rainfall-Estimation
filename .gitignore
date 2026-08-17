@@ -24,6 +24,15 @@ venv/
 # with HundredPatches/pipeline/analyze.yaml when report cache contents need refreshing.
 Compute-Link-Attenuations/HundredPatches/pipeline/batch_analyze_output/
 
+# Large research artifacts. Existing tracked files remain tracked until the
+# coordinated external-archive migration described in docs/artifact-storage.md.
+Patch-Generator/backend/data/raw/
+Compute-Link-Attenuations/HundredPatches/est_dir/
+Compute-Link-Attenuations/HundredPatches/gt_dir/
+Compute-Link-Attenuations/HundredPatches/pipeline/solutions/
+Compute-Link-Attenuations/Misc/synthetic_tests/out/
+Misc/paired_solver_analysis/d3_distance_cache/
+
 # LaTeX build products
 *.aux
 *.bbl
@@ -40,3 +49,6 @@ Compute-Link-Attenuations/HundredPatches/pipeline/batch_analyze_output/
 # Stray duplicate artifacts from Finder/editor copies
 * 2.*
 * 3.*
+
+# Local artifact bundles and manifests produced during archival.
+artifacts/local/

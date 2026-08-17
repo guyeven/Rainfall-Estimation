@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 import sys
 from pathlib import Path
 
@@ -36,9 +37,16 @@ from benchmarks import list_benchmarks, load_benchmark_npz, save_benchmark_npz
 
 app = FastAPI(title="Rain Patch Backend")
 
+_DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+_CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -455,5 +463,4 @@ def api_load_benchmark(req: BenchmarkLoadRequest) -> List[PatchOut]:
 if __name__ == "__main__":
     import uvicorn
 
-#guy: old. edit for PyInstaller    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
     uvicorn.run(app, host="127.0.0.1", port=8000)

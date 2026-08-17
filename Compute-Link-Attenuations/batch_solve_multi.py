@@ -46,43 +46,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 
-
-def load_config_file(path: str | Path) -> dict:
-    path = Path(path)
-    suffix = path.suffix.lower()
-
-    if suffix in (".yaml", ".yml"):
-        try:
-            import yaml  # type: ignore
-        except Exception as e:
-            raise RuntimeError("YAML config requires PyYAML: pip install pyyaml") from e
-        with path.open("r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
-        return {} if cfg is None else cfg
-
-    if suffix == ".json":
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-
-    raise ValueError("Config must be .yaml/.yml or .json")
-
-
-def deep_get(d: dict, path: str, default=None):
-    cur: Any = d
-    for part in path.split("."):
-        if not isinstance(cur, dict) or part not in cur:
-            return default
-        cur = cur[part]
-    return cur
-
-
-def resolve_path(p: str | Path | None, *, base_dir: Path) -> Optional[Path]:
-    if p is None:
-        return None
-    pp = Path(str(p))
-    if pp.is_absolute():
-        return pp
-    return (base_dir / pp).resolve()
+from cml_attenuation.config_io import deep_get, load_config_file, resolve_path
+from cml_attenuation.pipeline_validation import validate_batch_solve_config
 
 
 def import_module_from_spec(module_spec: str, *, base_dir: Path):
@@ -718,6 +683,7 @@ def main() -> int:
 
     cfg_path = Path(args.config)
     cfg = load_config_file(cfg_path)
+    validate_batch_solve_config(cfg)
     base_dir = cfg_path.resolve().parent
 
     est_dir = resolve_path(deep_get(cfg, "input.est_dir", None), base_dir=base_dir)

@@ -20,7 +20,7 @@ From the repository root:
 cd Links-4TU-NL
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-lock.txt
 ```
 
 ## Obtain The Raw CML Data
@@ -203,7 +203,7 @@ In another terminal:
 
 ```bash
 cd Links-4TU-NL/patch-map-frontend
-npm install
+npm ci
 npm run dev
 ```
 
