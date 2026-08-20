@@ -879,7 +879,18 @@ def render_combined_patch_error_map(
     )
     out_path = img_dir / output_subdir / f"{safe_path_token(str(patch_key))}.png"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.01, 0.01, 0.99, 0.82))
+    if include_map:
+        fig.text(
+            0.90,
+            0.012,
+            "Map data © OpenStreetMap contributors",
+            ha="right",
+            va="bottom",
+            fontsize=8,
+            color="#555555",
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.78, "pad": 2.0},
+        )
+    fig.tight_layout(rect=(0.01, 0.035 if include_map else 0.01, 0.99, 0.82))
     fig.savefig(out_path)
     plt.close(fig)
 

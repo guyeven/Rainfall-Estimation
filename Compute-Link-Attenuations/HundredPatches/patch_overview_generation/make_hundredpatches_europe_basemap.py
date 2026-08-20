@@ -126,7 +126,18 @@ def main() -> None:
         )
     )
 
-    fig.tight_layout(rect=(0.015, 0.02, 0.985, 0.985))
+    fig.text(
+        0.985,
+        0.012,
+        "Map data © OpenStreetMap contributors; basemap © CARTO",
+        ha="right",
+        va="bottom",
+        fontsize=8,
+        color="#555555",
+        bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.78, "pad": 2.0},
+    )
+
+    fig.tight_layout(rect=(0.015, 0.035, 0.985, 0.985))
     fig.savefig(OUT_PNG, bbox_inches="tight", facecolor=fig.get_facecolor())
     fig.savefig(OUT_PDF, bbox_inches="tight", facecolor=fig.get_facecolor())
     print(OUT_PNG)
