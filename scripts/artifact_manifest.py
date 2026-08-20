@@ -11,6 +11,7 @@ from typing import Any
 
 
 CHUNK_SIZE = 1024 * 1024
+IGNORED_FILENAMES = {".DS_Store"}
 
 
 def digest(path: Path) -> str:
@@ -26,7 +27,11 @@ def build_manifest(root: Path) -> dict[str, Any]:
     if not root.is_dir():
         raise ValueError(f"artifact root is not a directory: {root}")
     files = []
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+    for path in sorted(
+        item
+        for item in root.rglob("*")
+        if item.is_file() and item.name not in IGNORED_FILENAMES
+    ):
         files.append(
             {
                 "path": path.relative_to(root).as_posix(),

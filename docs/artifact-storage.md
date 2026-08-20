@@ -19,12 +19,20 @@ Publish these as immutable external bundles:
 
 1. `opera-source-inputs`: redistributed upstream HDF5 inputs, or preferably a
    downloader plus the upstream DOI when redistribution is unnecessary;
-2. `hundred-patch-benchmark-inputs`: estimator JSON, ground-truth NPZ, patch
-   metadata, and link records needed to rerun the benchmark;
-3. `hundred-patch-solver-results`: solution NPZ files and timing outputs;
-4. `hundred-patch-report`: analysis cache, spreadsheets, figures, and PDFs;
-5. `auxiliary-analysis`: synthetic outputs and distance caches not required by
-   the maintained pipeline.
+2. `hundred-patch-est-inputs`: estimator JSON inputs needed to rerun the
+   benchmark;
+3. `hundred-patch-ground-truth`: radar-derived ground-truth NPZ files;
+4. `hundred-patch-solver-results`: solution NPZ files and timing outputs;
+5. `hundred-patch-report`: analysis cache, spreadsheets, figures, and PDFs;
+6. `synthetic-test-artifacts`: generated outputs from the larger synthetic
+   experiments that are not needed as the small in-repository test fixture;
+7. `paired-analysis-distance-cache`: generated distance arrays used by the
+   auxiliary paired-solver analysis.
+
+Every published bundle must include `ATTRIBUTION.md`, or reproduce its
+applicable attribution and license information in the archive metadata. This
+is required for bundles that contain redistributed upstream data or artifacts
+derived from it.
 
 For immutable research releases, a DOI-bearing archive such as Zenodo or
 4TU.ResearchData is preferred. DVC with an institutional object-store remote
@@ -49,9 +57,11 @@ python scripts/artifact_manifest.py verify \
   artifacts/local/hundred-patch-est-inputs.manifest.json
 ```
 
-Copy finalized manifests out of `artifacts/local/` into a tracked
-`artifacts/manifests/` directory and record the archive DOI or immutable URL in
-the README before removing the corresponding tracked files.
+Copy finalized manifests out of `artifacts/local/` into the tracked
+`artifacts/manifests/` directory. Before removing the corresponding tracked
+files, set the bundle's `archive_url` in `artifacts/catalog.json` to its DOI or
+immutable URL and record the same location in `artifacts/README.md` or the
+relevant release documentation.
 
 ## Coordinated history cutover
 
