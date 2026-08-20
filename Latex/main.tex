@@ -288,7 +288,7 @@ Our benchmark is built patch by patch. A \emph{patch} is {\color{black}a rectang
 
 For each benchmark patch, we extract the corresponding rainfall crop from the EURADCLIM map. We then place this field on a finer \SI{125}{m} grid by dividing each \SI{2}{km} pixel into $16\times16$ subpixels, each assigned its parent pixel's rainfall value. We smooth this field with a normalized Gaussian filter having a standard deviation of one refined pixel (\SI{125}{m}). The filter uses a $7\times7$-pixel neighborhood, extending \SI{375}{m} in each grid direction, and nearest-value padding at the patch boundaries. It redistributes rainfall among neighboring pixels, although the boundary padding means that the total rainfall is not necessarily preserved exactly. This pragmatic smoothing step softens the artificial block boundaries created by the subdivision. The resulting refined rainfall field serves as the benchmark ground truth for simulating link attenuations and evaluating the solvers.
 
-The microwave-link geometry is not geographically co-located with the selected EURADCLIM patch locations. Instead, we use records from the 4TU-NL dataset \citep{overeem2023cml}, which describes an operational CML network covering the Netherlands and provides the endpoint locations and operating frequencies of its links. We use these endpoint locations and frequencies as a realistic network template, place this network in the coordinate system of each selected patch, and retain only links whose endpoints fall inside the patch. Thus, the link geometries and frequencies are derived from actual Dutch CML infrastructure, whereas their placement relative to the EURADCLIM rainfall fields is synthetic. Across the 100 patches, this procedure retains between 939 and 1996 links per patch (mean 1324). The attenuation of each retained link is then simulated from the radar-derived rainfall field rather than taken from the original operational CML measurements.
+The microwave-link geometry is not geographically co-located with the selected EURADCLIM patch locations. Instead, we use records from the 4TU-NL dataset \citep{overeem2024cml}, which describes an operational CML network covering the Netherlands and provides the endpoint locations and operating frequencies of its links. We use these endpoint locations and frequencies as a realistic network template, place this network in the coordinate system of each selected patch, and retain only links whose endpoints fall inside the patch. Thus, the link geometries and frequencies are derived from actual Dutch CML infrastructure, whereas their placement relative to the EURADCLIM rainfall fields is synthetic. Across the 100 patches, this procedure retains between 939 and 1996 links per patch (mean 1324). The attenuation of each retained link is then simulated from the radar-derived rainfall field rather than taken from the original operational CML measurements.
 
 The 4TU-derived link file used in this benchmark does not specify polarization, so the patch-export pipeline supplies a default polarization when missing. In the present benchmark, that default is set to horizontal ($\mathrm{H}$), and the forward model therefore uses the ITU coefficients corresponding to horizontal polarization.
 
@@ -368,7 +368,7 @@ After the forward model defines how a rainfall field produces link attenuations,
 
 Using the same link-level observations and forward-model conventions described above, we now describe each solver family and its implementation details.
 \subsubsection{IDW}
-Inverse-distance weighting (IDW) is one of the standard simple interpolation strategies used in commercial-microwave-link rainfall reconstruction \citep{chwala2019cml}. The input consists of a set of links, where each link carries total attenuation, frequency, and polarization.
+Inverse-distance weighting (IDW), originally introduced by Shepard for interpolating irregularly spaced point observations, is a standard spatial interpolation method \citep{shepard1968idw}. In CML rainfall reconstruction, a common approach is to represent each link as a virtual rain gauge located at the link midpoint and interpolate its link-level rain-rate estimate across the spatial domain \citep{eshel2020idw}. We use a truncated and discretized variant of this midpoint-IDW construction. The input consists of a set of links, each specified by its endpoints, rain-induced attenuation over the full link path $A_\ell$, carrier frequency, and polarization.
 
 IDW first converts each observed link attenuation $A_\ell$ into a single link-level rain-rate estimate defined as:
 \[
@@ -376,7 +376,7 @@ R_\ell \triangleq \left(\frac{A_\ell/|\ell|}{\kappa_\ell}\right)^{1/\alpha_\ell}
 \]
 where $A_\ell$ denotes the attenuation of link $\ell$, $|\ell|$ its length, and $(\kappa_\ell,\alpha_\ell)$ the ITU-R P.838-3 coefficients corresponding to its frequency and polarization.
 
-Each per-link rain-rate estimate is then treated as a virtual point observation at the link midpoint. For each pixel $p$ with center $c_p$, IDW computes a weighted average of nearby $R_\ell$ values, using weights proportional to $\|m_\ell-c_p\|_2^{-2}$ within a prescribed search radius $r_{\max}$ (set to \SI{15}{km} in our study). If one or more link midpoints lie inside pixel $p$, $\hat R_p$ (the estimated rainfall in pixel $p$), is set to the mean of their rainfall estimates. This defines the discretized IDW baseline used throughout this thesis.
+Each per-link rain-rate estimate is then treated as a virtual point observation at the link midpoint. For each pixel $p$ with center $c_p$, observations within $r_{\max}=\SI{15}{km}$ are assigned weights proportional to $\|m_\ell-c_p\|_2^{-2}$, corresponding to an IDW power parameter of $2$; observations outside this radius receive zero weight. The weights of the retained observations are normalized to sum to one, and their weighted rain-rate estimates define $\hat R_p$. If no link midpoint lies within the search radius, $\hat R_p$ is set to zero. If one or more link midpoints lie inside pixel $p$, $\hat R_p$ is instead set to the mean of their rainfall estimates. This defines the truncated and discretized IDW baseline used throughout this thesis.
 
 \smallskip
 
@@ -421,7 +421,7 @@ If one or more links cross the pixel, the estimate is taken to be the mean of th
 At the algorithmic level, ILDW differs from Algorithm~1 only in how link geometry enters the interpolation step: midpoint membership and midpoint distance are replaced by pixel--segment intersection and distance to the full link segment.
 
 \begin{algorithm}[H]
-    \caption{Discretized ILDW. Compared with Algorithm~1, the red lines replace midpoint-based interpolation by interpolation based on the full link segment.}
+    \caption{Discretized ILDW. Link influence is determined using pixel--segment intersection and point-to-segment distance.}
     \DontPrintSemicolon
     \KwData{link set $\mathcal{L}$, a patch $P$, and a maximum influence distance $r_{\max}$}
     \KwResult{rainfall field $\hat R$}
@@ -430,15 +430,15 @@ At the algorithmic level, ILDW differs from Algorithm~1 only in how link geometr
     $\ell.\mathrm{rainrate} \gets \left(\dfrac{\ell.\mathrm{attenuation}/\ell.\mathrm{length}}{\ell.\kappa}\right)^{1/\ell.\alpha}$\;
 }
    \ForEach(\tcp*[f]{compute rain $\hat R_p$}){pixel $p \in {P}$}{
-        \textcolor{red}{$X_p \gets \{\ell \in \mathcal{L} : \ell\cap p \neq \emptyset\}$}\;
-        \eIf{\textcolor{red}{$X_p$} $\neq \emptyset$}{
-            \textcolor{red}{$\hat R_p \gets \dfrac{1}{|X_p|}\sum_{\ell \in X_p} \ell.\mathrm{rainrate}$\tcp*[r]{at least one link traverses the pixel}
-        }}{
-            \textcolor{red}{$N_p \gets \{\ell \in \mathcal{L} : \mathrm{dist}(p,\ell) \le r_{\max}\}$}\;
+        $X_p \gets \{\ell \in \mathcal{L} : \ell\cap p \neq \emptyset\}$\;
+        \eIf{$X_p \neq \emptyset$}{
+            $\hat R_p \gets \dfrac{1}{|X_p|}\sum_{\ell \in X_p} \ell.\mathrm{rainrate}$\tcp*[r]{link crosses pixel}
+        }{
+            $N_p \gets \{\ell \in \mathcal{L} : \mathrm{dist}(p,\ell) \le r_{\max}\}$\;
             \eIf{$N_p = \emptyset$}{
                 $\hat R_p \gets 0$\tcp*[r]{pixel far from links}
-            }{\textcolor{red}{
-                $\hat R_p \gets \sum_{\ell \in N_p}\dfrac{\mathrm{dist}^{-2}(p.\mathrm{center}, \ell)}{\sum_{\ell' \in N_p}\mathrm{dist}^{-2}(p.\mathrm{center}, \ell')} \cdot \ell.\mathrm{rainrate}$\;}
+            }{
+                $\hat R_p \gets \sum_{\ell \in N_p}\dfrac{\mathrm{dist}^{-2}(p.\mathrm{center}, \ell)}{\sum_{\ell' \in N_p}\mathrm{dist}^{-2}(p.\mathrm{center}, \ell')} \cdot \ell.\mathrm{rainrate}$\;
             }
         }
     }
@@ -956,7 +956,7 @@ Errors generally increase as nearby-link coverage becomes weaker, but the optimi
 
 This thesis compared interpolation and optimization-based reconstruction strategies on a 100-patch benchmark constructed from the OPERA-based EURADCLIM dataset and simulated microwave-link attenuations. Across the reported experiments, the optimized solvers achieved lower attenuation mismatch than IDW when all final reconstructions were evaluated using the attenuation model with each link's original frequency and polarization. {\color{black}Convex Solver and Homotopy Solver also had lower map-level RMSE and higher Pearson correlation summaries than both IDW and the ILDW-initialized nonlinear solver. In the paired comparison with IDW, Convex Solver also had lower absolute patch-level bias on average.} Solver(GT) had the strongest reported map-level summaries, but it is initialized from the ground truth and therefore is not a deployable method. At the same time, the comparison between Solver(GT) and the convex solvers shows that the rainfall field closest to the radar-derived ground truth is not always the field that best matches the link observations under the chosen forward model. ILDW remained a useful link-aware IDW modification: it preserves the simplicity of IDW-style interpolation while making better use of the fact that each CML observation belongs to a full link path rather than only to a midpoint.
 
-{\color{black}An important next step is to repeat the comparison of reconstruction methods using measurements from an operational CML network. In the current benchmark, the observed attenuations are generated from the radar-derived ground-truth rainfall fields using the attenuation model with each link's original frequency and polarization, producing clean and model-consistent observations. In a real-time application, the attenuation-mismatch term would instead be driven by rain-induced attenuations estimated from current CML signal measurements, while independent radar or rain-gauge observations would be withheld from the reconstruction and used only afterward as reference data for evaluating the resulting rainfall estimates. {\color{black}Moreover, operational CMLs record attenuation as rainfall varies at shorter time scales. Because the rain-rate--attenuation relation is nonlinear, attenuation computed from an hourly mean rain rate is not generally equal to the mean attenuation produced by the varying rain rates within that hour.} Such an experiment is needed to determine whether the improvements over IDW persist in the presence of measurement noise, changing link availability, wet-antenna attenuation, baseline drift, mismatch between the forward model and real signal behavior, and {\color{black}temporal aggregation effects.}}
+{\color{black}An important next step is to repeat the comparison of reconstruction methods using measurements from an operational CML network. In the current benchmark, the observed attenuations are generated from the radar-derived ground-truth rainfall fields using the attenuation model with each link's original frequency and polarization, producing clean and model-consistent observations. In a real-time application, the attenuation-mismatch term would instead be driven by rain-induced attenuations estimated from current CML signal measurements, while independent radar or rain-gauge observations would be withheld from the reconstruction and used only afterward as reference data for evaluating the resulting rainfall estimates. Such an experiment is needed to determine whether the improvements over IDW persist in the presence of measurement noise, changing link availability, wet-antenna attenuation, baseline drift, and mismatch between the forward model and real signal behavior.}
 
 {\color{black}Two further aspects of the controlled benchmark warrant validation. First, all patches use the same 4TU-derived network template, so the results do not establish generalization across other network geometries or densities. Second, the benchmark target is obtained by upsampling and Gaussian smoothing of the coarse EURADCLIM rainfall fields, while the optimization objective explicitly favors spatial smoothness. This alignment may benefit the regularized solvers. Future work should therefore repeat the comparison across varied operational network layouts and with rainfall references that do not rely on the same subdivision-and-smoothing procedure.}
 
@@ -1001,9 +1001,10 @@ Link length matters because longer links average rainfall over longer paths and 
         ymin=0,
         symbolic x coords={{[0,1)},{[1,2)},{[2,4)},{[4,8)},{[8,16)},{[16,24]}},
         xtick=data,
-        xticklabel style={rotate=35,anchor=east,font=\scriptsize},
+        xticklabel style={rotate=55,anchor=east,font=\scriptsize},
         ylabel={Count},
         xlabel={Length bin (km)},
+        xlabel style={font=\footnotesize},
         title={Link length},
         grid=major
       ]
@@ -1016,16 +1017,17 @@ Link length matters because longer links average rainfall over longer paths and 
     \centering
     \begin{tikzpicture}
       \begin{axis}[
-        width=0.80\linewidth,
+        width=0.92\linewidth,
         height=4.7cm,
         ybar,
         bar width=10pt,
         ymin=0,
         symbolic x coords={{[10,15)},{[15,20)},{[20,25)},{[25,30)},{[30,35)},{[35,40)},{[40,60]}},
         xtick=data,
-        xticklabel style={rotate=35,anchor=east,font=\scriptsize},
+        xticklabel style={rotate=55,anchor=east,font=\scriptsize},
         ylabel={Count},
         xlabel={Frequency bin (GHz)},
+        xlabel style={font=\footnotesize},
         title={Carrier frequency},
         grid=major
       ]
@@ -1045,9 +1047,10 @@ Link length matters because longer links average rainfall over longer paths and 
         ymin=0,
         symbolic x coords={{[1,2)},{[2,3)},{[3,5)},{[5,7)},{[7,11)},{[11,21)},{[21,100]}},
         xtick=data,
-        xticklabel style={rotate=35,anchor=east,font=\scriptsize},
+        xticklabel style={rotate=55,anchor=east,font=\scriptsize},
         ylabel={Count},
         xlabel={Endpoint-degree bin},
+        xlabel style={font=\footnotesize},
         title={Endpoint degree},
         grid=major
       ]
