@@ -59,8 +59,15 @@ The pipeline uses six solver outputs: IDW, ILDW, Solver(ILDW), Convex Solver, Ho
 
 ## License and attribution
 
-Unless stated otherwise, original code, documentation, and research artifacts
-in this repository are distributed under [CC BY 4.0](LICENSE). Third-party
-materials retain their upstream terms. See [ATTRIBUTION.md](ATTRIBUTION.md) for
-source credits, required notices, data modifications, and the no-endorsement
-statement.
+Unless stated otherwise:
+
+- Original source code and software configuration files are licensed under the
+  [MIT License](LICENSE).
+- Original documentation, figures, reports, thesis material, and research
+  artifacts—including benchmark inputs and solver-output datasets, to the
+  extent of the contributors' rights—are licensed under
+  [CC BY 4.0](LICENSE-CC-BY-4.0).
+
+Third-party code, datasets, and other third-party materials retain their
+upstream terms. See [ATTRIBUTION.md](ATTRIBUTION.md) for source credits,
+required notices, data modifications, and the no-endorsement statement.

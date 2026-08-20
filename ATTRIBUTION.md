@@ -1,8 +1,14 @@
 # Attribution and Data Sources
 
-Unless stated otherwise, original code, documentation, and research artifacts
-in this repository are licensed under [CC BY 4.0](LICENSE). Third-party
-materials retain their upstream terms.
+Copyright © 2026 Iván Soto and Guy Even.
+
+Unless stated otherwise, original source code and software configuration files
+in this repository are licensed under the [MIT License](LICENSE). Original
+documentation, figures, reports, thesis material, benchmark inputs, and
+solver-output datasets are licensed under [CC BY 4.0](LICENSE-CC-BY-4.0), to
+the extent that the repository contributors hold or control the relevant
+rights. Third-party code, datasets, and other third-party materials retain
+their upstream terms.
 
 The workflow uses or derives artifacts from external data sources distributed
 under CC BY 4.0. When reusing generated benchmark artifacts, cite the original
