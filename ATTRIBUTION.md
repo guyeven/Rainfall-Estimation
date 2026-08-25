@@ -26,7 +26,7 @@ data sources as well as this repository.
 
 ### Changes made in this repository
 
-The raw 4TU/RAINLINK link records are converted into JSONL files containing selected link geometry and frequency fields. The maintained 100-patch benchmark does **not** use the original 4TU link measurements as rainfall observations at their original locations. Instead, the 4TU-derived link geometries and frequencies are used as realistic CML network structure: the link network is placed into selected radar-patch coordinate systems, links whose endpoints fall inside each patch are retained, and rain-induced attenuations are simulated from the radar-derived rainfall field.
+The 4TU CML records are converted into JSONL files containing selected link geometry and frequency fields. The maintained 100-patch benchmark does **not** use the original 4TU link measurements as rainfall observations at their original locations. Instead, the 4TU-derived link geometries and frequencies are used as realistic CML network structure: the link network is placed into selected radar-patch coordinate systems, links whose endpoints fall inside each patch are retained, and rain-induced attenuations are simulated from the radar-derived rainfall field.
 
 The original `RawCMLdata.zip` and `IDRawCMLdata.zip` archives are not
 redistributed in this repository because of their size. They can be obtained
@@ -34,10 +34,10 @@ from the cited 4TU.ResearchData record. This repository includes only the
 processed `unique_links.jsonl` and `LIST-OF-LINKS.jsonl` extracts containing
 selected link geometry, length, and frequency fields.
 
-## EURADCLIM / OPERA radar-derived precipitation data
+## EURADCLIM radar-derived precipitation data
 
-- **Source**: EURADCLIM / KNMI radar-derived precipitation fields used by `Patch-Generator/` and `Compute-Link-Attenuations/`.
-- **Creator(s)**: Overeem, Aart; Leijnse, Hidde; van den Besselaar, Else; van der Schrier, Gerard; Meirink, Jan Fokke.
+- **Source**: EURADCLIM radar-derived precipitation fields used by `Patch-Generator/` and `Compute-Link-Attenuations/`.
+- **Creator(s)**: Overeem, Aart; van den Besselaar, Else; van der Schrier, Gerard; Meirink, Jan Fokke; van der Plas, Emiel; Leijnse, Hidde.
 - **Title**: *EURADCLIM: The European climatological gauge-adjusted radar precipitation dataset (1-h accumulations)*.
 - **Version**: 3.0.
 - **Repository**: KNMI Radar Team / Royal Netherlands Meteorological Institute (KNMI).
@@ -45,7 +45,20 @@ selected link geometry, length, and frequency fields.
 - **License**: Creative Commons Attribution 4.0 International, <https://creativecommons.org/licenses/by/4.0/>.
 - **Required upstream attribution note**: Based on EUMETNET/OPERA radar data and ECA&D rain-gauge data.
 
-This repository includes the hourly EURADCLIM/OPERA HDF5 rainfall files used
+### Acknowledgement and reference
+
+We acknowledge the EURADCLIM dataset, the data providers in the ECA&D
+project (<https://www.ecad.eu>), and the National Meteorological and
+Hydrological Services that provided radar data to the EUMETNET (European
+Meteorological Network) program OPERA (Operational Program on the Exchange of
+Weather Radar Information).
+
+Overeem, A., van den Besselaar, E., van der Schrier, G., Meirink, J. F., van
+der Plas, E., and Leijnse, H.: *EURADCLIM: The European climatological
+high-resolution gauge-adjusted radar precipitation dataset*, Earth Syst. Sci.
+Data, 15, 1441–1464, <https://doi.org/10.5194/essd-15-1441-2023>, 2023.
+
+This repository includes the hourly EURADCLIM HDF5 rainfall files used
 by the benchmark under `Patch-Generator/backend/data/raw/`. Those redistributed
 source files remain subject to the upstream CC BY 4.0 license and attribution
 requirements, including acknowledgement that the data are based on
