@@ -12,6 +12,8 @@ Review the thesis as a skeptical academic editor while preserving its technical 
 - Default to a read-only report. Edit `.tex` or `.bib` files only when the user explicitly asks for edits.
 - Never invent a source, citation key, bibliographic field, quotation, page number, result, or verification status.
 - Keep citation attribution unambiguous. When a sentence contrasts papers, methods, or findings, attach each citation directly to the clause it supports rather than collecting unlike sources in one citation group.
+- Place each citation immediately after the smallest claim it verifies. A citation must support that claim at its stated scope and must not be positioned so that it appears to support neighboring definitions, mechanisms, comparisons, or consequences that were not verified from the source.
+- Do not imply that a source introduced, originated, or established a method merely because it applied or evaluated that method. Distinguish foundational sources from later applications in both the wording and citation placement.
 - Do not silently strengthen a claim. Preserve distinctions between observation, inference, assumption, hypothesis, and proposed future work.
 - Preserve LaTeX commands, labels, citations, equations, units, and established terminology unless a requested correction requires changing them.
 - Treat the radar-derived benchmark as controlled and synthetic where the thesis does; do not imply operational validation.

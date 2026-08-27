@@ -62,10 +62,10 @@ Do not store whole chapters here. Prefer short representative excerpts and do no
 ## End background with the thesis question
 
 - Context: the background ended with a broad survey of current CML research directions before returning to the thesis's reconstruction question.
-- Proposed wording: remove the broad survey and close concisely on the methodological choice between optimization-based reconstruction and interpolation-based map construction.
-- Outcome: accepted and finalized.
-- Author feedback: the earlier concise paragraph was already strong and aligned more directly with the thesis.
-- Reusable preference: close background sections by synthesizing the literature into the thesis's specific research question rather than introducing loosely related current directions.
+- Proposed wording: remove the broad survey and close concisely by asking whether optimization-based reconstruction can improve upon IDW.
+- Outcome: accepted in refined form and incorporated into the staged background revision.
+- Author feedback: the earlier concise paragraph was already strong and aligned more directly with the thesis; naming IDW was preferred over the broader ``interpolation-based map construction,'' while repeating ``midpoint-based'' was unnecessary after its earlier definition.
+- Reusable preference: close background sections by synthesizing the literature into the thesis's specific research question and name the evaluated baseline when a broader method-class label would overstate the experimental scope.
 
 ## Distinguish literature context from evaluated baselines
 
@@ -83,6 +83,14 @@ Do not store whole chapters here. Prefer short representative excerpts and do no
 - Author feedback: grouping the unlike sources made it difficult to tell which paper supported which method.
 - Reusable preference: when a sentence contrasts different methods or studies, attach each citation to its corresponding clause instead of grouping all sources at the end.
 
+## Limit each citation to its verified claim
+
+- Context: citations supporting the established use of IDW and ordinary kriging in rainfall interpolation appeared after sentences that also explained how the methods assign their weights.
+- Proposed wording: place each citation immediately after the established-use claim, and present the uncited methodological explanation separately unless that explanation has also been verified from the source.
+- Outcome: accepted and requested as an explicit thesis-review rule.
+- Author feedback: a citation should always support the claim to which it is attached and should not appear to support more than the source establishes.
+- Reusable preference: attach a citation to the smallest verified claim and separate adjacent definitions, mechanisms, comparisons, or consequences when their support differs.
+
 ## Organize related work around historical claims
 
 - Context: the CML background followed the correct chronology but began to read as a sequence of equally weighted paper summaries after the rain-gauge and radar introduction.
@@ -90,3 +98,35 @@ Do not store whole chapters here. Prefer short representative excerpts and do no
 - Outcome: accepted as the direction for the next staged revision.
 - Author feedback: the diagnosis and proposed narrative spine were liked and should be retained in the review skill.
 - Reusable preference: in historical related work, make each paragraph advance one interpretive claim and use individual papers as evidence for that claim; compress side details that do not move the thesis-specific narrative forward.
+
+## Complete a methodological contrast before positioning the thesis
+
+- Context: the interpolation paragraph ended by announcing the thesis baseline, after which the next paragraph resumed the earlier contrast with the abstract opening ``Inverse approaches instead retain the complete link paths.''
+- Proposed wording: finish the interpolation discussion, introduce the alternative concretely as reconstructing a field directly from link attenuations rather than reducing links to points, and move the thesis baseline choice into the subsequent thesis-positioning paragraph.
+- Outcome: the original transition was rejected as confusing and awkward; the clearer transition was staged for review.
+- Author feedback: a new methodological category should connect naturally to the immediately preceding paragraph and should not begin with unexplained compressed terminology.
+- Reusable preference: complete comparisons between method families before shifting to the thesis's choices, and introduce an unfamiliar method family through its concrete operation before applying an abstract label.
+
+## Name all promised categories before discussing their members
+
+- Context: a paragraph announced two broad reconstruction strategies and then immediately discussed IDW and ordinary kriging, both of which belong to the interpolation strategy; the second strategy appeared only in the following paragraph.
+- Proposed wording: name both strategies in the opening sentence before explaining IDW and ordinary kriging as methods within the first strategy.
+- Outcome: the original signposting was rejected as misleading; the explicit two-part preview was staged for review.
+- Author feedback: when prose promises two strategies, the reader should not be left to mistake the first two algorithms mentioned for those strategies.
+- Reusable preference: when announcing a fixed number of categories, identify every category before introducing subtypes or examples within the first category.
+
+## Distinguish method origins from later applications
+
+- Context: an appositive described IDW as an established rainfall-interpolation method and cited Ahrens (2006), whose paper applies IDW to rain-gauge data rather than introducing the method.
+- Proposed wording: ``IDW assigns greater influence to nearby observations and has been applied to spatial rainfall interpolation (Ahrens, 2006).''
+- Outcome: accepted and incorporated into the staged background revision; the broader attribution rule was also added to the thesis-review skill.
+- Author feedback: citation wording and placement must not make a later application paper appear to have introduced or established a method.
+- Reusable preference: distinguish foundational contributions from later uses; state whether a source introduced, adapted, applied, compared, or evaluated a method according to what it actually did.
+
+## Do not force a binary taxonomy onto related reconstruction methods
+
+- Context: the reconstruction discussion divided interpolation-based mapping and forward-model-based optimization into two broad strategies, then positioned the thesis as following the second strategy.
+- Proposed framing: present the methods sequentially within the same reconstruction problem, describing their concrete modeling choices without first announcing a distinction between method families.
+- Outcome: both the binary ``first strategy/second strategy'' framing and an explicit replacement distinction between two approaches were rejected as unnecessary; the sequential framing was accepted and incorporated into the staged background revision.
+- Author feedback: interpolation also starts from link attenuation and reconstructs a rainfall field, so the discussion should move directly from interpolation methods to forward-model-based work without imposing a taxonomy.
+- Reusable preference: when methods solve the same underlying problem through different approximations or representations, compare the concrete modeling choices without overstating them as mutually distinct strategies.
