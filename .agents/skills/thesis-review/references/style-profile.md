@@ -34,6 +34,7 @@ Inferred on 2026-08-26 from representative prose in `Latex/main.tex`, including 
 ## Editing preferences inferred from the draft
 
 - Prefer direct explanation over ornamental phrasing, rhetorical questions, or dramatic framing.
+- Prefer sentences that are clear on the first reading and easy to understand. In background and related-work summaries, state the thesis-relevant methodological idea directly and introduce specialized terms only when they advance the argument.
 - Avoid vague intensifiers (`very`, `clearly`, `significantly`) unless they have a defined statistical or technical meaning.
 - Avoid generic AI-style conclusions such as `This highlights the importance of...` when the specific implication can be stated.
 - Avoid converting clear verbs into unnecessary nominalizations.
