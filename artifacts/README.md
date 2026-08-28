@@ -1,5 +1,18 @@
 # Artifact catalog
 
+This directory contains metadata for the large input datasets, benchmark
+inputs, solver outputs, and generated reports used by the thesis. The actual
+multi-gigabyte files remain in the component directories recorded in the
+catalog; they are not duplicated here.
+
+## Contents
+
+- `catalog.json` lists each artifact bundle, its repository path, size, license
+  scope, manifest, and optional external archive URL.
+- `manifests/` contains per-file sizes and SHA-256 digests for verifying the
+  corresponding artifact directories.
+- `README.md` is this overview.
+
 [`catalog.json`](catalog.json) records each large artifact bundle, its current
 repository path, license scope, exact manifest, and eventual immutable archive
 URL. The SHA-256 manifests in `manifests/` describe the repository state before
