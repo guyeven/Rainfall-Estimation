@@ -1,0 +1,63 @@
+{
+  "patches": 100,
+  "seed": 20260913,
+  "samples_per_patch": 4096,
+  "tolerance_m": 1e-06,
+  "totals": {
+    "records": 132420,
+    "distinct_paths": 73091,
+    "reversed_pairs": 59329,
+    "singleton_paths": 13762,
+    "sampled_pixels": 409600,
+    "d3_equals_distinct_d2": 392673,
+    "d3_equals_distinct_d3": 65311,
+    "nearest_two_both_singletons": 17941
+  },
+  "per_patch_d2_equality_fraction_range": [
+    0.93408203125,
+    0.973876953125
+  ],
+  "counterexamples": [
+    {
+      "patch": "est_input_RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301180600_patch000.json",
+      "row": 25,
+      "col": 227,
+      "record_d3_m": 453.72692854724727,
+      "distinct_d2_m": 137.366838867067,
+      "distinct_d3_m": 453.72692854724727
+    },
+    {
+      "patch": "est_input_RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301180600_patch000.json",
+      "row": 445,
+      "col": 278,
+      "record_d3_m": 6549.374147361039,
+      "distinct_d2_m": 5113.35690378808,
+      "distinct_d3_m": 6549.374147361039
+    },
+    {
+      "patch": "est_input_RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301180600_patch000.json",
+      "row": 462,
+      "col": 296,
+      "record_d3_m": 8404.172384692307,
+      "distinct_d2_m": 5466.383504759333,
+      "distinct_d3_m": 8404.172384692307
+    },
+    {
+      "patch": "est_input_RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301180600_patch000.json",
+      "row": 24,
+      "col": 226,
+      "record_d3_m": 548.114568112793,
+      "distinct_d2_m": 311.8213953782692,
+      "distinct_d3_m": 548.114568112793
+    },
+    {
+      "patch": "est_input_RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301180600_patch000.json",
+      "row": 458,
+      "col": 267,
+      "record_d3_m": 8062.23744782035,
+      "distinct_d2_m": 6383.562352482077,
+      "distinct_d3_m": 8062.23744782035
+    }
+  ],
+  "method": "Exact unordered endpoint grouping; exhaustive point-to-segment distances at uniformly sampled pixel centers. This checks mathematical distances, not the production KD-tree candidate approximation."
+}

@@ -1,0 +1,9 @@
+\begin{tabular}{lrrlp{5.0cm}}\toprule
+Method & Success flag & Median iter. & Range & Recorded stop reasons \\ \midrule
+IDW & Direct baseline & --- & --- & --- \\
+ILDW & Direct baseline & --- & --- & --- \\
+Solver(ILDW) light & 100 / 100 & 632 & 3--1198 & ftol: 100 \\
+Solver(ILDW) none & 100 / 100 & 584 & 3--1052 & ftol: 100 \\
+Convex light & 100 / 100 & 913 & 387--1557 & ftol: 99, gtol: 1 \\
+Convex none & 100 / 100 & 900 & 382--1505 & ftol: 98, gtol: 2 \\
+\bottomrule\end{tabular}

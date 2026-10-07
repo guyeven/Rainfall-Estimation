@@ -1,0 +1,52 @@
+{
+  "generated_at_utc": "2026-09-25T07:55:24.727124+00:00",
+  "solver_name": "roy_dct_ildw_outer300",
+  "solver_label": "Roy DCT (ILDW init, 300 outer cap)",
+  "timing_scope": "End-to-end wall time includes input loading, initialization, optimization, diagnostics, and output writing.",
+  "hardware_note": "",
+  "system": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "processor": "arm",
+    "python": "3.14.3",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1"
+  },
+  "configuration": {
+    "config_file": "/Users/isoto/Projects/Rainfall-Estimation/Compute-Link-Attenuations/HundredPatches/pipeline/batch_solve_roy_dct_ildw_outer300.yaml",
+    "solver_config_sha256": "4b335a7b868e4deb8457187829de2fc584e1bacb8f7cd3b661e95398f885cc32",
+    "solver_workers": 1,
+    "patch_workers": 1
+  },
+  "patches": {
+    "expected": 100,
+    "recorded": 100,
+    "completed": 100,
+    "failed": 0,
+    "optimizer_converged": 52
+  },
+  "end_to_end_seconds": {
+    "count": 100,
+    "mean": 438.48781191130985,
+    "sample_std": 318.99339513405596,
+    "median": 338.2450759795029,
+    "q1": 229.54927768748894,
+    "q3": 512.9031653130005,
+    "iqr": 283.35388762551156,
+    "min": 76.28062954099732,
+    "max": 1576.4552094999817,
+    "total": 43848.781191130984
+  },
+  "optimizer_seconds": {
+    "count": 100,
+    "mean": 418.09030357754176,
+    "sample_std": 315.3052932640339,
+    "median": 318.84728983350215,
+    "q1": 211.2174409797517,
+    "q3": 491.35187808324554,
+    "iqr": 280.13443710349384,
+    "min": 64.89744491700549,
+    "max": 1547.868763165985,
+    "total": 41809.03035775418
+  }
+}

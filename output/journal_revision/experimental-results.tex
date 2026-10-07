@@ -1,0 +1,218 @@
+\section{Experimental Results}
+We executed the three inverse solvers: IDW, ILDW, and the nonlinear optimization on $100$ rain-events patches in the benchmark.
+We report the results of these solvers in this section. 
+
+\subsection{Notation}
+For a patch $P$ and solver $s$, let
+$R_P(p)$ denote the ground-truth for pixel $p$. 
+
+where
+\[
+\overline{\widehat{R}}_{P,s}\triangleq \frac{1}{|P|}\sum_{p\in P}\widehat{R}_{P,s}(p),
+\qquad
+\overline{R}_P\triangleq \frac{1}{|P|}\sum_{p\in P}R_P(p).
+\]
+
+\subsection{RMSE, Bias, and Pearson Correlation}
+For a patch $P$ and solver $s$, we  compute three values: the root mean squared error
+\[
+\mathrm{RMSE}_{P,s}\triangleq
+\sqrt{\frac{1}{|P|}\sum_{p\in P}\bigl(\widehat{R}_{P,s}(p)-R_P(p)\bigr)^2},
+\]
+the signed bias
+\[
+\mathrm{Bias}_{P,s}\triangleq
+\frac{1}{|P|}\sum_{p\in P}\bigl(\widehat{R}_{P,s}(p)-R_P(p)\bigr),
+\]
+and the Pearson correlation coefficient
+\[
+r_{P,s}\triangleq
+\frac{\sum_{p\in P}\bigl(\widehat{R}_{P,s}(p)-\overline{\widehat{R}}_{P,s}\bigr)\bigl(R_P(p)-\overline{R}_P\bigr)}
+{\sqrt{\sum_{p\in P}\bigl(\widehat{R}_{P,s}(p)-\overline{\widehat{R}}_{P,s}\bigr)^2}\,
+\sqrt{\sum_{p\in P}\bigl(R_P(p)-\overline{R}_P\bigr)^2}},
+\]
+
+RMSE measures overall magnitude error. Bias measures average signed error, and correlation measures how well the spatial structure of the field is reproduced independently of scale and offset.
+
+\begin{table}[!htbp]
+  \centering
+  \begin{tabular}{lccc}
+    \toprule
+    Solver & RMSE & Bias & Correlation \\
+    \midrule
+    IDW & $1.307 \pm 1.234$ & $0.034 \pm 0.296$ & $0.866 \pm 0.059$ \\
+    ILDW & $1.239 \pm 1.182$ & $0.047 \pm 0.261$ & $0.878 \pm 0.055$ \\
+    Nonlinear optimizer & $1.196 \pm 1.179$ & $-0.186 \pm 0.335$ & $0.901 \pm 0.055$ \\
+    \bottomrule
+  \end{tabular}
+  \caption{Patch-level summary of three global map metrics across the 100 evaluated patches. Each entry reports mean $\pm$ standard deviation across patches. Here RMSE and Bias are computed in the same rainfall units as $R_P$ and $\widehat{R}_{P,s}$, while Correlation is the Pearson correlation coefficient between the predicted and ground-truth rainfall fields within each patch.}
+  \label{tab:patch_map_metrics}
+\end{table}
+
+Overall, these global metrics suggest that the nonlinear optimizer gives the best patch-scale pattern agreement and the lowest mean RMSE, although it also exhibits a more negative bias.
+
+\subsubsection{Link-Consistency Objective ($J_{\mathrm{atten}}$)}
+\begin{table}[!htbp]
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    Solver & Mean $J_{\mathrm{atten}}$ (dB$^2$/km) & SD \\
+    \midrule
+    IDW & 0.01522 & 0.03808 \\
+    ILDW & 0.00289 & 0.00757 \\
+    Nonlinear Optimizer & 0.00020 & 0.00103 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Patch-level summary of $J_{\mathrm{atten}}$ across the 100 evaluated patches. For a given patch and solver $s$, $J_{\mathrm{atten}}$ is the attenuation-fit term $\frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left(\hat{A}_{\ell,s} - A_\ell^{\mathrm{obs}}\right)^2}{|\ell|}$, where $\hat{A}_{\ell,s}$ is the attenuation implied on link $\ell$ by the rainfall field estimated by solver $s$, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. Lower values indicate better agreement with the observed link attenuations.}
+\end{table}
+
+\subsubsection{Absolute Attenuation Error per Kilometer}
+\begin{table}[!htbp]
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    Solver & Mean (dB/km) & SD \\
+    \midrule
+    IDW & 0.05034 & 0.03413 \\
+    ILDW & 0.01356 & 0.00948 \\
+    Nonlinear Optimizer & 0.00230 & 0.00437 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Patch-level summary of the mean absolute attenuation error per kilometer. For a given patch and solver $s$, we compute $\frac{1}{N_{\mathrm{links}}}\sum_{\ell \in \mathrm{links}} \frac{\left|\hat{A}_{\ell,s} - A_\ell^{\mathrm{obs}}\right|}{|\ell|}$, where $\hat{A}_{\ell,s}$ is the attenuation implied on link $\ell$ by the rainfall field estimated by solver $s$, $A_\ell^{\mathrm{obs}}$ is the observed attenuation, and $|\ell|$ is the link length in kilometers. Lower values indicate better agreement with the observed link attenuations.}
+\end{table}
+
+Together, these attenuation-based summaries show that the nonlinear optimizer most consistently matches the measured link attenuations under the same forward model.
+
+\subsection{Distance-Conditioned Error Analysis}
+We next ask how prediction quality varies with link proximity and how well the predicted rainfall fields explain the observed link measurements. To answer these questions, we first group pixels into distance bins according to their distance to the third-closest link and summarize patch-level error statistics within each bin. We first examine rainy pixels through relative absolute error and then examine non-rainy pixels through absolute error.
+
+\subsubsection{Rainy Pixel Relative Absolute Error vs. Link Distance}
+For a patch $P$, let $R_P : P \to \mathbb{R}_{\ge 0}$ be the ground-truth rainfall field, and let $\widehat{R}_{P,s} : P \to \mathbb{R}_{\ge 0}$ be the rainfall field predicted by solver $s$. We define a pixel $p$ to be rainy if $R_P(p) \ge 0.6$ mm/h, and we write
+\[
+P_{\mathrm{rain}}=\{p \in P : R_P(p)\ge 0.6\}.
+\]
+For a rainy pixel $p$, the relative absolute error with respect to solver $s$ is
+\[
+\mathrm{RAE}_{P,s}(p)\triangleq\frac{|R_P(p)-\widehat{R}_{P,s}(p)|}{R_P(p)}.
+\]
+To study how prediction quality changes with link proximity, we group pixels by distance to the third-closest link. For a pixel $p\in P$, let $c(p)\in\mathbb{R}^2$ denote the center of pixel $p$. For a link $\ell\in\mathcal{L}(P)$, viewed geometrically as a line segment, let
+\[
+\operatorname{dist}(p,\ell)\triangleq \operatorname{dist}\bigl(c(p),\ell\bigr)
+\]
+denote the Euclidean distance from the pixel center to that link segment. If the links in patch $P$ are written as $\ell_1,\dots,\ell_{|\mathcal{L}(P)|}$, we define
+\[
+d_3(p)\triangleq \text{the third-order statistic of } \bigl\{\operatorname{dist}(p,\ell_j)\bigr\}_{j=1}^{|\mathcal{L}(P)|},
+\]
+that is, the distance from the center of pixel $p$ to its third-closest link segment.
+
+For each index $i$, let $b_{i-1}$ and $b_i$ denote the lower and upper distance cutoffs of the $i$th bin, and write $B_i=(b_{i-1},b_i]$. A pixel $p$ belongs to bin $B_i$ exactly when $d_3(p)\in B_i$.
+
+For each patch $P$, solver $s$, and distance bin $B_i$, we then collect the rainy-pixel RAE values in that bin and summarize them by the patch-level median
+\[
+m_{s,i}^{\mathrm{rain}}(P)\triangleq
+\operatorname{median}\bigl\{\mathrm{RAE}_{P,s}(p): p\in P_{\mathrm{rain}},\ d_3(p)\in B_i\bigr\}.
+\]
+
+In Figure~\ref{fig:rae_distance}, these patch-level medians are compared across the full benchmark collection of 100 patches. The displayed distance bins are $[0,125]$ m, $(125,375]$ m, $(375,750]$ m, $(750,1500]$ m, $(1500,3125]$ m, and $(3125,6000]$ m, with the sparsely populated tail beyond 6000 m merged into the last displayed bin. For fixed solver $s$ and distance bin $B_i$, let
+\[
+\mu_{s,i}^{\mathrm{rain}} \triangleq \{m_{s,i}^{\mathrm{rain}}(P)\}_{P\in\mathcal{P}}
+\]
+denote the sequence of patch-level rainy-pixel median RAE values across patches. Each box-and-whisker then summarizes this sequence.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{\distanceboxplot}
+  \caption{Rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median rainy-pixel relative absolute error value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. The corresponding rainy-pixel counts per bin are reported in Table~\ref{tab:rainy_counts}.}
+  \label{fig:rae_distance}
+\end{figure}
+
+
+
+\subsubsection{Non-Rainy Pixel Absolute Error vs. Link Distance}
+For the dry-pixel analysis, we focus on pixels whose ground-truth rainfall falls below the wet threshold. We therefore define the non-rainy pixel set by
+\[
+P_{\mathrm{nonrain}}=\{p \in P : R_P(p)<0.6\}.
+\]
+For these pixels, relative normalization by $R_P(p)$ is not appropriate because the denominator may be zero or very small. We therefore measure prediction quality by absolute error rather than relative absolute error:
+\[
+\mathrm{AE}_{P,s}(p)=|R_P(p)-\widehat{R}_{P,s}(p)|.
+\]
+Using the same definition of the third-closest-link distance $d_3(p)$ introduced above, and the same distance bins $B_i$ as in the rainy-pixel analysis, we compute for each patch $P$, solver $s$, and distance bin $B_i$
+\[
+m_{s,i}^{\mathrm{nonrain}}(P)\triangleq
+\operatorname{median}\bigl\{\mathrm{AE}_{P,s}(p): p\in P_{\mathrm{nonrain}},\ d_3(p)\in B_i\bigr\},
+\]
+and, for fixed $s$ and $i$, the corresponding box-and-whisker plot summarizes the sequence
+\[
+\mu_{s,i}^{\mathrm{nonrain}}\triangleq \{m_{s,i}^{\mathrm{nonrain}}(P)\}_{P\in\mathcal{P}}
+\]
+of patch-level non-rainy-pixel median AE values across patches.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{\nonrainydistanceboxplot}
+  \caption{Non-rainy-pixel distance-profile box-and-whisker summary for distance to the third closest link. Each patch contributes one median non-rainy-pixel absolute error value per distance bin, and these patch-level medians are then summarized across patches with a box-and-whisker plot. The corresponding non-rainy-pixel counts per bin are reported in Table~\ref{tab:nonrain_counts}.}
+  \label{fig:ae_distance}
+\end{figure}
+
+
+
+Across distance bins, the differences between methods become more pronounced as pixels lie farther from nearby links, which motivates the distance-bin map shown next.
+
+
+\subsubsection{Confusion Matrix}
+\begin{table}[!htbp]
+  \centering
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \textbf{IDW}
+
+    \vspace{0.35em}
+    \scriptsize
+    \begin{tabular}{lcc}
+      \toprule
+       & \multicolumn{2}{c}{Prediction} \\
+      GT & Wet & Dry \\
+      \midrule
+      Wet & $0.893 \pm 0.013$ & $0.002 \pm 0.000$ \\
+      Dry & $0.040 \pm 0.004$ & $0.065 \pm 0.010$ \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \textbf{ILDW}
+
+    \vspace{0.35em}
+    \scriptsize
+    \begin{tabular}{lcc}
+      \toprule
+       & \multicolumn{2}{c}{Prediction} \\
+      GT & Wet & Dry \\
+      \midrule
+      Wet & $0.892 \pm 0.013$ & $0.003 \pm 0.000$ \\
+      Dry & $0.037 \pm 0.004$ & $0.068 \pm 0.010$ \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \textbf{Nonlinear Optimizer}
+
+    \vspace{0.35em}
+    \scriptsize
+    \begin{tabular}{lcc}
+      \toprule
+       & \multicolumn{2}{c}{Prediction} \\
+      GT & Wet & Dry \\
+      \midrule
+      Wet & $0.890 \pm 0.013$ & $0.005 \pm 0.001$ \\
+      Dry & $0.030 \pm 0.004$ & $0.075 \pm 0.010$ \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \caption{Patch-averaged wet/dry confusion matrices for IDW, ILDW, and the nonlinear optimizer at a threshold of $0.6$ mm/h, where a pixel is called wet if its rainfall is at least $0.6$ mm/h and dry otherwise. For each patch, pixels are first assigned to the four confusion categories defined by the ground-truth and predicted wet/dry labels, and the count in each category is divided by the total number of pixels in that patch. The table entries report the mean of those patch-level fractions across the 100 evaluated patches, together with the standard error of the mean.}
+  \label{tab:confusion_matrices}
+\end{table}

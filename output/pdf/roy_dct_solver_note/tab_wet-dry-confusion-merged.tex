@@ -1,0 +1,18 @@
+\begin{table}[H]
+\centering\small
+\begin{tabular}{lrrrr}
+\toprule
+Method & FP/all (\%) & FN/all (\%) & FP/dry (\%) & FN/wet (\%) \\
+\midrule
+IDW & 3.96 & 0.24 & 59.83 & 0.32 \\
+ILDW & 3.70 & 0.29 & 56.24 & 0.38 \\
+Solver(ILDW) & 3.24 & 0.31 & 46.30 & 0.41 \\
+Solver(GT) & 1.14 & 0.21 & 33.05 & 0.26 \\
+Convex solver & 2.28 & 0.38 & 40.02 & 0.50 \\
+Homotopy solver & 2.28 & 0.38 & 40.07 & 0.50 \\
+Roy DCT (limited) & 4.85 & 34.91 & 48.16 & 39.12 \\
+\bottomrule
+\end{tabular}
+\caption{Mean patchwise wet/dry error rates at 0.6 mm/h. False positive: predicted wet, observed dry; false negative: predicted dry, observed wet. Conditional rates use their respective ground-truth classes.}
+\label{tab:wet-dry-confusion-merged}
+\end{table}

@@ -1,0 +1,27 @@
+# GMZ-style adaptation: per-link ITU normalization, then discretized IDW.
+input:
+  est_dir: "../est_dir"
+  file_pattern: "est_input_*.json"
+  recursive: false
+parallel:
+  solver_workers: 1
+  patch_workers: 1
+timing:
+  enabled: true
+  out_dir: "timing/gmz"
+  resume: true
+solvers:
+  gmz_itu:
+    name: "gmz_itu"
+    label: "GMZ (ITU adaptation)"
+    type: "custom"
+    module: "cml_attenuation.solvers.solve_rain_gmz"
+    out_dir: "solutions/sol_dir_gmz_itu"
+    gmz:
+      segment_length_m: 125.0
+      r_max_m: 15000.0
+      power: 2.0
+      maxiter: 300
+      damping: 0.5
+      rtol: 1.0e-5
+      atol: 1.0e-6

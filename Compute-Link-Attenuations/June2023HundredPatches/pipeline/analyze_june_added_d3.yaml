@@ -1,0 +1,51 @@
+# Reduced analysis for the added June methods, third-closest-link diagnostics only.
+input:
+  gt_dir: "../gt_dir"
+  gt_prefix: "gt"
+  est_input_dir: "../est_dir"
+  solvers:
+    solver_ildw_timing:
+      name: "solver_ildw_timing"
+      label: "Solver(ILDW) light shrinkage"
+      sol_dir: "solutions/sol_dir_solver_ildw_timing"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+    solver_ildw_no_shrinkage:
+      name: "solver_ildw_no_shrinkage"
+      label: "Solver(ILDW) no shrinkage"
+      sol_dir: "solutions/sol_dir_solver_ildw_no_shrinkage"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+    roy_dct_ildw_outer50:
+      name: "roy_dct_ildw_outer50"
+      label: "ILDW-init Roy DCT"
+      sol_dir: "solutions/sol_dir_roy_dct_ildw_outer50"
+      sol_prefix: "est"
+      sol_key_preference: ["R_hat"]
+data:
+  gt_key_preference: ["R_gt", "rain", "gt"]
+  allow_shape_mismatch: false
+rain:
+  threshold_mmph: 0.6
+coverage:
+  enabled: true
+  bins: [0, 1, 2, 3, 4, "5+"]
+distance:
+  bin_edges_m: [125, 375, 750, 1500, 3125, 6000, 9000]
+  k_values: [3]
+  method: sampled_points
+  sample_spacing_m: 250.0
+  k_query_samples: 100
+  chunk_size: 8000
+  max_samples_per_link: 200
+jatten_link_distance:
+  bin_edges_m: [125, 375, 750, 1500, 3125, 6000, 9000]
+  k_values: [3]
+plots:
+  skip_patch_plots: true
+  enable_rae_histograms: false
+  prune_bins_enabled: true
+output:
+  out_dir: "batch_analyze_output_june_added_d3"
+  images_subdir: "images"
+  excel_filename: "stats.xlsx"

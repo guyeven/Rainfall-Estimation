@@ -1,0 +1,310 @@
+\documentclass[12pt]{article}
+\usepackage{amsmath, amssymb}
+\usepackage{xcolor}
+\usepackage{xspace}
+
+% Define a macro for inline author notes
+\newcommand{\guy}[1]{\textcolor{red}{[guy: #1]}}
+\newcommand{\rex}[1]{\textcolor{blue}{[rex: #1]}}
+
+% 
+\newcommand{\alg}{\ensuremath{\textsf{Alg}}\xspace}
+\newcommand{\params}{\ensuremath{\Theta}\xspace}
+\newcommand{\measurements}{\ensuremath{\mathbf{X}}\xspace}
+\begin{document}
+
+\title{Notation and Problem Setup for Rainfall Map Estimation}
+\author{Guy Even, Andreas Karrenbauer, Rex Lei,\\ Jonatan Ostrometzky, Christian Sohler}
+\date{\today}
+\maketitle
+\section*{Christian Text}
+Let $G = (P,E)$  be a weighted graph where each vertex $p\in P$ has a 
+geometric location in $\mathbb{R}^2$. Our goal will be to assign to each vertex a 
+precipitation estimation. Edges model the constraint that neighboring 
+points should have similar precipitation amount. We can assign edge 
+weights to control the strength of this constraint.
+The most simple case is that the graph is a grid and all edge weights 
+are 1. However, if the terrain is more complex (for example in the 
+mountains) the graph may look differently.
+
+Optimization problem:
+We use the idea of replacing each link by a single vertex. Let L be 
+the set of link vertices and for $p\in L$ let $m(p)$ be the measured 
+precipitation at $p$. Then the problem is to find a value $r(p)$ for each 
+$p \in P$ that minimizes
+\begin{align}
+    \text{Minimize}  \sum_{(p,q) \in E} \lambda w(p,q) ||r(p)-r(q)||² + 
+\sum_{p\in L} ||r(p)-m(p)||²
+\end{align}
+Where $\lambda$ is a regularizer (we may just put it into the weights).
+
+Prediction in between the vertices can be done as previously by interpolation.
+
+Discreziting links:
+We could discretize each link $\ell \in L$ into a set of vertices 
+$V(\ell)$ and then minimize
+\begin{align}
+\sum_{(p,q) \in E} \lambda w(p,q) ||r(p)-r(q)||^2 + \sum_{\ell\in L}   \
+||\sum_{q\in V(\ell)}r(p) - m(p)||^2
+\end{align}
+\rex{I think the right term in the above equation shouldn't have the 3rd summation right? It appears in Christian's email, but I don't see why we should sum over another q variable (in the norm)}
+
+
+\rex{Also, I believe that email had norms squared, and I'm not sure if the omission of the squares here is intentional. }
+
+
+
+Thus, we can approximate the integral.
+%%%%%%
+\section*{Setting}
+We focus first on a static (snapshot) setting in which all measurements are simultaneous.
+\section*{Notation}
+
+\begin{itemize}
+    \item The region of interest is a rectangular area divided into a regular grid of square pixels.
+    \item The pixel in the $i$-th row and $j$-th column is denoted by $(i,j)$.
+    \item $p_{i,j}$: rain rate (in mm/hour) within pixel $(i,j)$.
+    \item $L_\ell$: the $\ell$-th communication link, represented by a line segment between endpoints $a_\ell$ and $b_\ell$ in the plane.
+    \item $\alpha_\ell$: measured signal attenuation (in dB per pixel side length) due to rainfall along link $L_\ell$.
+    \item $f_\ell(\cdot)$: known invertible function mapping attenuation $\alpha_\ell$ to an estimated average rain rate along link $L_\ell$.
+    \item $g_m$: location of the $m$-th rain gauge in the plane.
+    \item $y_m$: rain rate (in mm/hour) measured by the $m$-th rain gauge.
+    \item \guy{missing RADAR}
+\end{itemize}
+
+\section*{Inputs}
+
+\begin{itemize}
+    \item Set of link measurements: $\{(a_\ell, b_\ell, \alpha_\ell)\}_{\ell=1}^L$.
+    \item Set of rain gauge measurements: $\{(g_m, y_m)\}_{m=1}^G$.
+    \item Link--rain function family: $\{f_\ell(\cdot)\}_{\ell=1}^L$.
+\end{itemize}
+
+\section*{Variables}
+
+\begin{itemize}
+    \item $
+    \hat\alpha_{i,j}$: attenuation rate due to rainfall to be estimated in each pixel of the grid.
+    \item $p_{i,j} \ge 0$: rain rate to be estimated in each pixel of the grid.
+\end{itemize}
+
+\section{Cost Functions}
+
+\subsection{Discussion}
+
+\begin{enumerate}
+    \item Norm. Which norm should be used? the options are $\ell_1$, $\ell_2$, and a mixture (Huber-TV).
+    
+    \item Variables for rain rate $p$ or $\log (p+\varepsilon)$?
+    
+    \item Attenuation vs. Rain-Rate. One can define two types of cost functions. It seems that we can transform an attenuation map to a rainfall map. This question is related to the issue of using variables $p$ or $\log (p+\varepsilon)$
+
+\end{enumerate}
+
+\subsection{Attenuation Map}
+\newcommand{\halpha}{\hat{\alpha}}
+
+Let $\alpha_{i,j}$ denote the (ground truth) attenuation (per pixel side) due to rain in pixel $(i,j)$. 
+Let $\halpha_{i,j}$ denote the estimated attenuation due to rain in pixel $(i,j)$. 
+
+
+\paragraph{Link-based cost function.}
+Define $W_{\ell,(i,j)}$ as the length of link $L_{\ell}$ that lies inside pixel $(i,j)$.
+The total attenuation along link $L_{\ell}$ is estimated by
+\[
+\halpha_{\ell} \triangleq \sum_{(i,j)} W_{\ell,(i,j)} \, \halpha_{i,j}.
+\]
+The link-based cost function is then defined by 
+\[
+J_{\text{links}}(p)
+= \sum_{\ell}
+\left(
+\halpha_{\ell}
+- \alpha_{\ell}
+\right)^{2}.
+\]
+
+\paragraph{Gauge-based cost function.}
+Each rain gauge located at position $g_m$ provides a direct measurement $y_m$ of the rain rate at that point.
+Let $\alpha(g_m)$ denote the attenuation associated with the pixel that contains the location $g_m$.
+The gauge-based cost function is defined as
+\[
+J_{\text{gauges}}(p)
+= \sum_{m}
+\left(
+\halpha(g_m) - \alpha(g_m)
+\right)^{2}.
+\]
+
+\paragraph{Spatial smoothness cost function.}
+To promote spatial consistency of the attenuation, we penalize large differences between neighboring pixels.
+Let $\mathcal{E}$ denote the set of unordered pairs of adjacent pixels in the grid.\footnote{Or maybe pixels at distance at most $k$.}
+The smoothness cost function is defined as
+\[
+J_{\text{smooth}}(p)
+= \sum_{((i,j),(i',j')) \in \mathcal{E}}
+\sigma_{(i,j),(i',j')}
+\cdot\left(
+\alpha_{(i,j)} - \hat\alpha_{(i',j')}
+\right)^{2},
+\]
+where $\sigma_{(i,j),(i',j')}$ is an empirical covariance between the pixels.\footnote{See discussion about learning the coefficients.}
+\section{Graph over Pixels}
+
+We propose to model the area of interest by a weighted graph $G=(V,E)$ with edges weights $w(e)$.
+The vertices in $V$ correspond to pixels and the edges in $E$ correspond to correlations between (neighboring) pixels. 
+
+\paragraph{Derivation of the graph.}
+First, apply triangulation to the area of interest where precipitation within each triangle is known to (almost) uniform. This stage can be precomputed based on historical data of rainfall combined with topography or preset according to the desired resolution.
+
+The graph $G$ is obtained by an exponent of the dual graph of the triangulation. Namely, each vertex is a triangle and there is an edge between two triangles if their distance is at most $k$ (i.e., two triangles are distance $1$ apart if  they share a side).
+
+\paragraph{Derivation of edge weights.} The edge weights in the spatial smoothness cost function are empirical covariances based on previous data.
+
+
+In reality, these edge weights are a property of the pixels and its not clear of the covariance approach is the best approach in our setting.
+
+Instead, we can think of the proposed algorithm (denoted by \alg) with edge weights as parameters (denoted by \params). Let $\measurements$ denote the set of measurements. If we view \alg as fixed and $\params$ as free parameters, then we would like to minimize the error of $\alg_{\params}(\mathbf{x})$, where $\mathbf{x}\in\measurements$. 
+
+\section{Combining Measurement Source}
+Apart from gauges and links, one can consider other sources of measurements such as radars and satellite images. 
+
+If an optimization procedure has multiple solutions, one may use such extra measurements. 
+
+\begin{enumerate}
+    \item Resolution. satellite image resolution is much lower than rain map.
+    \item Edge weights. Image can be used to modify edge weights.
+\end{enumerate}
+
+There is an alignment problem between radars and ground level measurements. This problem dealt with by aligning two maps obtained by each measurement system. 
+This alignment can then be used to modify the cost functions (e.g., similarity between neighboring pixels).
+
+\section{Action Items}
+\begin{enumerate}
+    \item Generate synthetic data (for initial benchmark). 
+
+\medskip
+\noindent
+Rain patterns:    \begin{itemize}
+        \item uniform rain
+        \item one Gaussian 
+        \item Gaussian mixtures
+        \item translate radar rain maps to attentuation maps.
+    \end{itemize}
+
+Link generation:
+\begin{itemize}
+    \item exponential distribution of lengths
+    \item uniform orientation
+    \item uniform placement of link center. 
+\end{itemize}
+
+Link parameters:
+\begin{itemize}
+    \item Frequency is inversely proportional to link length (quantized to preset frequency values).
+
+    \item Polarization: uniform.    
+\end{itemize}
+
+\item Run optimization.
+
+\item Evaluate optimization.
+
+Compare results with ground truth. Statics of differences per pixel (e.g., heat maps).
+\end{enumerate}
+
+\section{Inverse Optimization Problem}
+
+
+We consider the estimation of a spatial rainfall field over a two-dimensional area discretized into square pixels of fixed size (125\,m $\times$ 125\,m). Rainfall is assumed to be uniform within each pixel and constant in time. The available observations consist of path-integrated rain-induced attenuations measured along multiple microwave communication links traversing the area. Each link operates at a known frequency and polarization, from which the parameters of the ITU rain attenuation model are derived.
+
+The goal is to estimate the non-negative rainfall rate in every pixel such that the modeled link attenuations, obtained by integrating the rain-specific attenuation along each link, are consistent with the observed attenuations, while enforcing spatial smoothness of the rainfall field.
+
+\section{Notation}
+
+\begin{itemize}
+  \item $p \in \{1,\dots,P\}$: pixel index.
+  \item $\ell \in \{1,\dots,L\}$: link index.
+  \item $R_p \ge 0$: rainfall rate in pixel $p$ [mm/h].
+  \item $A_\ell$: observed total rain-induced attenuation on link $\ell$ [dB].
+  \item $\hat A_\ell(R)$: modeled attenuation on link $\ell$ [dB].
+  \item $ds_{\ell p}$: length of the intersection of link $\ell$ with pixel $p$ [m].
+  \item $L_\ell = \sum_p ds_{\ell p} / 1000$: total length of link $\ell$ within the grid [km].
+  \item $f_\ell$: frequency of link $\ell$.
+  \item $\mathrm{pol}_\ell$: polarization of link $\ell$.
+  \item $k_\ell, \alpha_\ell$: ITU rain attenuation parameters for link $\ell$, derived from $(f_\ell,\mathrm{pol}_\ell)$.
+  \item $\mathcal N_4$: set of unordered pixel pairs that are 4-neighbors on the grid.
+  \item $\lambda > 0$: spatial smoothness weight.
+  \item $\mu > 0$: shrinkage (energy) weight.
+  \item $\varepsilon$: small positive constant used for numerical stability in logarithms.
+\end{itemize}
+
+The forward model for link attenuation is
+\[
+\hat A_\ell(R)
+=
+\sum_{p}
+\left(\frac{ds_{\ell p}}{1000}\right)
+k_\ell R_p^{\alpha_\ell},
+\]
+where the sum runs over all pixels intersected by link $\ell$.
+
+\section{Cost Function Decomposition}
+
+The objective function is expressed as a weighted sum of three components, each capturing a distinct aspect of the rainfall estimation problem:
+\[
+J(R) = J_{\mathrm{data}}(R) + \lambda\, J_{\mathrm{smooth}}(R) + \mu\, J_{\mathrm{shrink}}(R),
+\]
+subject to the non-negativity constraint $R_p \ge 0$ for all pixels $p$.
+
+\subsection{Data Fidelity Term}
+
+The data fidelity term measures the mismatch between the observed rain-induced attenuation on each link and the attenuation predicted by the forward model:
+\[
+J_{\mathrm{data}}(R)
+=
+\sum_{\ell=1}^{L}
+\left(
+\frac{\hat A_\ell(R) - A_\ell}{L_\ell}
+\right)^2,
+\]
+with
+\[
+\hat A_\ell(R)
+=
+\sum_{p}
+\left(\frac{ds_{\ell p}}{1000}\right)
+k_\ell R_p^{\alpha_\ell}.
+\]
+
+This term enforces consistency with the link measurements. Normalization by the link length $L_\ell$ ensures that links of different physical lengths contribute comparably to the objective, preventing longer links from dominating the estimation solely due to larger accumulated attenuation.
+
+\subsection{Spatial Smoothness Term}
+
+The spatial smoothness term promotes coherent rainfall patterns across neighboring pixels:
+\[
+J_{\mathrm{smooth}}(R)
+=
+\sum_{(p,q)\in\mathcal N_4}
+\left(
+\log(R_p+\varepsilon)-\log(R_q+\varepsilon)
+\right)^2.
+\]
+
+By penalizing differences in the logarithm of rainfall rates, this term encourages smoothness in a relative (multiplicative) sense. As a result, sharp transitions are allowed where supported by the data, while spurious small-scale variability—especially in poorly constrained regions—is suppressed.
+
+\subsection{Shrinkage Term}
+
+The shrinkage term is defined as
+\[
+J_{\mathrm{shrink}}(R)
+=
+\sum_{p=1}^{P} R_p^2.
+\]
+
+This weak energy penalty stabilizes the optimization by discouraging unrealistically large rainfall values and anchoring pixels that are not directly intersected by any link. It plays a secondary role compared to the data fidelity and smoothness terms, but improves numerical conditioning and solution uniqueness.
+
+Together, these three components balance data adherence, spatial regularity, and global stability in the reconstructed rainfall field.
+
+
+\end{document}

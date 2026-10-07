@@ -1,0 +1,255 @@
+# Compute-Link-Attenuations
+
+This folder contains the rainfall-reconstruction pipeline and the reusable Python package used by it. Before running either workflow, set up the Python environment described in [Python Environment](#python-environment). After that, there are two common workflows:
+
+- To create a new patch benchmark, start with [How To Create Patch Inputs](#how-to-create-patch-inputs).
+- To run the already-existing 100-patch benchmark, skip to [How To Run The Existing 100-Patch Benchmark](#how-to-run-the-existing-100-patch-benchmark).
+
+## Main Components
+
+- `main.py` is the interactive reconstruction-benchmark input builder. It
+  consumes rainfall-patch selections produced by `Patch-Generator`, places
+  4TU microwave-link geometry into each selected patch, simulates rain
+  attenuation, and writes the ground-truth and estimator-input files used by
+  the reconstruction pipeline.
+- `batch_solve_multi.py` runs one or more solvers over a set of `est_input_*.json` patch files.
+- `batch_analyze_multi.py` compares solver outputs against ground truth and produces analysis caches, tables, and plot inputs.
+- `render_analysis_report.py` renders the cached analysis outputs into figures and spreadsheets.
+- `cml_attenuation/` is the reusable Python package used by the entry points. It contains rainfall preprocessing, link geometry, segment-pixel intersections, attenuation/ITU utilities, IDW/ILDW baselines, and optimization solvers. The YAML configs use package-qualified module names such as `cml_attenuation.idw_baseline` and `cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers`.
+- `HundredPatches/` contains the existing 100-patch benchmark inputs, pipeline configuration, solutions, and report artifacts.
+- `Misc/` contains auxiliary debugging and synthetic-test artifacts that are not part of the maintained benchmark pipeline.
+
+## Python Environment
+
+The repository does not include a committed `.venv/` directory. Create a local environment before running the pipeline, then install the Python dependencies:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-lock.txt
+```
+
+The main dependencies are NumPy, SciPy, h5py, pyproj, Matplotlib, PyYAML, and openpyxl.
+
+`requirements.txt` records the supported direct dependency ranges for normal
+development. `requirements-lock.txt` is the validated exact environment
+snapshot used for reproducible benchmark work and CI.
+
+
+## How To Create Patch Inputs
+
+`main.py` and the patch-input generation utilities compute rain-induced microwave-link attenuation using OPERA rainfall patches and 4TU link data, following ITU-R P.838-3. This stage is what produces the `est_input_*.json` and `gt_*.npz` files later consumed by the solver pipeline.
+
+The OPERA HDF5 rainfall source files are stored at:
+
+```text
+../Patch-Generator/backend/data/raw/
+```
+
+when viewed from this folder. Patch-list records refer back to individual
+files in that directory through their `source_file` fields. The current
+dataset consists of hourly files named like:
+
+```text
+RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301010000.h5
+```
+
+This is downstream of `../Patch-Generator/`; the two components have different
+responsibilities:
+
+- `Patch-Generator` decides **which rainfall regions become benchmark cases**.
+  It detects, displays, selects, and annotates rectangular regions in OPERA
+  rainfall maps, then exports patch-list and patch-attribute JSONL files.
+- `Compute-Link-Attenuations/main.py` decides **what microwave links would
+  observe in each selected rainfall region**. It consumes those JSONL
+  selections, extracts and preprocesses the corresponding rainfall crop,
+  places the 4TU link network into the patch, simulates link attenuation, and
+  creates the files consumed by the reconstruction solvers.
+
+The complete handoff is:
+
+```text
+OPERA HDF5 rainfall maps
+          ↓
+Patch-Generator
+(detect, inspect, select, and annotate rainfall rectangles)
+          ↓
+patch-list JSONL + patch-attributes JSONL
+          ↓
+Compute-Link-Attenuations/main.py
+(extract rainfall, place 4TU links, and simulate attenuation)
+          ↓
+gt_*.npz + est_input_*.json + patch_*.jsonl
+          ↓
+separate solver, evaluation, and inspection workflows
+```
+
+`Patch-Generator` does not create the simulated CML observations or final
+solver inputs. Conversely, `main.py` does not perform the original rainfall
+region detection and interactive benchmark selection; it starts from patch
+records that have already been selected.
+
+Patch candidates are read from a patch-list JSONL file. Each patch record points back to an OPERA HDF5 source file through its `source_file` field. A second patch-attributes JSONL file is used during normal generation as an ID allow-list: only patch IDs that appear in that attributes file are processed. Some of those records contain manual annotations such as area type, rain type, intensity, notes, and an `approved` flag. The current `main.py` filtering step only checks whether a patch ID appears in the attributes file; it does not interpret the annotation fields or the `approved` value. If exact patch IDs are provided interactively, that attributes-file filter is bypassed.
+
+For each selected rainfall patch, `main.py`:
+
+1. Loads and preprocesses the OPERA rainfall crop referenced by the patch metadata.
+2. Places the 4TU link geometry into the patch coordinate system.
+3. Keeps only links whose endpoints lie inside the patch.
+4. Computes rain attenuation for each retained link with ITU-R P.838-3.
+5. Writes the generated benchmark inputs into structured output folders.
+
+The interactive entry point is:
+
+```bash
+python main.py
+```
+
+It prompts for the patch-list JSONL, patch-attributes JSONL, 4TU links JSONL, output directory, number of patches, default polarization, and optional debug settings. In the normal path, the patch-attributes JSONL controls which patch IDs are eligible for processing; when exact patch IDs are entered manually, `main.py` processes those IDs directly.
+
+For the existing 100-patch benchmark generation, the relevant input files are `../Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches.local.jan2023.jsonl` for the patch list, `../Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches-selected-with-attributes.jan2023.jsonl` for the patch attributes/annotations, and `../Links-4TU-NL/LIST-OF-LINKS.jsonl` for the 4TU link records, when running from `Compute-Link-Attenuations/`.
+
+For a chosen output directory, `main.py` writes:
+
+- `est_dir/`: `est_input_*.json` files used by `batch_solve_multi.py`.
+- `gt_dir/`: `gt_*.npz` ground-truth rainfall arrays, when ground-truth export is enabled.
+- `patch_jsonl_files/`: `patch_*.jsonl` link-attenuation summaries and optional `debug_*.json` traces.
+
+The three generated artifact types have different consumers:
+
+| Artifact | Primary consumer | Purpose |
+| --- | --- | --- |
+| `est_input_*.json` | `batch_solve_multi.py` and every solver | Reconstruction grid, link geometry, attenuation observations, and pixel intersections |
+| `gt_*.npz` | `batch_analyze_multi.py`; additionally `Solver(GT)` | Evaluation ground truth; `Solver(GT)` also uses it as its optimization initialization |
+| `patch_*.jsonl` | Viewer, debugging, and patch-overview tools | Rich per-link generation records; not used by the ordinary solvers |
+
+The ordinary solver stage therefore requires only `est_input_*.json`.
+`Solver(GT)` also reads the corresponding `gt_*.npz`. The `patch_*.jsonl`
+files support traceability and visual inspection; for example,
+[`Misc/patch_viewers/view_patch.py`](Misc/patch_viewers/README.md) overlays
+their links on the rainfall field and lets the user inspect individual link
+metadata. If the estimator inputs already exist, these patch JSONL files are
+not required to run the ordinary solvers.
+
+The estimator input and ground truth are deliberately stored separately. Each
+`est_input_*.json` contains the reconstruction-grid dimensions and pixel size,
+link endpoint coordinates in the patch-local frame, frequency, polarization,
+simulated attenuation (`A_db`), and the grid cells and segment lengths
+intersected by each link. It does not contain the ground-truth rainfall field.
+Ordinary solvers use these simulated link observations and geometry to estimate
+the unknown rainfall grid.
+
+The corresponding `gt_*.npz` contains the radar-derived rainfall field used to
+simulate those attenuation observations. It is normally read later by the
+analysis stage to compare the reconstructed and true rainfall fields:
+
+```text
+ground-truth rainfall
+        ↓ ITU attenuation simulation
+simulated link observations in est_input_*.json
+        ↓ reconstruction solver
+estimated rainfall field
+        ↓ evaluation against gt_*.npz
+benchmark metrics
+```
+
+The maintained solver set has one explicit exception:
+`Solver(GT)` (`R0_from_GT: true`) reads the complete ground-truth field and
+uses it as the initial state of its optimization. It is an oracle/diagnostic
+reference rather than a blind reconstruction method with the same information
+as IDW, ILDW, Solver(ILDW), the Convex Solver, or the Homotopy Solver. Those
+ordinary methods do not receive the ground-truth rainfall field during
+reconstruction.
+
+The existing 100-patch pipeline normally starts from the already-generated inputs in `HundredPatches/est_dir/`, the ground-truth files in `HundredPatches/gt_dir/`, and the patch JSONL files in `HundredPatches/patch_overview_generation/patch_jsonl_files/`.
+
+When debug mode is enabled, `main.py` can also write a per-link debug JSON file containing intersected refined pixels, rainfall values, segment lengths, ITU specific attenuation, cumulative attenuation, and the total link attenuation. This is useful for validating geometry and attenuation calculations before scaling to many patches.
+
+### Implementation Notes
+
+The generated rainfall arrays use image-style grid indices `[i, j]`, where `i` increases downward/southward and `j` increases rightward/eastward. The OPERA rainfall crop is refined from the native 2 km grid to a 125 m grid and then smoothed with a Gaussian filter (`sigma = 1` refined pixel, `mode = "nearest"`) before link attenuations are simulated. The smoothing is implemented by [`smooth_refined_gaussian()`](cml_attenuation/rainfall_processing.py#L113) in `cml_attenuation/rainfall_processing.py`. Link geometry is handled in EPSG:28992 (RD New) meter coordinates; the 4TU link network is placed into each selected patch coordinate system using a fixed anchor, and link lengths are converted to kilometers before applying the ITU-R P.838-3 attenuation model.
+
+## How To Run The Existing 100-Patch Benchmark
+
+The repository already contains the generated inputs for the 100-patch benchmark under `HundredPatches/`. You do not need to run `main.py` again for this existing benchmark unless you want to regenerate or change those inputs. Run the 100-patch comparison from this directory:
+
+```bash
+cd Compute-Link-Attenuations
+```
+
+The pipeline has three main stages.
+
+1. Produce solution files:
+
+```bash
+python batch_solve_multi.py --config HundredPatches/pipeline/batch_solve_config.yaml
+```
+
+This reads the estimator inputs from `HundredPatches/est_dir/` and writes solver outputs under `HundredPatches/pipeline/solutions/`. The maintained solver set is IDW, ILDW, Solver(ILDW), Convex Solver, Homotopy Solver, and Solver(GT).
+
+2. Produce the analysis cache and spreadsheet:
+
+```bash
+python batch_analyze_multi.py \
+  --config HundredPatches/pipeline/analyze.yaml \
+  --analyze-only
+```
+
+This compares the solver outputs against `HundredPatches/gt_dir/` and writes analysis artifacts to `HundredPatches/pipeline/batch_analyze_output/`. With the current configuration, the spreadsheet is `stats.xlsx` and the default cache is `stats_report_cache.json`. The spreadsheet is a human-facing inspection artifact; it is not consumed by later pipeline stages. The cache is the machine-readable artifact used by `render_analysis_report.py` to generate the report figures and outputs.
+
+The generated `batch_analyze_output/` folder is intentionally not committed because the cache can exceed GitHub's normal 100 MB file limit. If code or configuration changes require the cache to be refreshed, rerun this stage locally before rendering the report.
+
+3. Render the report artifacts:
+
+```bash
+python render_analysis_report.py \
+  --cache HundredPatches/pipeline/batch_analyze_output/stats_report_cache.json \
+  --render-config HundredPatches/pipeline/render_report.yaml \
+  --output-dir HundredPatches/pipeline/report
+```
+
+This renders the configured figures and writes report artifacts under `HundredPatches/pipeline/report/`.
+
+## Roy DCT sparsity solver
+
+The opt-in [Roy DCT solver](cml_attenuation/solvers/ROY_DCT.md) preserves the
+no-dynamics DCT L1 penalty, noise-weighted residual, and nonnegative rainfall
+constraint. Its benchmark configuration adapts the measurement term to our
+nonlinear ITU inputs and uses fast transforms and sparse operators for large
+patches. Run it with `HundredPatches/pipeline/batch_solve_roy_dct.yaml`; the
+existing six-method benchmark remains available separately.
+
+## GMZ virtual-gauge solver
+
+Run the opt-in ITU adaptation with:
+
+```bash
+python batch_solve_multi.py --config HundredPatches/pipeline/batch_solve_gmz.yaml
+```
+
+The YAML writes `solutions/sol_dir_gmz_itu/` relative to the pipeline directory.
+It divides each link into equal segments of at most 125 m, initializes their
+center gauges with equivalent uniform rain, and iterates truncated IDW from
+other links. Updates are damped before rescaling each link to reproduce its
+observed nonlinear ITU attenuation. Isolated gauges retain their previous
+proposal; an all-zero proposal on a wet link falls back to uniform rain.
+Dry links stay zero. Gauges remain independent even within a shared pixel.
+The final raster uses the mean of gauges inside each occupied pixel and IDW
+at the other pixel centers, with zero outside the search radius.
+
+This is a **GMZ-style ITU adaptation**, not an exact reproduction of the 2009
+algorithm. Gauge normalization preserves attenuation before rasterization;
+it does not impose exact attenuation consistency on the final grid. Each NPZ
+therefore includes `R_hat`, raster `A_hat`, `A_obs`, normalized raster residual
+`r`, virtual-gauge `A_virtual`, gauge coordinates, values, owners, and lengths.
+The `_optinfo.json` records both attenuation RMSEs, convergence status, and the
+maximum gauge change per iteration. Reaching `maxiter` is reported as
+nonconvergence, while still saving the available estimate. No ground truth is
+used. Nondegenerate inputs must have positive full-link lengths matching their pixel
+intersections, and endpoints within the patch. Zero-length, zero-attenuation
+links are excluded from gauge creation.
+
+The defaults (15 km radius, power 2, damping 0.5, 300 iterations) are initial
+benchmark settings, not tuned parameters. Gauge-neighbor weights are stored
+as a sparse matrix; a large radius on a dense network can still use substantial
+memory, so the YAML runs one patch at a time.

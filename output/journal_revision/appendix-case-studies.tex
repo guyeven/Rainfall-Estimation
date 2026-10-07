@@ -1,0 +1,54 @@
+\section{Case Study Figures and Objective Evolution}
+In this section, we present two case studies, in which we compare  \IDW, \solverGT, and \solverConvex.
+In the first case study, \solverGT\ almost equals the ground-truth while \solverConvex\ slightly improves over \IDW.
+For this patch,  $J(\solverGT)=1.485$ and  RMSE$(\solverGT)=0.102$, while
+$J(\ConvexSolver)=0.265$ and RMSE$(\ConvexSolver)=0.702$.
+This example shows that a lower value of the objective does not necessarily imply a more accurate reconstruction of the ground-truth rainfall field.
+
+
+\begin{figure}[!htbp]
+  \centering
+  \makebox[\textwidth][c]{\includegraphics[width=1.08\textwidth]{\gtconvexcaseone}}
+  \caption{Case Study I: \solverGT\ is visually close to the ground truth. The three upper-right panels show the rainfall fields reconstructed by \IDW, \solverGT, and \solverConvex. The corresponding lower-right panels show the relative error of each reconstruction.}
+  \label{fig:case_gt_convex_202301280900}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{minipage}[t]{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{\jgtcaseone}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{\jconvexcaseone}
+  \end{minipage}
+  \caption{Evolution of the weighted objective over L-BFGS-B  iterations for Case Study I. Left: \solverGT, initialized from the ground-truth field, converges to final $J_{\mathrm{weighted\ sum}}=1.485$. Right: \ConvexSolver\ reaches a lower final weighted objective, $J_{\mathrm{weighted\ sum}}=0.265$, but its reconstruction is farther from the ground truth by RMSE.}
+  \label{fig:jtrace_gt_convex_202301280900}
+\end{figure}
+%%%%%%%%%%%%%%
+In the second case study, \solverGT\ and \solverConvex\ are visually similar in the reconstruction panels.
+For this patch, $J(\solverGT)=0.289$ and RMSE$(\solverGT)=0.552$, while
+$J(\ConvexSolver)=0.290$ and RMSE$(\ConvexSolver)=0.565$.
+This example shows a case in which the two solutions have almost the same objective value and almost the same reconstruction error.
+
+\begin{figure}[!htbp]
+  \centering
+  \makebox[\textwidth][c]{\includegraphics[width=1.08\textwidth]{\gtconvexcasetwo}}
+  \caption{Case Study II: \solverGT\ and \solverConvex\ produce visually similar reconstructions. The three upper-right panels show the rainfall fields reconstructed by \IDW, \solverGT, and \solverConvex. The corresponding lower-right panels show the relative error of each reconstruction.}
+  \label{fig:case_gt_convex_202301310900}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{minipage}[t]{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{\jgtcasetwo}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{\jconvexcasetwo}
+  \end{minipage}
+  \caption{Evolution of the weighted objective over L-BFGS-B iterations for Case Study II. Left: \solverGT, initialized from the ground-truth field, converges to final $J_{\mathrm{weighted\ sum}}=0.289$. Right: \ConvexSolver\ reaches a very similar final weighted objective, $J_{\mathrm{weighted\ sum}}=0.290$, and a similar RMSE.}
+  \label{fig:jtrace_gt_convex_202301310900}
+\end{figure}

@@ -1,0 +1,199 @@
+# Eight-method June benchmark. Paths resolve relative to this YAML.
+# Homotopy maxiter is per continuation stage; Roy uses outer/inner caps.
+input:
+  est_dir: ../est_dir
+  file_pattern: est_input_*.json
+  recursive: false
+parallel:
+  solver_workers: 1
+  patch_workers: 2
+solvers:
+  ildw:
+    name: ildw
+    label: ILDW
+    type: idw
+    module: cml_attenuation.ildw_baseline
+    out_dir: solutions/sol_dir_ildw
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+  solver_ildw:
+    name: solver_ildw
+    label: Solver(ILDW)
+    type: lbfgsb
+    module: cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers
+    out_dir: solutions/sol_dir_solver_ildw
+    optimization:
+      epsilon: 0.01
+      maxiter: 2000
+      rain_init:
+        mode: fixed
+        value: 0.6
+      R0_from_ILDW: true
+      R0_from_IDW: false
+      R0_from_GT: false
+      num_atten: 1.0
+      num_1d: 1.0
+      num_2d: 0.5
+      num_total: 1.0
+      num_total_divide_by_num_pixels: true
+    tolerances:
+      ftol: 1.0e-06
+      gtol: 1.0e-06
+      maxls: 20
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+  convex_light_shrinkage:
+    name: convex_light_shrinkage
+    label: Convex Solver light shrinkage
+    type: lbfgsb
+    module: cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_convex
+    out_dir: solutions/sol_dir_convex_light_shrinkage
+    optimization:
+      epsilon: 0.01
+      maxiter: 2000
+      rain_init:
+        mode: fixed
+        value: 0.6
+        multiplier: 2.0
+      R0_from_ILDW: false
+      R0_from_IDW: false
+      R0: 0.6
+      num_atten: 1.0
+      num_1d: 1.0
+      num_2d: 0.5
+      num_total: 1.0
+      num_total_divide_by_num_pixels: true
+    tolerances:
+      ftol: 1.0e-06
+      gtol: 1.0e-06
+      maxls: 20
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+  convex_no_shrinkage:
+    name: convex_no_shrinkage
+    label: Convex Solver no shrinkage
+    type: lbfgsb
+    module: cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_convex
+    out_dir: solutions/sol_dir_convex_no_shrinkage
+    optimization:
+      epsilon: 0.01
+      maxiter: 2000
+      rain_init:
+        mode: fixed
+        value: 0.6
+        multiplier: 2.0
+      R0_from_ILDW: false
+      R0_from_IDW: false
+      R0: 0.6
+      num_atten: 1.0
+      num_1d: 1.0
+      num_2d: 0.5
+      num_total: 0.0
+      num_total_divide_by_num_pixels: true
+    tolerances:
+      ftol: 1.0e-06
+      gtol: 1.0e-06
+      maxls: 20
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+  homotopy_light_shrinkage:
+    name: homotopy_light_shrinkage
+    label: Homotopy Solver light shrinkage
+    type: lbfgsb
+    module: cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_homotopy
+    out_dir: solutions/sol_dir_homotopy_light_shrinkage
+    optimization:
+      epsilon: 0.01
+      maxiter: 2000
+      beta_delta: 0.1
+      rain_init:
+        mode: fixed
+        value: 0.6
+        multiplier: 2.0
+      R0_from_ILDW: false
+      R0_from_IDW: false
+      R0: 0.6
+      num_atten: 1.0
+      num_1d: 1.0
+      num_2d: 0.5
+      num_total: 1.0
+      num_total_divide_by_num_pixels: true
+    tolerances:
+      ftol: 1.0e-06
+      gtol: 1.0e-06
+      maxls: 20
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+  homotopy_no_shrinkage:
+    name: homotopy_no_shrinkage
+    label: Homotopy Solver no shrinkage
+    type: lbfgsb
+    module: cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_homotopy
+    out_dir: solutions/sol_dir_homotopy_no_shrinkage
+    optimization:
+      epsilon: 0.01
+      maxiter: 2000
+      beta_delta: 0.1
+      rain_init:
+        mode: fixed
+        value: 0.6
+        multiplier: 2.0
+      R0_from_ILDW: false
+      R0_from_IDW: false
+      R0: 0.6
+      num_atten: 1.0
+      num_1d: 1.0
+      num_2d: 0.5
+      num_total: 0.0
+      num_total_divide_by_num_pixels: true
+    tolerances:
+      ftol: 1.0e-06
+      gtol: 1.0e-06
+      maxls: 20
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+  roy_dct_ildw_outer300:
+    name: roy_dct_ildw_outer300
+    label: Roy DCT (ILDW init, nonlinear ITU, 300 outer cap)
+    type: custom
+    module: cml_attenuation.solvers.solve_rain_roy_dct
+    out_dir: solutions/sol_dir_roy_dct_ildw_outer300
+    measurement_model: itu_nonlinear
+    initialization:
+      method: ildw
+      r_max_m: 15000.0
+      power: 2.0
+      default_value: 0.0
+    optimization:
+      lam: 2.0
+      noise_variance: 1.0e-05
+      dct_layout: 2d
+      max_outer: 300
+      inner_maxiter: 2000
+      outer_rtol: 1.0e-05
+      inner_atol: 1.0e-06
+      inner_rtol: 1.0e-05
+      cg_rtol: 1.0e-08
+      cg_maxiter: 500
+      rho: 1.0
+      damping: 0.001
+      derivative_floor: 1.0e-06
+      verbose: true

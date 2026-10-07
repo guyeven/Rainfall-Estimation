@@ -1,0 +1,37 @@
+# Roy DCT nonlinear solve for June 2023 hundred patches.
+resume: true
+input:
+  est_dir: ../est_dir
+  file_pattern: est_input_*.json
+  recursive: false
+parallel:
+  solver_workers: 1
+  patch_workers: 2
+solvers:
+  roy_dct_ildw_outer50:
+    name: roy_dct_ildw_outer50
+    label: Roy DCT (ILDW init, nonlinear ITU, 50 outer cap)
+    type: custom
+    module: cml_attenuation.solvers.solve_rain_roy_dct
+    out_dir: solutions/sol_dir_roy_dct_ildw_outer50
+    measurement_model: itu_nonlinear
+    initialization:
+      method: ildw
+      r_max_m: 15000.0
+      power: 2.0
+      default_value: 0.0
+    optimization:
+      lam: 2.0
+      noise_variance: 1.0e-05
+      dct_layout: 2d
+      max_outer: 50
+      inner_maxiter: 2000
+      outer_rtol: 1.0e-05
+      inner_atol: 1.0e-06
+      inner_rtol: 1.0e-05
+      cg_rtol: 1.0e-08
+      cg_maxiter: 500
+      rho: 1.0
+      damping: 0.001
+      derivative_floor: 1.0e-06
+      verbose: true

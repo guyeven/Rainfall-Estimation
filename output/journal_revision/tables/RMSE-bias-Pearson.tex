@@ -1,0 +1,47 @@
+\begin{table}[htbp]
+    \centering
+    \tiny
+    \setlength{\tabcolsep}{2.8pt}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrccccccccc}
+        \toprule
+                           &             & \multicolumn{3}{c}{\IDW} & \multicolumn{3}{c}{\ILDW} & \multicolumn{3}{c}{\solverILDW}                                                                                                                       \\
+        \cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}
+        $d_3$ bin (m)      & \meanPixels & \RMSE                    & \Bias                     & \Pearson                        & \RMSE            & \Bias            & \Pearson           & \RMSE            & \Bias            & \Pearson           \\
+        \midrule
+        \mbox{$\leq$125}   & 4831        & \pmv{0.65}{0.78}         & \pmv{-0.02}{0.07}         & \pmv{0.967}{0.018}              & \pmv{0.77}{1.01} & \pmv{0.00}{0.07} & \pmv{0.952}{0.026} & \pmv{0.50}{0.83} & \pmv{0.00}{0.04} & \pmv{0.982}{0.020} \\
+        \mbox{(125,375]}   & 19000       & \pmv{0.73}{0.86}         & \pmv{-0.02}{0.06}         & \pmv{0.960}{0.020}              & \pmv{0.73}{0.91} & \pmv{0.00}{0.02} & \pmv{0.958}{0.021} & \pmv{0.55}{0.85} & \pmv{0.00}{0.02} & \pmv{0.979}{0.019} \\
+        \mbox{(375,750]}   & 30200       & \pmv{0.91}{1.07}         & \pmv{0.00}{0.13}          & \pmv{0.941}{0.029}              & \pmv{0.82}{1.00} & \pmv{0.00}{0.09} & \pmv{0.950}{0.025} & \pmv{0.67}{0.97} & \pmv{0.00}{0.08} & \pmv{0.970}{0.025} \\
+        \mbox{(750,1500]}  & 58440       & \pmv{1.11}{1.14}         & \pmv{-0.01}{0.21}         & \pmv{0.908}{0.044}              & \pmv{1.01}{1.06} & \pmv{0.00}{0.16} & \pmv{0.922}{0.039} & \pmv{0.84}{1.06} & \pmv{0.00}{0.15} & \pmv{0.950}{0.039} \\
+        \mbox{(1500,3125]} & 99620       & \pmv{1.42}{1.34}         & \pmv{0.00}{0.36}          & \pmv{0.844}{0.080}              & \pmv{1.35}{1.29} & \pmv{0.02}{0.33} & \pmv{0.859}{0.074} & \pmv{1.15}{1.32} & \pmv{0.02}{0.29} & \pmv{0.907}{0.074} \\
+        \mbox{(3125,6000]} & 52130       & \pmv{1.60}{1.43}         & \pmv{0.14}{0.63}          & \pmv{0.776}{0.126}              & \pmv{1.54}{1.37} & \pmv{0.15}{0.58} & \pmv{0.791}{0.115} & \pmv{1.35}{1.39} & \pmv{0.11}{0.54} & \pmv{0.851}{0.111} \\
+        \mbox{(6000,9000]} & 4686        & \pmv{1.44}{1.35}         & \pmv{0.63}{0.98}          & \pmv{0.617}{0.302}              & \pmv{1.42}{1.30} & \pmv{0.64}{0.97} & \pmv{0.624}{0.304} & \pmv{1.30}{1.31} & \pmv{0.57}{0.95} & \pmv{0.680}{0.288} \\
+        \mbox{$>$9000}     & 1091        & \pmv{1.13}{0.83}         & \pmv{0.71}{0.90}          & \pmv{0.287}{0.573}              & \pmv{1.12}{0.80} & \pmv{0.72}{0.87} & \pmv{0.289}{0.584} & \pmv{1.04}{0.81} & \pmv{0.68}{0.85} & \pmv{0.262}{0.590} \\
+        \bottomrule
+    \end{tabular}%
+    }
+
+    \vspace{0.75em}
+
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrccccccccc}
+        \toprule
+                           &             & \multicolumn{3}{c}{\solverGT} & \multicolumn{3}{c}{\solverConvex} & \multicolumn{3}{c}{\solverHomotopy}                                                                                                                       \\
+        \cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}
+        $d_3$ bin (m)      & \meanPixels & \RMSE                         & \Bias                             & \Pearson                            & \RMSE            & \Bias            & \Pearson           & \RMSE            & \Bias            & \Pearson           \\
+        \midrule
+        \mbox{$\leq$125}   & 4831        & \pmv{0.26}{0.29}              & \pmv{0.00}{0.01}                  & \pmv{0.992}{0.007}                  & \pmv{0.37}{0.47} & \pmv{0.00}{0.01} & \pmv{0.989}{0.009} & \pmv{0.37}{0.47} & \pmv{0.00}{0.01} & \pmv{0.989}{0.009} \\
+        \mbox{(125,375]}   & 19000       & \pmv{0.30}{0.33}              & \pmv{0.00}{0.01}                  & \pmv{0.990}{0.008}                  & \pmv{0.41}{0.51} & \pmv{0.00}{0.02} & \pmv{0.986}{0.008} & \pmv{0.41}{0.51} & \pmv{0.00}{0.02} & \pmv{0.986}{0.008} \\
+        \mbox{(375,750]}   & 30200       & \pmv{0.36}{0.37}              & \pmv{0.00}{0.01}                  & \pmv{0.984}{0.012}                  & \pmv{0.53}{0.65} & \pmv{0.00}{0.02} & \pmv{0.978}{0.012} & \pmv{0.53}{0.65} & \pmv{0.00}{0.02} & \pmv{0.978}{0.012} \\
+        \mbox{(750,1500]}  & 58440       & \pmv{0.44}{0.38}              & \pmv{0.00}{0.02}                  & \pmv{0.975}{0.020}                  & \pmv{0.68}{0.72} & \pmv{0.00}{0.03} & \pmv{0.963}{0.021} & \pmv{0.68}{0.72} & \pmv{0.00}{0.03} & \pmv{0.963}{0.021} \\
+        \mbox{(1500,3125]} & 99620       & \pmv{0.54}{0.40}              & \pmv{0.00}{0.04}                  & \pmv{0.955}{0.038}                  & \pmv{0.91}{0.88} & \pmv{0.01}{0.08} & \pmv{0.932}{0.042} & \pmv{0.91}{0.88} & \pmv{0.01}{0.08} & \pmv{0.932}{0.042} \\
+        \mbox{(3125,6000]} & 52130       & \pmv{0.60}{0.39}              & \pmv{0.03}{0.08}                  & \pmv{0.932}{0.064}                  & \pmv{1.09}{0.96} & \pmv{0.07}{0.22} & \pmv{0.888}{0.075} & \pmv{1.09}{0.96} & \pmv{0.07}{0.22} & \pmv{0.888}{0.075} \\
+        \mbox{(6000,9000]} & 4686        & \pmv{0.52}{0.35}              & \pmv{0.18}{0.24}                  & \pmv{0.865}{0.182}                  & \pmv{1.03}{1.08} & \pmv{0.33}{0.76} & \pmv{0.746}{0.245} & \pmv{1.03}{1.08} & \pmv{0.33}{0.76} & \pmv{0.746}{0.245} \\
+        \mbox{$>$9000}     & 1091        & \pmv{0.37}{0.33}              & \pmv{0.21}{0.31}                  & \pmv{0.636}{0.463}                  & \pmv{0.71}{0.52} & \pmv{0.24}{0.57} & \pmv{0.272}{0.621} & \pmv{0.71}{0.51} & \pmv{0.24}{0.57} & \pmv{0.273}{0.620} \\
+        \bottomrule
+    \end{tabular}%
+    }
+    \caption{$d_3$-bin summaries. Each metric cell reports mean $\pm$ sample SD across patch-level bin metrics. RMSE, Bias, and Pearson $r$ are recomputed from the underlying pixel values inside each $d_3$ bin for each patch and method. RMSE and Bias values are rounded to two decimal places. Bias means with absolute value below $0.01$ are shown as $0.00$. Pearson $r$ values are rounded to three decimal places.}
+    \label{tab:d3-solver-summary}
+\end{table}
+

@@ -1,0 +1,306 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=20mm,headheight=14pt]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,microtype,amsmath,amssymb,booktabs,graphicx,float,array}
+\usepackage[table]{xcolor}
+\usepackage{caption,fancyhdr,enumitem}
+\usepackage[hidelinks]{hyperref}
+\definecolor{ink}{HTML}{213547}
+\definecolor{blue}{HTML}{2754B5}
+\definecolor{pale}{HTML}{EEF3F8}
+\hypersetup{pdftitle={Seven-method rainfall reconstruction results},pdfauthor={Rainfall-Estimation project}}
+\pagestyle{fancy}\fancyhf{}\fancyhead[L]{\small Seven-method rainfall comparison}
+\fancyhead[R]{\small 100 saved patches}\fancyfoot[C]{\thepage}
+\setlength{\parindent}{0pt}\setlength{\parskip}{6pt}
+\setlength{\tabcolsep}{5pt}\renewcommand{\arraystretch}{1.15}
+\captionsetup{font=small,labelfont=bf}
+\setlist{itemsep=3pt,topsep=3pt}
+\newcommand{\fig}[3]{\begin{figure}[H]\centering\includegraphics[width=#2\linewidth]{figures/#1.pdf}\caption{#3}\end{figure}}
+\newcommand{\tbl}[2]{\begin{table}[H]\centering\small\input{tables/#1.tex}\caption{#2}\end{table}}
+\newcommand{\rainunit}{\ensuremath{\mathrm{mm\,h^{-1}}}}
+\newcommand{\ensembleNote}{Each panel contains all 100 saved runs as thin colored lines. A thick black curve is the pointwise median over the same 100 patches. Thin lines stop at their recorded endpoint. For the median only, each final value is held after stopping; the median becomes dashed as soon as any run has stopped. These extensions are bookkeeping, not additional iterations.}
+\input{report_numbers.tex}
+\begin{document}
+\thispagestyle{empty}
+{\color{blue}\large RAINFALL RECONSTRUCTION / SAVED-RUN ANALYSIS}\par
+\vspace{7mm}
+{\Huge\bfseries Seven methods,\par 100 rainfall patches}\par
+\vspace{3mm}
+{\Large Statistics, runtime, Taylor diagrams\par and optimization histories}\par
+\vspace{4mm}
+{\large GMZ implementation and Roy DCT with ILDW initialization}\par
+\vspace{3mm}
+25 September 2026
+
+\section*{What this report compares}
+This report analyzes the completed seven-method cache and the corresponding saved rainfall fields. It includes IDW, ILDW, the ILDW-initialized normalized solver, the virtual convex solver, the homotopy solver, GMZ with ITU normalization, and Roy DCT initialized from ILDW with a 300-outer-iteration cap. The older Roy run and the GT-initialized solver are excluded.
+
+\colorbox{pale}{\parbox{.96\linewidth}{\textbf{Main findings.} \mainFindings}}
+
+\section*{How to read the evidence}
+All seven methods are evaluated on the same 100 patches, with equal weight per patch. Rainfall statistics are recomputed from the saved fields and checked against the new cache. A small link-attenuation residual does not by itself imply a more accurate rainfall map. Taylor diagrams measure centered pattern agreement and do not include mean bias.
+
+All 100 outputs exist for each method. A completed output is distinct from meeting a stopping criterion: Roy DCT reports success on 52/100 patches and GMZ on 15/100. Runtime records cover five methods; the ILDW-init solver and homotopy timing were not recorded in the available files. No solver was rerun to make this document.
+
+\section*{Report map}
+Sections 1--4 cover rainfall errors, wet/dry classification, attenuation fit, and runtime. Sections 5--6 show Taylor summaries and individual-patch clouds. Sections 7--13 show recorded convergence and optimization behavior. Sections 14--15 explain GMZ. Section 16 records sources and reproduction commands. Section 17 adds rainy and non-rainy error profiles by distance to the third-closest link ($d_3$).
+
+\clearpage
+\section{Rainfall reconstruction statistics}
+For patch $i$, with $N_i$ pixels, reference rainfall $g_{ip}$ and estimate $f_{ip}$, we use
+\[
+ \mathrm{RMSE}_i=\sqrt{N_i^{-1}\sum_p(f_{ip}-g_{ip})^2},\qquad
+ b_i=N_i^{-1}\sum_p(f_{ip}-g_{ip}),\qquad
+ \mathrm{MAE}_i=N_i^{-1}\sum_p|f_{ip}-g_{ip}|.
+\]
+Correlation is Pearson correlation across pixels within each patch. Table~\ref{tab:rain} reports arithmetic means across the 100 patches; SD is the sample standard deviation across patches. Larger patches receive the same overall weight as smaller patches. RMSE, MAE, and bias use all pixels, including dry pixels, and are in \rainunit.
+\begin{table}[H]\centering\small\input{tables/rainfall.tex}\caption{Equal-patch rainfall statistics. The reported mean RMSE is the mean of patch RMSEs, not the square root of a pooled mean square.}\label{tab:rain}\end{table}
+\fig{rainfall_distributions}{1}{One dot per patch; box interiors span the interquartile range, center lines indicate medians, and whiskers use the standard 1.5-IQR rule. All points, including extremes beyond the whiskers, are shown.}
+\rainFindings
+
+\clearpage
+\section{Paired comparisons and wet/dry detection}
+For each patch, $\Delta_i=\mathrm{RMSE}_{i,\mathrm{Roy}}-\mathrm{RMSE}_{i,\mathrm{comparator}}$. Negative values favor ILDW-init Roy. Comparing matched patches avoids comparing different samples; the table is descriptive. No significance claim is made because spatially or temporally related patches need not be independent.
+\tbl{paired}{Paired rainfall RMSE differences in \rainunit. ``Roy lower'' counts strictly lower RMSE, not a significance test.}
+At the configured threshold $t=0.6$ \rainunit, wet means rainfall $\geq t$. TN, FP, FN, and TP are fractions of \emph{all} pixels within a patch, averaged across patches. Thus FP is not the conditional false-positive rate among dry pixels, and FN is not the conditional miss rate among wet pixels.
+\tbl{classification}{Mean patch confusion fractions at 0.6 \rainunit. Accuracy equals TN+TP.}
+\fig{threshold_sweep}{.96}{Mean patch false-wet and missed-wet fractions across the cached threshold sweep (0.2--5.0 \rainunit). All seven methods use the same reference and threshold.}
+
+\clearpage
+\section{Attenuation fit on the final rainfall raster}
+The cache recomputes attenuation from the final raster using real-link ITU coefficients and pixel-intersection lengths. All methods, including Convex and Homotopy, are compared in this original observation domain.
+
+For a patch's valid links, let $e_\ell=|\widehat A_\ell-A_\ell|$ in dB and $L_\ell$ be length in km. The two summaries are
+\[
+ E_{\mathrm{link}}=\frac1M\sum_{\ell=1}^{M}\frac{e_\ell}{L_\ell},
+ \qquad E_{\mathrm{length}}=\frac{\sum_{\ell=1}^{M}e_\ell}{\sum_{\ell=1}^{M}L_\ell}.
+\]
+Table~\ref{tab:atten} averages these quantities equally over 100 patches. Length weighting is within each patch.
+\begin{table}[H]\centering\small\input{tables/attenuation.tex}\caption{Final-raster attenuation error in the real ITU domain; lower is better.}\label{tab:atten}\end{table}
+\attenFindings
+
+\subsection*{Why GMZ has two different attenuation errors}
+GMZ rescales separate gauges along each link to match its observed attenuation. Interpolation to a common raster mixes these gauges and can lose that exact fit. These are different representations, not contradictory diagnostics.
+\fig{gmz_attenuation_gap}{.85}{GMZ attenuation RMSE for all links as logged by its diagnostics. Each dot is one patch; horizontal lines are medians. Virtual-gauge fit is near floating-point precision; final-raster fit has a nonzero residual. These dB RMSE values differ from the dB/km statistics above.}
+
+\clearpage
+\section{Runtime: recorded wall time and its scope}
+\tbl{runtime}{Saved end-to-end wall time per patch, and the sum over 100 patches. Missing timing is shown as a dash, not zero. IQR is the 75th minus the 25th percentile.}
+\fig{runtime}{.98}{Recorded per-patch end-to-end runtimes on a logarithmic scale. Thick horizontal marks indicate medians. Missing methods remain explicitly visible.}
+
+End-to-end timing includes input loading, initialization, reconstruction or optimization, diagnostics, and output writing. All five timing summaries record one solver worker and one patch worker. Summed runtimes describe these recorded per-patch measurements, not the elapsed time of an arbitrary parallel batch.
+
+The IDW, ILDW, and convex timings are a separate July 2026 benchmark, recorded on an Apple M2 MacBook Air with 8 GB memory, NumPy 2.5.0, and SciPy 1.18.0. GMZ and Roy timings are from September 2026, on macOS arm64 with NumPy 2.5.3 and SciPy 1.18.1; those records do not identify the machine model. All records use Python 3.14.3. The patch IDs match, but these are not controlled, same-session hardware benchmarks.
+
+The internal \texttt{optimizer\_seconds} fields have different scopes. Convex measures the SciPy minimization call. Roy measures its outer loop and final diagnostic calculations, excluding ILDW initialization. GMZ starts its internal timer before input loading and stops after rasterization and diagnostics, before saving files; it is not a pure iteration timer. The end-to-end table is therefore the primary runtime view. Runtime is unavailable for Solver(ILDW) and Homotopy; neither is estimated from iteration counts.
+
+\clearpage
+\section{Taylor diagrams: aggregate pattern agreement}
+Subtract each field's own mean within each patch. Let $V_{g,i}$ and $V_{f,i}$ be the resulting population variances and $C_i$ their covariance. Equal-patch pooled moments give
+\[
+ \sigma_g=\sqrt{\tfrac1{100}\sum_i V_{g,i}},\quad
+ \sigma_f=\sqrt{\tfrac1{100}\sum_i V_{f,i}},\quad
+ r_{\rm pooled}=\frac{\tfrac1{100}\sum_i C_i}{\sigma_g\sigma_f}.
+\]
+The Taylor point has angle $\arccos(r_{\rm pooled})$ and radius $\sigma_f$. Its distance to the reference point $(\sigma_g,0)$ is
+\[
+ E_c=\sqrt{\sigma_f^2+\sigma_g^2-2\sigma_f\sigma_g r_{\rm pooled}}
+     =\sqrt{\tfrac1{100}\sum_i \mathrm{cRMSE}_i^2}.
+\]
+\fig{taylor_summary}{.95}{The same aggregate results in absolute and reference-normalized units. Black star: reference. Dotted contours: centered RMSE. Angular labels are correlations; radial labels are standard deviations. In the normalized panel all distances are divided by the pooled reference SD.}
+\tbl{taylor}{Taylor statistics from equal-patch pooled moments. Pooled reference SD is \referenceSD{} \rainunit. Pooled correlation is not the arithmetic mean of patch correlations in Section 1.}
+Taylor diagrams remove each patch's mean bias. The identity $\mathrm{RMSE}_i^2=\mathrm{cRMSE}_i^2+b_i^2$ is checked for every method and patch. Use the bias and RMSE tables alongside the diagrams.
+
+\clearpage
+\section{Taylor diagrams: all 100 patches per method}
+\fig{taylor_clouds_1}{.95}{First four methods, with all 100 patches per panel. Each patch uses its own reference SD as the radial unit. The black diamond is the normalized aggregate point from Section 5, computed from pooled moments rather than dot coordinates. The reference star is at radius 1 and correlation 1. All individual-patch panels use the same axes.}
+The clouds show whether an aggregate result is representative or hides patch variability. A radius below 1 means the estimated map is less spatially variable than its reference; a radius above 1 means it is more variable. Smaller angles indicate stronger spatial correlation. Distance to the reference combines variability mismatch and imperfect correlation after removing bias.
+
+\clearpage
+\subsection*{Individual-patch Taylor diagrams, continued}
+\fig{taylor_clouds_2}{.95}{Homotopy, GMZ, and ILDW-init Roy, with all 100 patches per panel. Axis ranges and symbols are the same as on the preceding page. No Taylor point uses the old Roy output.}
+An average of the 100 normalized dots would answer a different question from the pooled-moment diamond: it would normalize every patch before averaging. Here the two are kept distinct and labeled.
+
+\clearpage
+\section{Stopping behavior and available histories}
+\begin{table}[H]\centering\footnotesize\input{tables/stopping.tex}\caption{Flags and stopping information read from the saved solver diagnostics. Iteration units differ by method.}\end{table}
+The IDW and ILDW implementations used here are direct spatial interpolation baselines. ILDW is link-distance interpolation, not an iterative optimizer. They have no optimization objective or iteration histories. Their 100 rainfall results and available runtimes are included in the preceding comparisons; invented convergence curves would be misleading.
+
+Solver(ILDW) and Convex report L-BFGS-B iterations. Homotopy reports cumulative inner iterations over its continuation stages. GMZ reports gauge-update iterations. Roy reports outer linearization iterations and separately records inner ADMM/CG work. These iteration counts are not interchangeable measures of cost.
+
+\ensembleNote
+
+\subsection*{What the objective plots can establish}
+The plots document the trajectory of each method's own recorded quantity. Objective ratios divide by each run's first recorded value, so 1 marks that run's starting value. Ratios compare relative progress within a method; they do not make different objectives equivalent. In particular, a low objective ratio does not prove low rainfall error or convergence to a global optimum.
+
+Native roughness terms in Sections 8--10 use a symmetric-log scale, linear between $-10^{-4}$ and $10^{-4}$ and logarithmic outside that interval. This retains exact zeros at constant initialization while revealing small late-iteration values alongside large early peaks. The normalized attenuation and objective panels use logarithmic scales. Homotopy changes its observation model and attenuation scaling with its continuation parameter, so its native objective need not decrease across stage transitions.
+
+\clearpage
+\section{ILDW-initialized normalized solver}
+This method starts from the ILDW field and minimizes a weighted objective combining attenuation mismatch, along-link regularity, spatial regularity, and a small total-rainfall penalty. The saved configuration uses a maximum of 2000 L-BFGS-B iterations, with \texttt{ftol} and \texttt{gtol} both $10^{-6}$. We report its native saved terms, with their instance-specific weights preserved.
+\fig{optimization_opt_norm_ildw_mult_ildw_init_light_jtotal_long}{1}{All 100 Solver(ILDW) traces and their thick median. Top panels show weighted objective and attenuation ratios; bottom panels show native roughness terms.}
+\ensembleNote
+
+\clearpage
+\section{Virtual convex solver}
+This method uses the project's virtual-link formulation with a linear attenuation exponent and a constant initialization. Its native attenuation objective is in that virtual domain. Final rainfall statistics and Section 3's attenuation comparison are evaluated on the real raster and real ITU links instead. The saved L-BFGS-B cap is 2000 iterations.
+\fig{optimization_opt_norm_virtual_convex_const_init_long_light_jtotal}{1}{All 100 convex-solver traces and their thick median. The attenuation ratio belongs to the virtual model. Native roughness starts at zero for the constant initial field.}
+\ensembleNote
+
+\clearpage
+\section{Homotopy solver: objective trajectories}
+The continuation runs through 11 stages with $\beta=0,0.1,\ldots,1$. The initial stage is the virtual convex problem; the final stage uses the real-link model. Each stage starts from the preceding solution. These plots join the recorded iterations in cumulative inner-iteration order.
+\fig{optimization_opt_norm_virtual_homotopy_const_init_long_light_jtotal}{1}{All 100 homotopy trajectories and their thick median. The weighted objective and native attenuation term refer to the current stage. Stage changes alter both the attenuation model and its normalization, so an increase at a transition is not directly comparable to an increase within a fixed objective.}
+\ensembleNote
+
+\clearpage
+\section{Homotopy solver: continuation and real-link residual}
+\fig{homotopy_schedule}{1}{Left: the recorded continuation parameter for each run. Right: the real-ITU attenuation term evaluated along the same trajectory, divided by its initial value. This right-hand quantity uses the real-link domain at every stage, unlike the native stage attenuation curve in Section 10.}
+The curves make the cost of the initial convex stage visible relative to the later stages. The thick median of $\beta$ is a cohort summary: it is not a continuation schedule followed by a single patch.
+
+\ensembleNote
+
+The top-level homotopy success flag reflects the saved solver's reporting. It should not be interpreted as satisfying every displayed final diagnostic simultaneously. For example, the diagnostic writer can report a stage-level convergence message while a difference computed across saved stage endpoints does not satisfy its separate \texttt{ftol\_met} check. The report reproduces the recorded flag and stop reason without strengthening it into a global convergence claim.
+
+\clearpage
+\section{Roy DCT with ILDW initialization}
+Only the ILDW-initialized 300-outer-cap run is analyzed. Briefly, this implementation minimizes a nonlinear ITU attenuation residual plus an $\ell_1$ penalty on 2-D DCT coefficients, under nonnegative rainfall. It solves linearized convex subproblems with ADMM and CG and checks steps against the nonlinear objective. The saved parameters are $\lambda=2$, noise variance $10^{-5}$, damping $10^{-3}$, and outer relative-step tolerance $10^{-5}$. The prior Roy-method note provides the longer derivation.
+\fig{optimization_roy}{1}{All 100 ILDW-init Roy trajectories. The outer-step panel uses the full candidate step, before backtracking, divided by its tolerance. The lower panels show inner ADMM iteration counts and dual-residual ratios. A residual ratio at or below 1 satisfies that residual test; the outer test is separate.}
+\royFindings
+
+\ensembleNote
+
+\clearpage
+\section{GMZ: observed iteration behavior}
+GMZ's saved history is the largest absolute change across virtual gauges at each completed iteration. It is a fixed-point update diagnostic, not an objective function. The current outputs contain 100 histories, with 15 stopping at tolerance and 85 at the 300-iteration cap.
+\fig{optimization_gmz}{1}{All 100 GMZ gauge-update histories and their thick median. Left: absolute maximum update in \rainunit. Right: each history divided by its first recorded update. The convergence test is absolute-plus-relative and varies with the current gauge maximum, so no constant threshold line is drawn.}
+\ensembleNote
+
+\gmzFindings
+
+Small changes, exact gauge attenuation normalization, and accurate rainfall maps are three different properties. Meeting the gauge-update tolerance establishes only the recorded fixed-point stopping test. Reaching 300 iterations establishes neither convergence nor divergence by itself. It leaves a valid saved iterate with a cap-limited stopping reason.
+
+\clearpage
+\section{The GMZ algorithm implemented in this project}
+\textbf{Implementation scope.} This is the project's GMZ-style iterative virtual-gauge adaptation with per-link nonlinear ITU normalization. This section documents the code, rather than claiming an exact reproduction of an external GMZ algorithm. The description can be revised independently of the numerical results if the implementation is changed later.
+
+\subsection*{1. Turn each link into virtual gauges}
+For link $\ell$ of length $L_\ell$ km, the code chooses
+\[
+ n_\ell=\max\!\left(1,\left\lceil\frac{1000L_\ell}{125}\right\rceil\right),
+ \qquad \Delta s_\ell=L_\ell/n_\ell.
+\]
+Gauges are placed at the midpoints of the $n_\ell$ equal segments. Thus 125 m is a maximum target spacing, not a fixed segment length for every link. Each gauge belongs to exactly one link. Gauges from different links retain separate rainfall values even if they share a location or pixel.
+
+Given observed rain attenuation $A_\ell$, coefficient $k_\ell>0$, and exponent $\alpha_\ell>0$, every gauge on that link starts at its equivalent uniform rainfall:
+\[
+ z_j^{(0)}=\bar R_\ell=\left(\frac{A_\ell}{k_\ell L_\ell}\right)^{1/\alpha_\ell},
+ \qquad j\in\mathcal G_\ell.
+\]
+This initialization is computed per link. It is not initialization from the ILDW raster.
+
+\subsection*{2. Borrow shape information from other links}
+For target gauge $j$, collect gauges within 15 km whose owner is \emph{different} from the target link. All gauges on the target's own link are excluded, not only the target itself. For noncoincident neighbors, normalized weights are proportional to $d_{jm}^{-2}$:
+\[
+ u_j^{(t)}=\sum_{m\in\mathcal N_j}w_{jm}z_m^{(t)},\qquad
+ w_{jm}=\frac{d_{jm}^{-2}}{\sum_{q\in\mathcal N_j}d_{jq}^{-2}}.
+\]
+The implementation forms this row-normalized sparse operator once. If other-link gauges coincide with the target to within $10^{-12}$ m, only those coincident neighbors are used, with equal weights. With no eligible neighbors, the previous target value is retained.
+
+The proposed update is damped \emph{before} attenuation normalization:
+\[
+ v_j^{(t)}=(1-\eta)z_j^{(t)}+\eta u_j^{(t)},\qquad \eta=0.5.
+\]
+Intuitively, neighboring links suggest how rainfall should vary along a link. The next step forces that proposed shape to remain consistent with the target link's own attenuation.
+
+\clearpage
+\section{GMZ normalization, stopping, and rasterization}
+\subsection*{3. Restore each link's observed attenuation}
+Compute the attenuation of the damped virtual-gauge proposal:
+\[
+ \widetilde A_\ell= k_\ell\sum_{j\in\mathcal G_\ell}\Delta s_\ell
+                  (v_j^{(t)})^{\alpha_\ell}.
+\]
+If this is zero but $A_\ell>0$, the code resets that link's proposal to $\bar R_\ell$ and recomputes $\widetilde A_\ell$. For a positive proposal attenuation, rescale all gauges on the link by a common factor:
+\[
+ s_\ell=\left(\frac{A_\ell}{\widetilde A_\ell}\right)^{1/\alpha_\ell},
+ \qquad z_j^{(t+1)}=s_\ell v_j^{(t)},\quad j\in\mathcal G_\ell.
+\]
+Zero-observation links end with zero-valued gauges. Because one exponent applies to each link, multiplication by $s_\ell$ multiplies its attenuation by $s_\ell^{\alpha_\ell}$; hence every completed gauge update reproduces $A_\ell$ to numerical precision. The within-link shape ratios from the damped proposal are preserved by this rescaling.
+
+\textbf{Small illustrative example.} Take two equal-length gauges with proposed rain $(2,4)$, exponent $\alpha=2$, and target mean squared rain 9. The proposal has mean squared rain 10, so $s=\sqrt{9/10}$. The updated values are approximately $(1.897,3.795)$; their mean square is 9, while their arithmetic mean is about 2.846, not 3. Nonlinear attenuation normalization therefore does not enforce the arithmetic link-mean rainfall.
+
+\subsection*{4. Stop on gauge changes, or at the cap}
+The stopping test is
+\[
+ \max_j|z_j^{(t+1)}-z_j^{(t)}|
+ \leq 10^{-6}+10^{-5}\max_j|z_j^{(t)}|,
+\]
+with at most 300 iterations. A single slowly changing gauge can keep a patch above the threshold. The maximum update is recorded; the per-iteration gauge maximum on the right-hand side is not saved, so the exact historical tolerance ratio cannot be reconstructed from these files alone.
+
+\subsection*{5. Convert virtual gauges to one rainfall grid}
+For any pixel containing gauge midpoints, the final pixel value is the arithmetic mean of those gauges. For remaining pixels, it is inverse-distance-squared interpolation from all gauges within 15 km; no-neighbor pixels default to zero. The other-link exclusion belongs to the gauge-update step, not this raster interpolation. Occupied-pixel averaging is by gauge, not by unique link or segment length.
+
+Rasterization merges independently normalized link representations into one grid. It does not reapply the attenuation constraints to that grid. Consequently, exact virtual-gauge attenuation fit is lost in general, as Section 3 demonstrates. Nearby long links also supply more gauges and thus can exert more collective weight than a short link; the sparse weights are not first normalized per source link. These are concrete implementation choices to revisit if the GMZ design is revised.
+
+\clearpage
+\section{Sources, checks, and reproducibility}
+\subsection*{Saved inputs used}
+Paths below are relative to the repository root. The main cache is
+\begin{quote}\small\ttfamily
+Compute-Link-Attenuations/HundredPatches/pipeline/\par
+batch\_analyze\_output\_gmz\_roy\_dct\_ildw/stats\_report\_cache.json
+\end{quote}
+Its solver selection comes from \texttt{analyze\_gmz\_roy\_dct\_ildw.yaml} in the same pipeline folder. Fields are read from \texttt{solutions/sol\_dir\_*}; the report builder lists the exact seven folder suffixes. GT fields come from \texttt{HundredPatches/gt\_dir}. All methods are matched by patch filename, not directory order alone.
+
+The 300 L-BFGS-B/homotopy traces come from per-patch \texttt{itertrace.json} files. The 100 Roy and 100 GMZ histories come from their \texttt{optinfo.json} files. Runtime tables use the CSVs and summaries under \texttt{pipeline/timing/all\_methods}, \texttt{timing/gmz}, and \texttt{timing/roy\_dct\_ildw\_outer300}.
+
+The GMZ description follows \texttt{cml\_attenuation/solvers/solve\_rain\_gmz.py} and its interpolation helpers. The Roy summary follows \texttt{solve\_rain\_roy\_dct.py}. The earlier detailed local Roy note is \texttt{output/pdf/roy\_dct\_solver\_note/roy\_dct\_solver\_note.pdf}; it described an earlier run, whose numerical results are not reused here.
+
+\subsection*{Validation performed}
+The builder requires exactly 100 matching saved fields for every method and checks shape consistency and finite values. It recomputes all 700 patch RMSE, bias, and correlation values and checks agreement with the new cache. It checks the centered-error/bias identity and the Taylor-distance identity. It verifies runtime CSV patch sets and their mean against their saved summaries. All 100 Roy records specify ILDW initialization and the 300 outer cap; their recorded initial-field SHA-256 hashes also match the saved ILDW fields exactly.
+
+\texttt{results\_summary.json} contains summary statistics, stopping counts, runtime metadata, and SHA-256 hashes for the cache, analysis configuration, GMZ/Roy source modules, and runtime summaries. \texttt{per\_patch\_metrics.csv} provides the 700 field-level records. Hashes fingerprint the files read for this report; they do not prove the current source is identical to the historical code used for every older run.
+
+\subsection*{Rebuild}
+From the repository root, with the project environment installed:
+\begin{quote}\small\ttfamily
+Compute-Link-Attenuations/.venv/bin/python\par
+\hspace*{1em}output/pdf/seven\_method\_results/build\_results.py\par
+Compute-Link-Attenuations/.venv/bin/python\par
+\hspace*{1em}output/pdf/seven\_method\_results/write\_numbers.py\par
+cd output/pdf/seven\_method\_results\par
+pdflatex -interaction=nonstopmode -halt-on-error seven\_method\_results.tex\par
+pdflatex -interaction=nonstopmode -halt-on-error seven\_method\_results.tex
+\end{quote}
+Each Python command above is one command continued visually onto the next line. Rebuilding reads saved results and regenerates this report's tables and figures; it does not solve patches or overwrite the user's rendered report folders.
+\clearpage
+\section{D3 distance profiles: rainy and non-rainy pixels}
+\subsection*{Rainy pixels: relative absolute error}
+The distance $d_3(p)$ is the pixel-center distance to the third-closest distinct link. The cached analyzer uses sampled points to select candidate links, then calculates point-to-segment distances for those candidates. These figures use the existing $k=3$ cache values and the same seven-method comparison as the rest of this report.
+
+Rainy pixels satisfy $g_{ip}\geq0.6$ \rainunit. Within each patch and distance bin $B$, the statistic is
+\[
+ m_{i,B}^{\rm rainy}=\operatorname{median}_{p:\,d_3(p)\in B,\;g_{ip}\geq0.6}
+       \frac{|f_{ip}-g_{ip}|}{g_{ip}}.
+\]
+Each box spans the 25th to 75th percentiles of the patch-level medians, with a black line at their median. Whiskers extend to the minimum and maximum, matching the existing D3 report convention. A relative error of 0.1 corresponds to 10\%.
+\fig{d3_rainy}{1}{Rainy-pixel D3 profiles for all seven methods, including GMZ and ILDW-init Roy. Quartile boxes, median lines, and min-to-max whiskers summarize one value per nonempty patch/bin. Top: full range. Bottom: enlarged view of the boxes; whisker extremes outside this view remain visible above. Both axes are linear; RAE is dimensionless. Counts give contributing patches.}
+
+The original eight distance bins are retained, including separate $(6000,9000]$ m and $>9000$ m bins. The latter has 47 contributing rainy-pixel patches; all other rainy bins have 100. Keeping the tail bins separate avoids pooling two median values from the same patch into a single tail distribution. A patch with no rainy pixels in a bin is omitted from that bin, not assigned zero error.
+
+\clearpage
+\subsection*{Non-rainy pixels: absolute error}
+Non-rainy pixels satisfy $g_{ip}<0.6$ \rainunit. For these pixels the cached statistic is absolute error, in \rainunit, rather than relative error:
+\[
+ m_{i,B}^{\rm nonrainy}=\operatorname{median}_{p:\,d_3(p)\in B,\;g_{ip}<0.6}
+       |f_{ip}-g_{ip}|.
+\]
+Boxes span the quartiles of contributing patch medians, black lines mark medians, and whiskers reach the minimum and maximum. All seven methods use the same GT-defined pixel classes and distance bins.
+\fig{d3_nonrainy}{1}{Non-rainy-pixel D3 profiles for all seven methods. Absolute errors are in \rainunit. Top: full range, including every whisker endpoint. Bottom: detail view of the boxes. Both axes are linear. Counts are 76, 81, 82, 83, 86, 84, 65, and 25 patches; empty patch/bin combinations are omitted.}
+
+The contributing patch set changes with distance because some patches have no non-rainy pixels in a given bin. In particular, the $>9000$ m bin summarizes only 25 patches. Comparisons among methods within a bin use the same eligible patches, but changes between bins can reflect both distance and a different patch composition. The rainy and non-rainy panels have different error units and should not be compared by vertical magnitude alone.
+
+\subsection*{Rebuilding these additions}
+The script \texttt{build\_d3.py} in this report's source folder reads the existing seven-method cache and creates the two figures and \texttt{d3\_statistics.json}. It checks each method's number of values against the count of nonempty patch/bin combinations. Run it with the project Python environment before the two LaTeX compilation commands in Section 16. The source bundle includes the generated figures, so recompiling the PDF alone does not require the original cache.
+\end{document}

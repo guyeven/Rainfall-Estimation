@@ -1,0 +1,76 @@
+# Shrinkage ablation: Solver(ILDW) and Convex Solver only.
+# Same numerical settings as batch_solve_config.yaml, except num_total=0
+# removes the J_total rainfall-magnitude penalty from both objectives.
+# Paths are relative to this YAML; outputs are separate from baseline runs.
+resume: true
+
+input:
+  est_dir: "../est_dir"
+  file_pattern: "est_input_*.json"
+  recursive: false
+
+parallel:
+  solver_workers: 1
+  patch_workers: 2
+
+solvers:
+  solver_ildw_no_shrinkage:
+    name: "solver_ildw_no_shrinkage"
+    label: "Solver(ILDW) without shrinkage"
+    type: "lbfgsb"
+    module: "cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers"
+    out_dir: "solutions/sol_dir_solver_ildw_no_shrinkage"
+    optimization:
+      epsilon: 0.01
+      maxiter: 2000
+      rain_init:
+        mode: fixed
+        value: 0.6
+      R0_from_ILDW: true
+      R0_from_IDW: false
+      R0_from_GT: false
+      num_atten: 1.0
+      num_1d: 1.0
+      num_2d: 0.5
+      num_total: 0.0
+      num_total_divide_by_num_pixels: true
+    tolerances:
+      ftol: 1.0e-06
+      gtol: 1.0e-06
+      maxls: 20
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0
+
+  convex_no_shrinkage:
+    name: "convex_no_shrinkage"
+    label: "Convex Solver without shrinkage"
+    type: "lbfgsb"
+    module: "cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers_virtual_convex"
+    out_dir: "solutions/sol_dir_convex_no_shrinkage"
+    optimization:
+      epsilon: 0.01
+      maxiter: 2000
+      rain_init:
+        mode: fixed
+        value: 0.6
+        multiplier: 2.0
+      R0_from_ILDW: false
+      R0_from_IDW: false
+      R0: 0.6
+      num_atten: 1.0
+      num_1d: 1.0
+      num_2d: 0.5
+      num_total: 0.0
+      num_total_divide_by_num_pixels: true
+    tolerances:
+      ftol: 1.0e-06
+      gtol: 1.0e-06
+      maxls: 20
+    idw:
+      r_max_m: 15000.0
+      power: 2.0
+      eps_m: 1.0
+      default_value: 0.0

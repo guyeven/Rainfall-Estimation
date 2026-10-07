@@ -1,0 +1,26 @@
+% Requires \usepackage[ruled,vlined,linesnumbered]{algorithm2e} and \SetAlgoNoEnd in the preamble.
+\begin{algorithm}[H]
+    \caption{Discretized Midpoint IDW}
+    \DontPrintSemicolon
+    \KwData{link set $\mathcal{L}$ and patch with set of pixels $\mathcal{P}$}
+    \KwResult{field $\hat R$}
+
+    \ForEach{link $\ell \in \mathcal{L}$}{
+        $(\ell.\kappa,\ell.\alpha) \gets \mathrm{ITU838}(\ell.\mathrm{freq},\ell.\mathrm{polarization})$\;
+        $\ell.\mathrm{rainrate} \gets \left(\dfrac{\ell.\mathrm{attenuation}/\ell.\mathrm{length}}{\ell.\kappa}\right)^{1/\ell.\alpha}$\;
+    }
+
+    \ForEach{pixel $p \in \mathcal{P}$}{
+        $M_p \gets \{\ell \in \mathcal{L} : \ell.\mathrm{midpoint} \in p\}$\;
+        \eIf{$M_p \neq \emptyset$}{
+            $\hat R_p \gets \dfrac{1}{|M_p|}\sum_{\ell \in M_p} \ell.\mathrm{rainrate}$\;
+        }{
+            $N_p \gets \{\ell \in \mathcal{L} : \|\ell.\mathrm{midpoint}-p.\mathrm{center}\|_2 \le r_{\max}\}$\;
+            \eIf{$N_p = \emptyset$}{
+                $\hat R_p \gets 0$\;
+            }{
+                $\hat R_p \gets \sum_{\ell \in N_p}\dfrac{\|\ell.\mathrm{midpoint}-p.\mathrm{center}\|_2^{-2}}{\sum_{\ell' \in N_p}\|\ell'.\mathrm{midpoint}-p.\mathrm{center}\|_2^{-2}} \cdot \ell.\mathrm{rainrate}$\;
+            }
+        }
+    }
+\end{algorithm}
