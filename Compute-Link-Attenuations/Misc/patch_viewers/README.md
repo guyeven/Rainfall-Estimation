@@ -60,13 +60,13 @@ Then choose a starting `patch_*.jsonl` file. If the viewer asks for the patch
 list JSONL path, use:
 
 ```text
-Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches.local.jsonl
+Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches.local.jan2023.jsonl
 ```
 
 From this `patch_viewers` directory, the same patch-list path is:
 
 ```text
-../../../Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches.local.jsonl
+../../../Patch-Generator/Benchmark-Patches/benchmark-500-files-758-patches.local.jan2023.jsonl
 ```
 
 The viewer loads the selected patch's rainfall field, overlays the links, and

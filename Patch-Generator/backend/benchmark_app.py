@@ -49,7 +49,16 @@ def _load_rain(path: str) -> np.ndarray:
             backend_dir / raw_path,
             backend_dir.parent.parent / raw_path,
         ]
-        path = next((str(candidate.resolve()) for candidate in candidates if candidate.is_file()), path)
+        resolved = next((candidate.resolve() for candidate in candidates if candidate.is_file()), None)
+        if resolved is None:
+            # Older JSONL files may still use the former flat raw/ path after
+            # files are organized into month/year subdirectories.
+            raw_root = backend_dir / "data" / "raw"
+            matches = list(raw_root.rglob(raw_path.name)) if raw_root.is_dir() else []
+            if len(matches) == 1:
+                resolved = matches[0].resolve()
+        if resolved is not None:
+            path = str(resolved)
     try:
         f = h5py.File(path, "r")
     except OSError:

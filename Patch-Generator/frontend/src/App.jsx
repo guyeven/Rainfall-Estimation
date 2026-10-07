@@ -80,7 +80,7 @@ export default function App() {
       setFilesLoading(true);
       setFilesError(null);
       try {
-        const res = await fetch(`${API_BASE}/files?limit=200`);
+        const res = await fetch(`${API_BASE}/files?limit=10000`);
         if (!res.ok) throw new Error();
         const data = await res.json();
         if (!cancelled) setFiles(data || []);
@@ -102,7 +102,7 @@ export default function App() {
     setFiles([]);
     setSelectedFiles([]);
     try {
-      const res = await fetch(`${API_BASE}/files?limit=200`);
+        const res = await fetch(`${API_BASE}/files?limit=10000`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       setFiles(data || []);
