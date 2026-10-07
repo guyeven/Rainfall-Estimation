@@ -178,7 +178,7 @@ def api_set_detection_params(params: PatchParams) -> PatchParams:
 # Files
 # --------------------------------------------------------------------
 @app.get("/files", response_model=List[FileInfo])
-def api_list_files(limit: int = Query(50, ge=1, le=500)) -> List[FileInfo]:
+def api_list_files(limit: int = Query(5000, ge=1, le=10000)) -> List[FileInfo]:
     files = list_rain_files(limit)
     return [FileInfo(path=str(p), timestamp=ts) for p, ts in files]
 
@@ -341,7 +341,9 @@ def api_patch_image(patch_id: str):
     if not finite.any():
         norm = np.zeros(arr.shape, dtype=np.float32)
     else:
-        lo = float(np.nanmin(arr[finite]))
+        # Rainfall is nonnegative; anchor the palette at zero so the legend
+        # has the same meaning across patches.
+        lo = 0.0
         hi = float(np.nanmax(arr[finite]))
         if hi <= lo:
             norm = np.zeros(arr.shape, dtype=np.float32)
