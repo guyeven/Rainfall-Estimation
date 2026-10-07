@@ -1,0 +1,136 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=18mm,headheight=14pt]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern,microtype,amsmath,booktabs,graphicx,float,array}
+\usepackage[table]{xcolor}
+\usepackage{caption,fancyhdr}
+\usepackage[hidelinks]{hyperref}
+\definecolor{ink}{HTML}{213547}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\small Rainfall reconstruction: shrinkage comparison}
+\fancyhead[R]{\small 100 matched patches}\fancyfoot[C]{\thepage}
+\setlength{\parindent}{0pt}\setlength{\parskip}{6pt}
+\setlength{\tabcolsep}{4pt}\renewcommand{\arraystretch}{1.18}
+\captionsetup{font=small,labelfont=bf}
+\newcommand{\fig}[2]{\begin{figure}[H]\centering\includegraphics[width=\linewidth]{figures/#1.pdf}\caption{#2}\end{figure}}
+\newsavebox{\tablebox}
+\newcommand{\tbl}[2]{\begin{table}[H]\centering\sbox{\tablebox}{\small\input{tables/#1.tex}}\ifdim\wd\tablebox>\linewidth\resizebox{\linewidth}{!}{\usebox{\tablebox}}\else\usebox{\tablebox}\fi\caption{#2}\end{table}}
+\newcommand{\ensembleNote}{All 100 patches appear as thin colored traces, ending at their saved stopping iteration. The black curve is the pointwise median of the same 100 patches; final values are held after stopping for this median only. Dashed black segments indicate that at least one patch has stopped. They do not represent additional optimizer iterations.}
+\begin{document}
+{\LARGE\bfseries Shrinkage in rainfall reconstruction}\par
+{\large Six-method comparison from saved runs}\par
+26 September 2026
+
+\section{Statistics}
+This report compares IDW, ILDW, Solver(ILDW) with light shrinkage, Solver(ILDW) without shrinkage, Convex with light shrinkage, and Convex without shrinkage. In tables and figures, \textbf{light} denotes light shrinkage and \textbf{none} denotes no shrinkage. The no-shrinkage configurations set \texttt{num\_total=0}; other numerical settings are preserved within each solver pair.
+
+All methods have the same 100 saved patches. Statistics were recomputed from the saved rainfall fields and RMSE, bias, and Pearson correlation checked against the new cache. Each patch has equal weight in Table~\ref{tab:stats}. SD is the sample standard deviation across patches. Rainfall errors and bias are in mm/h; correlation is dimensionless.
+\begin{table}[H]\centering\resizebox{\linewidth}{!}{\input{tables/rainfall.tex}}\caption{Rainfall statistics across all pixels of each patch. Mean RMSE is the mean of patch RMSEs, rather than a pooled pixel RMSE.}\label{tab:stats}\end{table}
+Removing shrinkage changes the Solver(ILDW) mean RMSE from 1.059 to 1.066 mm/h. The Convex variants both round to 0.845 mm/h. These are descriptive results on this patch set, not a statistical significance claim.
+\fig{rainfall_distributions}{Per-patch RMSE, bias, and correlation. Boxes span the interquartile range; whiskers use the 1.5-IQR rule. Dots show all patches, including extremes.}
+
+\clearpage
+\section{Wet/dry classification}
+Wet means rainfall $\geq 0.6$ mm/h for both reference and reconstruction. A true positive (TP) is a correctly predicted wet pixel; TN is correctly predicted dry, FP is false wet, and FN is missed wet.
+\tbl{classification}{Equal-patch mean percentages of all pixels. TN, FP, FN, and TP sum to 100\% up to rounding. Accuracy is TN + TP.}
+These FP and FN percentages have \emph{all pixels} as denominator. They differ from the conditional false-positive and false-negative rates below.
+\tbl{classification_conditional}{Conditional scores computed from pixel counts pooled across all 100 patches; larger patches contribute more pixels.}
+For pooled counts,
+\[
+\mathrm{Recall}=\frac{TP}{TP+FN},\quad
+\mathrm{Specificity}=\frac{TN}{TN+FP},\quad
+\mathrm{Precision}=\frac{TP}{TP+FP},
+\]
+\[
+F_1=\frac{2TP}{2TP+FP+FN},\quad
+\mathrm{FPR}=\frac{FP}{FP+TN},\quad
+\mathrm{FNR}=\frac{FN}{FN+TP}.
+\]
+\section{Attenuation fit}
+\tbl{attenuation}{Mean over patches of link attenuation error, from the analysis cache. Length weighting occurs within each patch.}
+
+\clearpage
+\section{Runtime and stopping}
+\tbl{runtime}{End-to-end wall-clock time from saved benchmark records. A dash means no recorded end-to-end timing; $n=0$ is missing timing, not a zero-second run. Total is the sum of per-patch durations.}
+The benchmark scope includes input loading, initialization, optimization, diagnostics, and writing outputs. These measurements come from separate benchmark sessions, so they are not a controlled paired timing experiment. Solver(ILDW) without shrinkage has no saved runtime. Convex without shrinkage has optimizer-only timing, shown separately below.
+\tbl{optimizer_runtime}{Optimizer-only timing recorded in the no-shrinkage Convex diagnostics. This excludes end-to-end overhead and must not be compared directly with the table above.}
+The no-shrinkage batch used two patch workers. Concurrent workload can affect observed wall-clock durations. No additional solver runs were launched to fill timing gaps.
+\tbl{stopping}{Saved optimizer stopping status for all six methods. Success flags indicate that the implementation's stopping condition was met, not proof of a globally optimal rainfall field.}
+Here \texttt{ftol} denotes the function-decrease stopping condition, and \texttt{gtol} the projected-gradient condition. Both optimization variants used a 2000-iteration cap.
+
+\clearpage
+\section{Taylor diagrams: aggregate patterns}
+Each patch is centered separately. Aggregate moments are equal-patch means of within-patch variances and covariance:
+\[
+\sigma_g^2=\langle\mathrm{Var}(g_i)\rangle,\quad
+\sigma_f^2=\langle\mathrm{Var}(f_i)\rangle,\quad
+r=\frac{\langle\mathrm{Cov}(g_i,f_i)\rangle}{\sigma_g\sigma_f}.
+\]
+Centered RMSE satisfies $E'^2=\sigma_g^2+\sigma_f^2-2\sigma_g\sigma_f r$. Taylor distance excludes mean bias; use the statistics table to assess bias separately.
+\fig{taylor_summary}{Unnormalized and normalized Taylor diagrams. Radius is standard deviation, angle is $\arccos(r)$, the black star is the reference, and dotted contours show centered RMSE.}
+\tbl{taylor}{Aggregate within-patch moments. The pooled-moment correlation differs from the arithmetic mean of patch correlations in the statistics table.}
+
+\clearpage
+\section{Taylor diagrams: individual patches}
+Each colored point represents one patch, normalized by that patch's reference standard deviation. The black diamond is the aggregate moment point and the black star is the reference. All panels use the same radial range.
+\fig{taylor_clouds_1}{Individual-patch patterns for the direct IDW and ILDW baselines; 100 points per panel.}
+\clearpage
+\subsection*{Optimization variants: individual patches}
+Each panel contains all 100 patches with the same normalization and radial range as the baseline panels.
+\fig{taylor_clouds_2}{Individual-patch patterns for all four optimization variants; 100 points per panel.}
+
+\clearpage
+\section{Solver(ILDW), light shrinkage: convergence}
+\ensembleNote
+\fig{optimization_opt_norm_ildw_mult_ildw_init_light_jtotal_long}{All 100 Solver(ILDW) light-shrinkage histories in one figure. Objective and attenuation values are normalized by each run's initial value; roughness terms retain their native units.}
+The first two panels use logarithmic vertical axes. Roughness panels use a symmetric-log scale with a linear interval around zero. The objective is the solver's weighted objective; its absolute magnitude is not a common accuracy score across methods.
+
+\clearpage
+\section{Solver(ILDW), no shrinkage: convergence}
+\ensembleNote
+\fig{optimization_solver_ildw_no_shrinkage}{All 100 Solver(ILDW) no-shrinkage histories in one figure. Normalization and axis conventions match the light-shrinkage figure.}
+The rainfall-magnitude penalty has zero weight. Attenuation and along-link and spatial penalties remain active.
+
+\clearpage
+\section{Convex, light shrinkage: convergence}
+\ensembleNote
+\fig{optimization_opt_norm_virtual_convex_const_init_long_light_jtotal}{All 100 Convex light-shrinkage histories in one figure. The attenuation term is the native term recorded by the convex solver.}
+Within-run normalization helps compare convergence trajectories, but does not make the objectives of different solvers numerically equivalent.
+
+\clearpage
+\section{Convex, no shrinkage: convergence}
+\ensembleNote
+\fig{optimization_convex_no_shrinkage}{All 100 Convex no-shrinkage histories in one figure. The rainfall-magnitude penalty has zero weight; all other configured penalties remain active.}
+
+\clearpage
+\section{Third-closest-link distance: wet pixels}
+Distance $d_3$ is the cached sampled-point distance to the third-closest link. Each observation in a box is one patch's median error among reference-wet pixels in the distance bin. Relative absolute error is $|\hat R-R|/R$. Wet pixels satisfy $R\geq0.6$ mm/h.
+\fig{d3_rainy}{Quartile boxes and median lines across contributing patches. Whiskers show the full minimum--maximum range. The lower panel magnifies the quartile range and can clip extremes; the upper panel retains the full range. Labels give contributing patch counts per bin.}
+Empty patch/bin combinations are omitted rather than treated as zero. Bins retain the cache's distance boundaries.
+
+\clearpage
+\section{Third-closest-link distance: dry pixels}
+For reference-dry pixels ($R<0.6$ mm/h), each observation is one patch's median absolute error in mm/h in that distance bin. Relative error is not used for this dry-pixel analysis.
+\fig{d3_nonrainy}{Dry-pixel $d_3$ box-and-whisker profiles. Boxes show quartiles, center lines medians, and whiskers full min--max ranges. The detail panel and full-range panel contain the same observations.}
+
+\clearpage
+\section{Sources and reproduction}
+The source cache is
+\begin{quote}\small\path{Compute-Link-Attenuations/HundredPatches/pipeline/}\par
+\path{batch_analyze_output_shrinkage_comparison/stats_report_cache.json}
+\end{quote}
+Saved rainfall fields, iteration traces, and optimizer diagnostics were read from the six solution directories selected by \texttt{analyze\_shrinkage\_comparison.yaml}. Runtime benchmark summaries were read from the pipeline's \texttt{timing/} directories. The report's \texttt{results\_summary.json} records statistics, stopping status, timing metadata, and cache/timing source hashes. \texttt{per\_patch\_metrics.csv} contains all 600 method--patch rows; \texttt{d3\_statistics.json} contains the boxplot summaries and cache hash.
+
+To regenerate figures and tables, run from the repository root:
+\begin{quote}\footnotesize\ttfamily
+Compute-Link-Attenuations/.venv/bin/python\par
+\hspace*{4mm}output/pdf/shrinkage\_comparison/build\_results.py\par
+Compute-Link-Attenuations/.venv/bin/python\par
+\hspace*{4mm}output/pdf/shrinkage\_comparison/build\_d3.py
+\end{quote}
+Each wrapped pair above is one shell command. Then run twice from this report directory:
+\begin{quote}\small\ttfamily
+pdflatex -interaction=nonstopmode -halt-on-error shrinkage\_comparison.tex
+\end{quote}
+The LaTeX source bundle includes all required tables and figures and can be compiled without access to the original cache. The Python builders require the repository data. No solver rerun or standard report-rendering pass is needed to compile the report.
+\end{document}

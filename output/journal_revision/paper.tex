@@ -1,0 +1,117 @@
+% Rain Fall Estimation Based on Commercial Microwave Link Attenuation
+% LaTeX draft (edit freely)
+
+\documentclass[11pt]{article}
+
+% -------- Packages --------
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{siunitx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage[nameinlink,noabbrev]{cleveref}
+\usepackage{authblk}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% -------- Metadata --------
+\title{Rain Fall Estimation Based on Commercial Microwave Link Attenuation}
+\author{\textbf{Your Name}}
+\affil{Your Institution}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Commercial microwave links (CMLs) in cellular backhaul networks experience rain-induced attenuation that can be exploited as opportunistic sensors for rainfall monitoring. This paper constructs a noise-free benchmark for rainfall field reconstruction from commercial microwave links (CMLs). Hourly EURADCLIM rainfall maps are used as the ground-truth field, a forward attenuation model is applied to generate synthetic link attenuations, and inverse methods are evaluated by comparing reconstructed fields against the known ground truth. Each hourly radar map is treated independently when extracting patch-based reference events.
+\end{abstract}
+
+\section{Data source and preprocessing}
+We use the European climatological gauge-adjusted radar precipitation dataset \emph{EURADCLIM} \cite{overeem2023euradclim}. EURADCLIM is derived from OPERA European radar composites and provides hourly precipitation fields at \SI{2}{km} spatial resolution over a large fraction of Europe. The products are distributed in HDF5 following the OPERA Data Information Model (ODIM) convention \cite{odimh5}. The KNMI data platform provides file-level access and documentation for the dataset.\footnote{EURADCLIM data access portal (KNMI, 1-h accumulations): \url{https://dataplatform.knmi.nl/dataset/access/rad-opera-hourly-rainfall-accumulation-euradclim-3-0}}
+
+
+\section{Automatic extraction of rain events from hourly maps}
+Each hourly EURADCLIM map is processed independently. Rain events are defined as spatial patches obtained by connected-component labeling of a thresholded, locally averaged rainfall field. Each event is represented by the axis-aligned bounding box of a connected component whose bounding-box side lengths (in km) satisfy $L_{\min}\le \min(\cdot)$ and $\max(\cdot)\le L_{\max}$. The procedure is summarized in Algorithm~\ref{alg:rainpatch}.
+
+\begin{algorithm}
+\caption{Rain patch detection. Detect bounding boxes of rain events. (1)~Smooth rain map by locally averaging. (2)~Select pixels with smoothed rain about threshold $\tau$. (3)~Keep bounding box of components of selected pixels if side lengths are within allowed interval. }
+\label{alg:rainpatch}
+\begin{algorithmic}[1]
+\Require Hourly rainfall map $R$ defined on a finite pixel grid $\mathcal{P}$ (mm/h)
+\Require Threshold $\tau=3.0$ mm (hourly accumulation), local-mean window $w_y\times w_x$ pixels (here $4\times4$), pixel size $p=2.0$ km, minimum side $L_{\min}=50$ km, maximum side $L_{\max}=95$ km
+\Ensure Set of patch rectangles (bounding boxes) $\mathcal{B}$
+\State $\bar{R} \gets \mathrm{LocalMean}(R, w_y, w_x)$ \Comment{low-pass filter by $w_y\times w_x$ pixel averaging}
+\State $\mathcal{S} \gets \{\,q\in\mathcal{P}: \bar{R}(q)\ge \tau\,\}$ \Comment{rain pixels (defined on the smoothed map)}
+\State Partition $\mathcal{S}$ into connected components $\{\mathcal{C}_1,\dots,\mathcal{C}_N\}$
+\Comment{Connectivity via $\ell_{\infty}$ adjacency: $q\sim r$ if $\|q-r\|_{\infty}=1$ (8-neighborhood)}
+\State $\mathcal{B} \gets \{\,\mathrm{bbox}(\mathcal{C})\;\mid\; \mathcal{C}\in\{\mathcal{C}_1,\dots,\mathcal{C}_N\},\; L_{\min} \le \min\big(\mathrm{sidelengths}(\mathrm{bbox}(\mathcal{C}))\big)\;\wedge\; \max\big(\mathrm{sidelengths}(\mathrm{bbox}(\mathcal{C}))\big) \le L_{\max}\,\}$ \Comment{keep boxes with side lengths in $[L_{\min},L_{\max}]$}
+\State \Return $\mathcal{B}$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Introduction}
+Rainfall estimation is fundamental for hydrology, weather prediction, and urban drainage management. Traditional instruments such as rain gauges and weather radar have limitations in spatial coverage, maintenance, and cost. In contrast, commercial microwave links, widely deployed in telecommunication networks, provide dense, near-ground measurements that can complement existing observing systems.
+
+\section{Background and Related Work}
+\subsection{Rain-induced attenuation}
+For a microwave link of length $L$ (km), the path-integrated specific attenuation $k$ (dB/km) relates to the measured attenuation $A$ (dB) via
+\begin{equation}
+A = k L.
+\end{equation}
+The ITU-R power-law relates specific attenuation to rainfall rate $R$ (mm/h):
+\begin{equation}
+ k = a R^{b},
+\end{equation}
+where $a$ and $b$ depend on frequency, polarization, and temperature.
+
+\subsection{Commercial microwave links as sensors}
+A CML provides time series of received signal level (RSL) or transmitted and received power. Rainfall retrieval requires separating rain effects from other losses (e.g., wet antennas, quantization, multipath, and hardware drift).
+
+\section{Methodology}
+
+\subsection{Benchmark construction (forward model)}
+For each hour, we treat the EURADCLIM map as the ground-truth rainfall field. For each CML, we compute the link attenuation predicted by a forward rain-attenuation model (e.g., an ITU-R power-law for specific attenuation integrated along the link path). The resulting synthetic attenuations form a noise-free observation set for that hour.
+
+\subsection{Inverse problem (rainfall field reconstruction)}
+Given the synthetic link attenuations for an hour, inverse methods are applied to reconstruct the rainfall field on the map grid. Methods can be compared under identical conditions because the forward model, link geometry, and ground-truth field are known.
+
+\subsection{Evaluation}
+Reconstruction quality is assessed by comparing the reconstructed field against the EURADCLIM ground truth for the same hour, using pixel-wise error metrics and event/patch-based summaries.
+
+\section{Experiments and Evaluation}
+
+\subsection{Metrics}
+Use correlation, bias, RMSE, and event-based skill scores. Provide both instantaneous and accumulated rainfall comparisons.
+
+\subsection{Results}
+Include figures: time series examples, scatter plots vs.\ gauges, and spatial maps.
+
+\section{Discussion}
+Discuss uncertainties: quantization, baseline drift, wet antenna effects, mixed-phase precipitation, and representativeness (path average vs.\ point gauges).
+
+\section{Conclusion}
+Summarize the pipeline and key findings. Outline future work such as improved WAA correction, better wet/dry detection, and multi-sensor fusion.
+
+\section*{Acknowledgments}
+Optional.
+
+\bibliographystyle{plain}
+\begin{thebibliography}{9}
+
+\bibitem{itu}
+ITU-R Recommendation P.838: Specific attenuation model for rain for use in prediction methods.
+
+\bibitem{overeem2023euradclim}
+A. Overeem, H. Leijnse, and R. Uijlenhoet, ``EURADCLIM: the European climatological high-resolution gauge-adjusted radar rainfall dataset and its potential for understanding extreme precipitation,'' \emph{Earth System Science Data}, 15, 1441--1460, 2023. \url{https://essd.copernicus.org/articles/15/1441/2023/}
+
+\bibitem{knmi_euradclim_project}
+KNMI, ``EURADCLIM: the European climatological high-resolution gauge-adjusted radar rainfall dataset'' (project page). \url{https://www.knmi.nl/research/observations-data-technology/projects/euradclim-the-european-climatological-high-resolution-gauge-adjusted-radar-rainfall-dataset}
+
+\bibitem{odimh5}
+EUMETNET OPERA, ``Weather Radar Information Model for implementation with the HDF5 format (ODIM\_H5)'' (specification). \url{https://www.eumetnet.eu/wp-content/uploads/2026/01/ODIM_H5_v2.4.2_final.pdf}
+
+\end{thebibliography}
+
+\end{document}

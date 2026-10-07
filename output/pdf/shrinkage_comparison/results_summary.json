@@ -1,0 +1,592 @@
+{
+  "patch_count": 100,
+  "statistics": {
+    "IDW": {
+      "rmse": {
+        "n": 100,
+        "mean": 1.3066583620065793,
+        "median": 0.8901582856412358,
+        "sd": 1.2405311261545646,
+        "q1": 0.6068102303754013,
+        "q3": 1.3016299276932304,
+        "min": 0.24740626859689058,
+        "max": 6.932094954129066
+      },
+      "mae": {
+        "n": 100,
+        "mean": 0.7882294181467305,
+        "median": 0.626895557211864,
+        "sd": 0.5877744673640105,
+        "q1": 0.42730233799496387,
+        "q3": 0.8557526654938982,
+        "min": 0.1871502269679383,
+        "max": 3.3327703181972805
+      },
+      "bias": {
+        "n": 100,
+        "mean": 0.034331878011611285,
+        "median": 0.003041414814646099,
+        "sd": 0.2979279924362012,
+        "q1": -0.08847700377911931,
+        "q3": 0.08382083568672821,
+        "min": -0.9488405593202843,
+        "max": 1.5418674927752634
+      },
+      "correlation": {
+        "n": 100,
+        "mean": 0.8663593732333392,
+        "median": 0.8776718404723745,
+        "sd": 0.059671302674457236,
+        "q1": 0.82387771169676,
+        "q3": 0.9130448307766739,
+        "min": 0.7148964252433035,
+        "max": 0.9599729402411483
+      }
+    },
+    "ILDW": {
+      "rmse": {
+        "n": 100,
+        "mean": 1.2389826521399785,
+        "median": 0.8454294741209336,
+        "sd": 1.188020701949163,
+        "q1": 0.5648826363908978,
+        "q3": 1.2075622083364463,
+        "min": 0.228943918453388,
+        "max": 7.061692753215281
+      },
+      "mae": {
+        "n": 100,
+        "mean": 0.7410298818857574,
+        "median": 0.5822298536213526,
+        "sd": 0.5554176389960227,
+        "q1": 0.40110407757725824,
+        "q3": 0.7976075419155745,
+        "min": 0.1717996269522948,
+        "max": 3.2624646895621447
+      },
+      "bias": {
+        "n": 100,
+        "mean": 0.04683446547684885,
+        "median": 0.01445413634220085,
+        "sd": 0.26280261775991576,
+        "q1": -0.055522636392486675,
+        "q3": 0.07844007947346973,
+        "min": -0.7970599453285878,
+        "max": 1.3890185925703125
+      },
+      "correlation": {
+        "n": 100,
+        "mean": 0.8779247899665341,
+        "median": 0.8902405180800768,
+        "sd": 0.05483013681673284,
+        "q1": 0.8403574125021562,
+        "q3": 0.9212838224423177,
+        "min": 0.7156095172584123,
+        "max": 0.9593476800005978
+      }
+    },
+    "Solver(ILDW) light": {
+      "rmse": {
+        "n": 100,
+        "mean": 1.0589391826437538,
+        "median": 0.6064320959856409,
+        "sd": 1.198447171320632,
+        "q1": 0.40158570598732796,
+        "q3": 1.0920230614892117,
+        "min": 0.15070941383443073,
+        "max": 6.9757303099546695
+      },
+      "mae": {
+        "n": 100,
+        "mean": 0.6089348858619339,
+        "median": 0.4104663788500571,
+        "sd": 0.5657298827304139,
+        "q1": 0.2662690779283428,
+        "q3": 0.7167711339903153,
+        "min": 0.10722335681495582,
+        "max": 3.2353386507208497
+      },
+      "bias": {
+        "n": 100,
+        "mean": 0.04003102864923061,
+        "median": 0.020694296157367023,
+        "sd": 0.23593694609781768,
+        "q1": -0.015141542969352885,
+        "q3": 0.0614429441590724,
+        "min": -0.7969931937967045,
+        "max": 1.363865814835658
+      },
+      "correlation": {
+        "n": 100,
+        "mean": 0.9183395259438804,
+        "median": 0.9333426762094019,
+        "sd": 0.055635256389895395,
+        "q1": 0.8881099645056054,
+        "q3": 0.9614107511822363,
+        "min": 0.7228347929235222,
+        "max": 0.9840422135746539
+      }
+    },
+    "Solver(ILDW) none": {
+      "rmse": {
+        "n": 100,
+        "mean": 1.0663302147820872,
+        "median": 0.6319635306175835,
+        "sd": 1.2007141932692986,
+        "q1": 0.4017206709693986,
+        "q3": 1.1000259645943171,
+        "min": 0.1507940506220696,
+        "max": 6.983225795506299
+      },
+      "mae": {
+        "n": 100,
+        "mean": 0.6127224554525501,
+        "median": 0.4213227742468674,
+        "sd": 0.5662127579270707,
+        "q1": 0.2653397365000218,
+        "q3": 0.6951836547415845,
+        "min": 0.10719941918133377,
+        "max": 3.2381085333187514
+      },
+      "bias": {
+        "n": 100,
+        "mean": 0.040581400286776995,
+        "median": 0.02086351356323607,
+        "sd": 0.2393500906214694,
+        "q1": -0.01596069197430471,
+        "q3": 0.06171877769776925,
+        "min": -0.7970100214448587,
+        "max": 1.3672609637014959
+      },
+      "correlation": {
+        "n": 100,
+        "mean": 0.9172405498476957,
+        "median": 0.9311535306218527,
+        "sd": 0.05569223046129501,
+        "q1": 0.8878933905633286,
+        "q3": 0.9612959062733812,
+        "min": 0.7221790144365386,
+        "max": 0.9841916383607333
+      }
+    },
+    "Convex light": {
+      "rmse": {
+        "n": 100,
+        "mean": 0.8451991815198744,
+        "median": 0.5658965648820691,
+        "sd": 0.8066109782127123,
+        "q1": 0.38992085404241783,
+        "q3": 0.9012413317842257,
+        "min": 0.1456496047715005,
+        "max": 4.257371611305673
+      },
+      "mae": {
+        "n": 100,
+        "mean": 0.4810351587640422,
+        "median": 0.3769688450681131,
+        "sd": 0.3490582604936606,
+        "q1": 0.2575997074660331,
+        "q3": 0.5690814707634222,
+        "min": 0.10475622078909445,
+        "max": 1.9372151569149596
+      },
+      "bias": {
+        "n": 100,
+        "mean": 0.0232983093366796,
+        "median": 0.021225538432953467,
+        "sd": 0.0749646836118236,
+        "q1": -0.010135456300471008,
+        "q3": 0.04664930059630417,
+        "min": -0.19476934554527323,
+        "max": 0.46252231648779674
+      },
+      "correlation": {
+        "n": 100,
+        "mean": 0.9397559546553721,
+        "median": 0.9497118889440119,
+        "sd": 0.03456564828684454,
+        "q1": 0.9202869162362622,
+        "q3": 0.9662779100413526,
+        "min": 0.81509333118917,
+        "max": 0.985604097070995
+      }
+    },
+    "Convex none": {
+      "rmse": {
+        "n": 100,
+        "mean": 0.8450748531285902,
+        "median": 0.5622365385073154,
+        "sd": 0.8044312881532596,
+        "q1": 0.3913460399812277,
+        "q3": 0.9010445628554353,
+        "min": 0.1450944173832111,
+        "max": 4.2469877721187705
+      },
+      "mae": {
+        "n": 100,
+        "mean": 0.4808415939902866,
+        "median": 0.37765588982420784,
+        "sd": 0.3475670072068332,
+        "q1": 0.25855154044615064,
+        "q3": 0.5688935858095596,
+        "min": 0.1047450621190795,
+        "max": 1.9199708159282707
+      },
+      "bias": {
+        "n": 100,
+        "mean": 0.022972939292214504,
+        "median": 0.02049804411922807,
+        "sd": 0.07404079865558807,
+        "q1": -0.009573683020087483,
+        "q3": 0.04965741332351682,
+        "min": -0.20609383632651695,
+        "max": 0.4639229468922513
+      },
+      "correlation": {
+        "n": 100,
+        "mean": 0.9397183478092981,
+        "median": 0.9496212468416163,
+        "sd": 0.03454126587597764,
+        "q1": 0.9193154280507692,
+        "q3": 0.966159245575562,
+        "min": 0.8150553637525654,
+        "max": 0.9853764211048917
+      }
+    }
+  },
+  "taylor": {
+    "IDW": {
+      "reference_sd": 3.1300074061420853,
+      "model_sd": 2.465520639247453,
+      "correlation": 0.8250450101263781,
+      "crmse": 1.772521429933175
+    },
+    "ILDW": {
+      "reference_sd": 3.1300074061420853,
+      "model_sd": 2.5494945054403586,
+      "correlation": 0.8418036314135169,
+      "crmse": 1.6916823690581062
+    },
+    "Solver(ILDW) light": {
+      "reference_sd": 3.1300074061420853,
+      "model_sd": 2.608545192888264,
+      "correlation": 0.8643788311190914,
+      "crmse": 1.5768807803371951
+    },
+    "Solver(ILDW) none": {
+      "reference_sd": 3.1300074061420853,
+      "model_sd": 2.614567061559779,
+      "correlation": 0.8631218247783903,
+      "crmse": 1.583033519501541
+    },
+    "Convex light": {
+      "reference_sd": 3.1300074061420853,
+      "model_sd": 2.7719972228141834,
+      "correlation": 0.9294521300178056,
+      "crmse": 1.162914612490669
+    },
+    "Convex none": {
+      "reference_sd": 3.1300074061420853,
+      "model_sd": 2.769910455795607,
+      "correlation": 0.9296892857980822,
+      "crmse": 1.1613936164668703
+    }
+  },
+  "convergence": {
+    "Solver(ILDW) light": {
+      "success": 100,
+      "iterations": {
+        "n": 100,
+        "mean": 557.4,
+        "median": 632.5,
+        "sd": 289.08801218293155,
+        "q1": 299.75,
+        "q3": 751.5,
+        "min": 3.0,
+        "max": 1198.0
+      },
+      "reasons": {
+        "ftol": 100
+      }
+    },
+    "Solver(ILDW) none": {
+      "success": 100,
+      "iterations": {
+        "n": 100,
+        "mean": 524.49,
+        "median": 584.5,
+        "sd": 267.0526182404713,
+        "q1": 307.0,
+        "q3": 714.0,
+        "min": 3.0,
+        "max": 1052.0
+      },
+      "reasons": {
+        "ftol": 100
+      }
+    },
+    "Convex light": {
+      "success": 100,
+      "iterations": {
+        "n": 100,
+        "mean": 936.72,
+        "median": 913.0,
+        "sd": 233.7806569319959,
+        "q1": 789.0,
+        "q3": 1107.0,
+        "min": 387.0,
+        "max": 1557.0
+      },
+      "reasons": {
+        "ftol": 99,
+        "gtol": 1
+      }
+    },
+    "Convex none": {
+      "success": 100,
+      "iterations": {
+        "n": 100,
+        "mean": 935.18,
+        "median": 900.0,
+        "sd": 220.7075115544681,
+        "q1": 787.5,
+        "q3": 1082.25,
+        "min": 382.0,
+        "max": 1505.0
+      },
+      "reasons": {
+        "ftol": 98,
+        "gtol": 2
+      }
+    }
+  },
+  "timing": {
+    "Solver(ILDW) light": {
+      "generated_at_utc": "2026-09-25T13:57:05.311841+00:00",
+      "solver_name": "opt_norm_ildw_mult_ildw_init_light_jtotal_long",
+      "solver_label": "Solver(ILDW)",
+      "timing_scope": "End-to-end wall time includes input loading, initialization, optimization, diagnostics, and output writing.",
+      "hardware_note": "",
+      "system": {
+        "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+        "machine": "arm64",
+        "processor": "arm",
+        "python": "3.14.3",
+        "numpy": "2.5.0",
+        "scipy": "1.18.0"
+      },
+      "configuration": {
+        "config_file": "/Users/isoto/Projects/Rainfall-Estimation/Compute-Link-Attenuations/HundredPatches/pipeline/batch_solve_timing_solver_ildw.yaml",
+        "solver_config_sha256": "16bf20b1c147e1ceb55eac9ed45a51dffebf96adbfc256e728fa0fdbedd6b5fb",
+        "solver_workers": 1,
+        "patch_workers": 1
+      },
+      "patches": {
+        "expected": 100,
+        "recorded": 100,
+        "completed": 100,
+        "failed": 0,
+        "optimizer_converged": 100
+      },
+      "end_to_end_seconds": {
+        "count": 100,
+        "mean": 100.53534477083886,
+        "sample_std": 44.55387515870274,
+        "median": 97.90992404150893,
+        "q1": 65.70923034426232,
+        "q3": 128.71699279199674,
+        "iqr": 63.00776244773442,
+        "min": 31.558790874987608,
+        "max": 226.71488933399087,
+        "total": 10053.534477083886
+      },
+      "optimizer_seconds": {
+        "count": 0,
+        "mean": null,
+        "sample_std": null,
+        "median": null,
+        "q1": null,
+        "q3": null,
+        "iqr": null,
+        "min": null,
+        "max": null,
+        "total": null
+      }
+    },
+    "Convex light": {
+      "generated_at_utc": "2026-07-15T11:28:17.676323+00:00",
+      "solver_name": "opt_norm_virtual_convex_const_init_long_light_jtotal",
+      "solver_label": "Convex Solver",
+      "timing_scope": "End-to-end wall time includes input loading, initialization, reconstruction or optimization, diagnostics, and output writing. Optimizer time, where available, covers scipy.optimize.minimize only.",
+      "hardware_note": "Apple M2 MacBook Air, 8-core CPU, 8 GB memory",
+      "system": {
+        "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "machine": "arm64",
+        "processor": "arm",
+        "python": "3.14.3",
+        "numpy": "2.5.0",
+        "scipy": "1.18.0"
+      },
+      "configuration": {
+        "config_file": "/Users/isoto/Projects/Rainfall-Estimation/Compute-Link-Attenuations/HundredPatches/pipeline/batch_solve_timing_all.yaml",
+        "solver_config_sha256": "11b70e3005a068d116d90cb60193b8cd854870661364dc24d7f9389388366c1c",
+        "solver_workers": 1,
+        "patch_workers": 1
+      },
+      "patches": {
+        "expected": 100,
+        "recorded": 100,
+        "completed": 100,
+        "failed": 0,
+        "optimizer_converged": 100
+      },
+      "end_to_end_seconds": {
+        "count": 100,
+        "mean": 76.02956061753925,
+        "sample_std": 27.080088417574938,
+        "median": 71.31000814599975,
+        "q1": 54.95150741674297,
+        "q3": 93.36069448950366,
+        "iqr": 38.40918707276069,
+        "min": 32.755842458005645,
+        "max": 153.124019165989,
+        "total": 7602.956061753925
+      },
+      "optimizer_seconds": {
+        "count": 100,
+        "mean": 56.99785127752985,
+        "sample_std": 22.35105440081021,
+        "median": 51.15271631250653,
+        "q1": 39.75919291649552,
+        "q3": 70.92801611500909,
+        "iqr": 31.168823198513564,
+        "min": 17.612924332992407,
+        "max": 118.60509087500395,
+        "total": 5699.785127752984
+      }
+    },
+    "ILDW": {
+      "generated_at_utc": "2026-07-15T09:21:33.954550+00:00",
+      "solver_name": "ildw",
+      "solver_label": "ILDW",
+      "timing_scope": "End-to-end wall time includes input loading, initialization, reconstruction or optimization, diagnostics, and output writing. Optimizer time, where available, covers scipy.optimize.minimize only.",
+      "hardware_note": "Apple M2 MacBook Air, 8-core CPU, 8 GB memory",
+      "system": {
+        "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "machine": "arm64",
+        "processor": "arm",
+        "python": "3.14.3",
+        "numpy": "2.5.0",
+        "scipy": "1.18.0"
+      },
+      "configuration": {
+        "config_file": "/Users/isoto/Projects/Rainfall-Estimation/Compute-Link-Attenuations/HundredPatches/pipeline/batch_solve_timing_all.yaml",
+        "solver_config_sha256": "c63dbd040a8d28f83e097f3d9c7e95f03eaaa63d0ac3e08ef4ab67d8459f86d1",
+        "solver_workers": 1,
+        "patch_workers": 1
+      },
+      "patches": {
+        "expected": 100,
+        "recorded": 100,
+        "completed": 100,
+        "failed": 0,
+        "optimizer_converged": 100
+      },
+      "end_to_end_seconds": {
+        "count": 100,
+        "mean": 18.692749835839642,
+        "sample_std": 6.199942359156315,
+        "median": 18.247763979496085,
+        "q1": 14.443320280995977,
+        "q3": 22.500899520495295,
+        "iqr": 8.057579239499319,
+        "min": 8.671635875012726,
+        "max": 38.194398665989866,
+        "total": 1869.274983583964
+      },
+      "optimizer_seconds": {
+        "count": 0,
+        "mean": null,
+        "sample_std": null,
+        "median": null,
+        "q1": null,
+        "q3": null,
+        "iqr": null,
+        "min": null,
+        "max": null,
+        "total": null
+      }
+    },
+    "IDW": {
+      "generated_at_utc": "2026-07-15T08:50:24.123621+00:00",
+      "solver_name": "idw",
+      "solver_label": "IDW",
+      "timing_scope": "End-to-end wall time includes input loading, initialization, reconstruction or optimization, diagnostics, and output writing. Optimizer time, where available, covers scipy.optimize.minimize only.",
+      "hardware_note": "Apple M2 MacBook Air, 8-core CPU, 8 GB memory",
+      "system": {
+        "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+        "machine": "arm64",
+        "processor": "arm",
+        "python": "3.14.3",
+        "numpy": "2.5.0",
+        "scipy": "1.18.0"
+      },
+      "configuration": {
+        "config_file": "/Users/isoto/Projects/Rainfall-Estimation/Compute-Link-Attenuations/HundredPatches/pipeline/batch_solve_timing_all.yaml",
+        "solver_config_sha256": "c498ece09b33dcbe9c0a4bbd7e77a5c77d705aa02f674775435fbafc6f3ef072",
+        "solver_workers": 1,
+        "patch_workers": 1
+      },
+      "patches": {
+        "expected": 100,
+        "recorded": 100,
+        "completed": 100,
+        "failed": 0,
+        "optimizer_converged": 100
+      },
+      "end_to_end_seconds": {
+        "count": 100,
+        "mean": 7.527982084618416,
+        "sample_std": 2.434258653249695,
+        "median": 7.098541937506525,
+        "q1": 5.686111447754229,
+        "q3": 9.233883396245801,
+        "iqr": 3.5477719484915724,
+        "min": 4.01259424998716,
+        "max": 14.17527183299535,
+        "total": 752.7982084618416
+      },
+      "optimizer_seconds": {
+        "count": 0,
+        "mean": null,
+        "sample_std": null,
+        "median": null,
+        "q1": null,
+        "q3": null,
+        "iqr": null,
+        "min": null,
+        "max": null,
+        "total": null
+      }
+    }
+  },
+  "optimizer_only_timing": {
+    "Convex none": {
+      "n": 100,
+      "mean": 88.92453587002878,
+      "median": 83.46775675049867,
+      "sd": 33.769695736869835,
+      "q1": 65.18787269800669,
+      "q3": 107.73829556223791,
+      "min": 26.59337745900848,
+      "max": 183.7157279579842
+    }
+  },
+  "provenance_sha256": {
+    "Compute-Link-Attenuations/HundredPatches/pipeline/timing/solver_ildw/solver_ildw_runtime_summary.json": "b48a112c41949e845adba48f9583454bda78bd5e38f78432868b8b9f121e4f2a",
+    "Compute-Link-Attenuations/HundredPatches/pipeline/timing/all_methods/convex_solver_runtime_summary.json": "4ce8d859659aecd1674382cfeb4602d77eae7e7c76c9cc4bea9bb1ff76cb8f7a",
+    "Compute-Link-Attenuations/HundredPatches/pipeline/timing/all_methods/ildw_runtime_summary.json": "7b536afd46bbff8bed8d216f06d13d9cc2d4f6ed2a39bacdc74c3c14c126bd02",
+    "Compute-Link-Attenuations/HundredPatches/pipeline/timing/all_methods/idw_runtime_summary.json": "ed42fcca1511a3817d7f4ed42746185c696144a0daf55a422bf01e8351793f3d",
+    "Compute-Link-Attenuations/HundredPatches/pipeline/batch_analyze_output_shrinkage_comparison/stats_report_cache.json": "59adc2437b08440e28e098d076e490cd6dbbfdd61bb4f0f0ff570f6dea88f969"
+  }
+}

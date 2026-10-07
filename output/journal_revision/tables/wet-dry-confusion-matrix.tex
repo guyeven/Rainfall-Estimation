@@ -1,0 +1,28 @@
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{table}[htbp]
+  \centering
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrrrrr}
+      \toprule
+      Method          & \multicolumn{4}{c}{Fraction of all pixels} & \multicolumn{4}{c}{Conditional rate}                                                                      \\
+      \cmidrule(lr){2-5}\cmidrule(lr){6-9}
+                      & True wet                                   & False wet                            & True dry & False dry & True wet & False wet & True dry & False dry \\
+      \midrule
+      \IDW            & 0.893                                      & 0.040                                & 0.065    & 0.002     & 0.997    & 0.598     & 0.402    & 0.003     \\
+      \ILDW           & 0.892                                      & 0.037                                & 0.068    & 0.003     & 0.996    & 0.562     & 0.438    & 0.004     \\
+      \solverILDW     & 0.892                                      & 0.032                                & 0.073    & 0.003     & 0.996    & 0.463     & 0.537    & 0.004     \\
+      \solverConvex   & 0.891                                      & 0.023                                & 0.082    & 0.004     & 0.995    & 0.400     & 0.600    & 0.005     \\
+      \solverHomotopy & 0.891                                      & 0.023                                & 0.082    & 0.004     & 0.995    & 0.401     & 0.599    & 0.005     \\
+      \solverGT       & 0.893                                      & 0.011                                & 0.094    & 0.002     & 0.997    & 0.331     & 0.670    & 0.003     \\
+
+      \bottomrule
+    \end{tabular}%
+  }
+  \caption{Patch-averaged wet/dry confusion summaries at a threshold of $0.6$ \si{\milli\meter\per\hour}. In the fraction-of-all-pixels columns, each class was divided by the total number of pixels in each patch before averaging across patches. In the conditional-rate columns, true wet and false dry are normalized by wet ground-truth pixels, while true dry and false wet are normalized by dry ground-truth pixels.}
+  \label{tab:wet-dry-confusion-merged}
+\end{table}

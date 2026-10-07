@@ -1,0 +1,29 @@
+# Winter/HundredPatches: ILDW-initialized solver without the J_total term.
+input:
+  est_dir: ../est_dir
+  file_pattern: est_input_*.json
+  recursive: false
+parallel:
+  solver_workers: 1
+  patch_workers: 2
+solvers:
+  solver_ildw_no_shrinkage:
+    name: solver_ildw_no_shrinkage
+    label: Solver(ILDW) no shrinkage
+    type: lbfgsb
+    module: cml_attenuation.solvers.solve_rain_lbfgsb_normalized_ildw_multipliers
+    out_dir: solutions/sol_dir_solver_ildw_no_shrinkage
+    optimization:
+      epsilon: 0.01
+      maxiter: 2000
+      rain_init: {mode: fixed, value: 0.6}
+      R0_from_ILDW: true
+      R0_from_IDW: false
+      R0_from_GT: false
+      num_atten: 1.0
+      num_1d: 1.0
+      num_2d: 0.5
+      num_total: 0.0
+      num_total_divide_by_num_pixels: true
+    tolerances: {ftol: 1.0e-06, gtol: 1.0e-06, maxls: 20}
+    idw: {r_max_m: 15000.0, power: 2.0, eps_m: 1.0, default_value: 0.0}

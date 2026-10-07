@@ -1,0 +1,59 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node / Electron dependencies and build output
+**/node_modules/
+Patch-Generator/build/
+Patch-Generator/dist/
+Patch-Generator/electron/
+Patch-Generator/electron/dist/
+
+# Local environments
+.venv/
+venv/
+.env
+
+# Generated analyzer cache that exceeds GitHub's normal 100 MB file limit.
+# Recreate it by running Compute-Link-Attenuations/batch_analyze_multi.py
+# with HundredPatches/pipeline/analyze.yaml when report cache contents need refreshing.
+Compute-Link-Attenuations/HundredPatches/pipeline/batch_analyze_output/
+
+# Large research artifacts. Existing tracked files remain tracked until the
+# coordinated external-archive migration described in docs/artifact-storage.md.
+Patch-Generator/backend/data/raw/
+Compute-Link-Attenuations/HundredPatches/est_dir/
+Compute-Link-Attenuations/HundredPatches/gt_dir/
+Compute-Link-Attenuations/HundredPatches/pipeline/solutions/
+Compute-Link-Attenuations/Misc/synthetic_tests/out/
+Misc/paired_solver_analysis/d3_distance_cache/
+
+# LaTeX build products
+*.aux
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.log
+*.out
+*.synctex.gz
+*.synctex(busy)
+*.toc
+*.lof
+*.lot
+
+# Stray duplicate artifacts from Finder/editor copies
+* 2.*
+* 3.*
+
+# Local artifact bundles and manifests produced during archival.
+artifacts/local/
+
+# Repository-local development and automation configuration
+.agents/skills/thesis-review/
+.github/workflows/

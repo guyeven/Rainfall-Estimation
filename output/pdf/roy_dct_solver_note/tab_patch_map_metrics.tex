@@ -1,0 +1,18 @@
+\begin{table}[H]
+\centering\small
+\begin{tabular}{lrrr}
+\toprule
+Method & RMSE & Signed bias & Pearson $r$ \\
+\midrule
+IDW & $1.307\pm 1.241$ & $0.034\pm 0.298$ & $0.866\pm 0.060$ \\
+ILDW & $1.239\pm 1.188$ & $0.047\pm 0.263$ & $0.878\pm 0.055$ \\
+Solver(ILDW) & $1.059\pm 1.198$ & $0.040\pm 0.236$ & $0.918\pm 0.056$ \\
+Solver(GT) & $0.503\pm 0.371$ & $0.009\pm 0.030$ & $0.961\pm 0.032$ \\
+Convex solver & $0.845\pm 0.807$ & $0.023\pm 0.075$ & $0.940\pm 0.035$ \\
+Homotopy solver & $0.845\pm 0.807$ & $0.023\pm 0.075$ & $0.940\pm 0.035$ \\
+Roy DCT (limited) & $3.554\pm 1.865$ & $-2.443\pm 0.786$ & $0.165\pm 0.060$ \\
+\bottomrule
+\end{tabular}
+\caption{Whole-patch metrics: mean $\pm$ sample standard deviation across 100 patches, with equal patch weights. RMSE and bias are in mm/h. Roy DCT denotes the nonlinear adaptation at its iteration limit; Solver(GT) uses privileged ground-truth initialization.}
+\label{tab:patch_map_metrics}
+\end{table}

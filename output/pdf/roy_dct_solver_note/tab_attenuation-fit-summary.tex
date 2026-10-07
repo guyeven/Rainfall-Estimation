@@ -1,0 +1,18 @@
+\begin{table}[H]
+\centering\small
+\begin{tabular}{lrr}
+\toprule
+Method & Attenuation MAE (dB/km) & $J_{\mathrm{atten}}$ (dB$^2$/km) \\
+\midrule
+IDW & 0.0503 & 0.0528 \\
+ILDW & 0.0136 & 0.0042 \\
+Solver(ILDW) & 0.00207 & 0.000295 \\
+Solver(GT) & 0.00129 & 4.95e-05 \\
+Convex solver & 0.00107 & 3.35e-05 \\
+Homotopy solver & 0.000747 & 1.33e-05 \\
+Roy DCT (limited) & 0.000388 & 9.06e-07 \\
+\bottomrule
+\end{tabular}
+\caption{Mean patchwise attenuation errors, evaluated consistently for all methods using the actual ITU forward model. $J_{\mathrm{atten}}=M^{-1}\sum_\ell(\widehat A_\ell-A_\ell)^2/L_\ell$. This comparison metric is not the full native objective of Roy DCT.}
+\label{tab:attenuation-fit-summary}
+\end{table}

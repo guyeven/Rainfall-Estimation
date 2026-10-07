@@ -1,0 +1,17 @@
+\begin{table}[H]
+\centering\small
+\begin{tabular}{lrrrr}
+\toprule
+Method vs. IDW & Wins:losses & $\overline{\Delta}$ & $p$ (one-sided) & 99\% upper bound \\
+\midrule
+ILDW & 97:3 & -0.068 & 2.4e-12 & -0.047 \\
+Solver(ILDW) & 98:2 & -0.248 & 6e-21 & -0.198 \\
+Solver(GT) & 100:0 & -0.804 & 2.2e-11 & -0.547 \\
+Convex solver & 100:0 & -0.461 & 1.9e-15 & -0.344 \\
+Homotopy solver & 100:0 & -0.461 & 1.9e-15 & -0.344 \\
+Roy DCT (limited) & 0:100 & 2.247 & 1 & 2.438 \\
+\bottomrule
+\end{tabular}
+\caption{Paired patchwise RMSE comparison, with $\Delta=\mathrm{RMSE}_{s}-\mathrm{RMSE}_{IDW}$. Negative differences favor the method. Tests use the alternative $E[\Delta]<0$; values are unadjusted for multiple comparisons. Iteration-limited Roy outputs are retained.}
+\label{tab:paired-rmse-t-test}
+\end{table}

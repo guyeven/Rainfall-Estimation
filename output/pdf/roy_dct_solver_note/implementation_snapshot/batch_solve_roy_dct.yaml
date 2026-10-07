@@ -1,0 +1,33 @@
+# Opt-in nonlinear adaptation of Roy et al. (2016), Eq. (26).
+# Uses existing ITU observations. This is NOT the paper's linear experiment.
+input:
+  est_dir: "../est_dir"
+  file_pattern: "est_input_*.json"
+  recursive: false
+parallel:
+  solver_workers: 1
+  patch_workers: 1
+solvers:
+  roy_dct_nonlinear:
+    name: "roy_dct_nonlinear"
+    label: "Roy DCT (nonlinear adaptation)"
+    type: "custom"
+    module: "cml_attenuation.solvers.solve_rain_roy_dct"
+    out_dir: "solutions/sol_dir_roy_dct_nonlinear"
+    measurement_model: "itu_nonlinear"
+    optimization:
+      lam: 2.0
+      noise_variance: 1.0e-5
+      dct_layout: "2d"
+      initial_rain: 0.6
+      max_outer: 50
+      inner_maxiter: 2000
+      outer_rtol: 1.0e-5
+      inner_atol: 1.0e-6
+      inner_rtol: 1.0e-5
+      cg_rtol: 1.0e-8
+      cg_maxiter: 500
+      rho: 1.0
+      damping: 1.0e-3
+      derivative_floor: 1.0e-6
+      verbose: true

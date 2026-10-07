@@ -1,0 +1,297 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\Rhat}{\hat{R}}
+\newcommand{\Aobs}{A}
+\newcommand{\Amod}{\widehat{A}}
+\newcommand{\Jatten}{J_{\mathrm{atten}}}
+\newcommand{\Jreg}{J_{\mathrm{reg}}}
+\newcommand{\argmin}{\operatorname*{arg\,min}}
+
+\title{Previous Attenuation-Based Inverse Solvers for Rainfall Reconstruction}
+\author{Working note}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Purpose}
+This note summarizes earlier inverse solvers that reconstruct a rainfall field from microwave-link attenuation measurements.
+The notation follows the notation used in \texttt{Journal.tex} so that the methods can be compared with our formulation.
+The emphasis is on whether the method fits the link attenuation directly, rather than first reducing each link to a virtual point rain gauge and then interpolating.
+
+\section*{Common notation}
+Let $P$ denote the set of pixels in a reconstruction patch and let $\mathcal{L}$ denote the set of microwave links.
+For a link $\ell\in\mathcal{L}$, let $A_\ell$ denote the observed rain-induced attenuation, let $|\ell|$ denote the link length, and let $l_{\ell p}$ denote the length of the part of link $\ell$ that crosses pixel $p$.
+For an estimated rain-rate field $\Rhat:P\to\mathbb{R}_{\geq 0}$, the attenuation implied by the forward model is
+\[
+  A_\ell(\Rhat)
+  \approx
+  \sum_{p\in P} l_{\ell p}\,\kappa_\ell\,\Rhat(p)^{\alpha_\ell} .
+\]
+In our terminology, a direct attenuation-fitting method contains a term of the form
+\[
+  \Jatten(\Rhat)
+  =
+  \sum_{\ell\in\mathcal{L}} w_\ell\,
+  \bigl(A_\ell(\Rhat)-A_\ell\bigr)^2,
+\]
+possibly after linearization, a change of variables, or replacement by an equivalent system of tomographic equations.
+The main difference between the previous methods is how they regularize this ill-posed inverse problem.
+
+\section{Giuli et al. (1991): microwave attenuation tomography}
+\textbf{Reference.}
+D. Giuli, A. Toccafondi, G. Biffi Gentili, and A. Freni,
+\emph{Tomographic reconstruction of rainfall fields through microwave attenuation measurements},
+Journal of Applied Meteorology, 1991.
+DOI: \href{https://doi.org/10.1175/1520-0450(1991)030%3C1323:TRORFT%3E2.0.CO;2}{10.1175/1520-0450(1991)030<1323:TRORFT>2.0.CO;2}.
+
+\paragraph{Decision variable in our notation.}
+We can describe the Giuli et al. method using the same object as in our manuscript: an estimated rainfall field $\Rhat:P\to\mathbb{R}_{\geq 0}$.
+The paper implements the reconstruction with smooth basis functions, but for comparison it is enough to regard $\Rhat(p)$ as the unknown value assigned to pixel or cell $p$.
+In the frequency regime considered by the tomographic model, specific attenuation is treated as a linear or nearly linear function of rainfall.
+Thus the unknown basis coefficients in the paper correspond, in our notation, to a smoothed representation of $\Rhat$ or of the induced specific attenuation $\kappa\Rhat$.
+
+\paragraph{Forward model in our notation.}
+For every link $\ell$, the model predicts the link attenuation from the reconstructed field by a path integral,
+\[
+  A_\ell(\Rhat)
+  \approx
+  \sum_{p\in P} l_{\ell p}\,\kappa\,\Rhat(p),
+\]
+where the linear coefficient $\kappa$ is fixed by the selected microwave frequency and polarization.
+Equivalently, if a non-linear power law is retained, the same notation becomes
+\[
+  A_\ell(\Rhat)
+  \approx
+  \sum_{p\in P} l_{\ell p}\,\kappa\,\Rhat(p)^\alpha .
+\]
+For the original Giuli et al. tomography, the important point is that each measurement constrains an integral along the link path, not a point rain value.
+
+\paragraph{Optimization problem in our notation.}
+Using the notation of \texttt{Journal.tex}, the Giuli et al. reconstruction can be viewed as a regularized attenuation-fitting problem,
+\[
+  \min_{\Rhat}
+  \underbrace{\sum_{\ell\in\mathcal{L}}
+  \bigl(A_\ell(\Rhat)-A_\ell\bigr)^2}_{\Jatten(\Rhat)}
+  +
+  \lambda\,\Jreg(\Rhat).
+\]
+The regularization term $\Jreg$ is not identical to our $J_{1d}+J_{2d}+J_{\mathrm{total}}$.
+It is induced by the tomographic reconstruction scheme and by the smooth basis representation.
+In the linear basis implementation, this objective is equivalent to fitting a linear system for the link attenuations with a smoothness penalty.
+Written in our language, however, the method is still minimizing disagreement between observed link attenuations $A_\ell$ and forward-modeled attenuations $A_\ell(\Rhat)$.
+
+\paragraph{Comparison with our formulation.}
+This is a direct precursor of attenuation-consistent inversion.
+The main differences are that Giuli et al. considered a dedicated tomographic network and a linear or nearly linear attenuation representation.
+Our formulation estimates pixel rain rates directly, uses the link-specific ITU-R forward model, imposes nonnegativity explicitly, and uses the explicit terms $\Jatten$, $J_{1d}$, $J_{2d}$, and $J_{\mathrm{total}}$.
+The conceptual overlap is the attenuation-mismatch term.
+
+\section{Zinevich, Alpert, and Messer (2008): nonlinear tomography on a variable-density grid}
+\textbf{Reference.}
+A. Zinevich, P. Alpert, and H. Messer,
+\emph{Estimation of rainfall fields using commercial microwave communication networks of variable density},
+Advances in Water Resources, 2008.
+DOI: \href{https://doi.org/10.1016/j.advwatres.2008.03.003}{10.1016/j.advwatres.2008.03.003}.
+
+\paragraph{Decision variable.}
+The unknown is a rainfall vector $r=(r_1,
+\ldots,r_n)$ on a variable-density reconstruction grid.
+The grid is adapted to the commercial link topology, with smaller cells where links are denser.
+
+\paragraph{Forward model.}
+For link $i$, with power-law coefficients $a_i,b_i$, the observed attenuation is modeled as
+\[
+  A_i
+  =
+  a_i\int_{\ell_i} r(x)^{b_i}\,dx
+  \approx
+  a_i\sum_{j=1}^n l_{ij}r_j^{b_i} .
+\]
+Equivalently, if $R_i$ is the path-average rain rate inferred from the observed attenuation, the tomographic residuals are written as
+\[
+  f_i(r)=\sum_{j=1}^n l_{ij}r_j^{b_i}-L_iR_i^{b_i},
+  \qquad i=1,\ldots,m .
+\]
+These residuals are attenuation-consistency equations, expressed after dividing by the link-specific power-law coefficient.
+
+\paragraph{Optimization problem.}
+The method is not written as a single scalar objective like our $J(\Rhat)$.
+Instead, it solves the nonlinear system $f(r)=0$ by Newton-Raphson linearization.
+At iteration $t$, the update $\delta r$ solves
+\[
+  J_t\,\delta r = -f(r_t),
+\]
+where $J_t$ is the Jacobian of the attenuation residuals.
+Because the inverse problem is underdetermined, the linearized problem is solved by SIRT with smoothing and positivity constraints.
+The smoothing is imposed through a spatial correlation operator derived from a rainfall correlation model.
+
+\paragraph{Comparison with our formulation.}
+This paper is very close in spirit to our attenuation term because it fits the path-integrated attenuation equations directly.
+The important differences are methodological.
+It solves nonlinear equations by repeated linearization and smoothing-constrained tomography, while our solver minimizes an explicit weighted objective containing $\Jatten$, first differences, second differences, and a total-rain shrinkage term.
+Zinevich et al. also build the reconstruction grid around link density, whereas our benchmark uses a fixed pixel grid inherited from the rainfall patches.
+
+\section{Bianchi et al. (2013): variational assimilation of radar, gauges, and microwave links}
+\textbf{Reference.}
+B. Bianchi, P. J. van Leeuwen, R. J. Hogan, and A. Berne,
+\emph{A variational approach to retrieve rain rate by combining information from rain gauges, radars, and microwave links},
+Journal of Hydrometeorology, 2013.
+DOI: \href{https://doi.org/10.1175/JHM-D-12-094.1}{10.1175/JHM-D-12-094.1}.
+
+\paragraph{Decision variable.}
+The unknown is a state vector $x$ that includes rain-rate variables over pixels and additional calibration parameters.
+A radar rain field provides a background estimate $x_b$.
+Rain gauges and microwave links are used as observations that update this background.
+
+\paragraph{Forward model.}
+The observation operator $H(x)$ maps the rain-rate state to the observations.
+For microwave links, the link path is divided into segments crossing pixels, and the path-averaged or total link quantity is computed from the pixel values and segment lengths.
+The microwave-link part of $H(x)$ is therefore a path-integrated observation operator, not a point-gauge interpolation operator.
+
+\paragraph{Optimization problem.}
+The variational retrieval minimizes a data-assimilation cost function of the form
+\[
+  \min_x
+  \frac{1}{2}(x-x_b)^\top B^{-1}(x-x_b)
+  +
+  \frac{1}{2}\bigl(y-H(x)\bigr)^\top R^{-1}\bigl(y-H(x)\bigr),
+\]
+where $B$ is the background-error covariance matrix and $R$ is the observation-error covariance matrix.
+The observation vector $y$ contains rain-gauge and microwave-link observations.
+The microwave-link term is an attenuation-related mismatch term weighted by the estimated link-observation uncertainty.
+The cost function is minimized using a Gauss-Newton method.
+
+\paragraph{Comparison with our formulation.}
+This is a variational inverse problem with an explicit observation-mismatch term.
+Bianchi et al. solve a multisensor assimilation problem with radar as a prior field. In contrast, our benchmark isolates the CML inverse problem and uses no radar prior in the solver.
+Their regularization enters mainly through the background term and covariance matrices.
+Our regularization is expressed directly as spatial smoothness and total-rain terms on the reconstructed field.
+
+\section{Roy, Gishkori, and Leus (2016): dynamic sparse rainfall monitoring}
+\textbf{Reference.}
+V. Roy, S. Gishkori, and G. Leus,
+\emph{Dynamic rainfall monitoring using microwave links},
+EURASIP Journal on Advances in Signal Processing, 2016.
+DOI: \href{https://doi.org/10.1186/s13634-016-0367-6}{10.1186/s13634-016-0367-6}.
+
+\paragraph{Decision variable.}
+The unknown is a time-dependent rainfall vector $u_t\in\mathbb{R}^N$ over a fixed grid.
+The method also uses a sparse representation $u_t=\Psi_t z_t$.
+
+\paragraph{Forward model.}
+The nonlinear link-attenuation model is
+\[
+  y_{i,t}
+  =
+  a\sum_{j=1}^N l_{ij}u_{j,t}^{b} + e_{i,t},
+  \qquad i=1,\ldots,M .
+\]
+In vector form,
+\[
+  y_t=\Phi(u_t)+e_t .
+\]
+The rainfall dynamics are modeled by
+\[
+  u_t=H_tu_{t-1}+q_t .
+\]
+
+\paragraph{Optimization problem.}
+At each time step, the nonlinear observation map is linearized around the predicted field $\hat{u}_{t|t-1}$.
+The correction step solves the constrained sparse optimization problem
+\[
+  \min_{z_t:\,\Psi_t z_t\geq 0}
+  \left\|\hat{u}_{t|t-1}-\Psi_t z_t\right\|^2_{M_{t|t-1}^{-1}}
+  +
+  \left\|\tilde{y}_t-J_t\Psi_t z_t\right\|^2_{R^{-1}}
+  +
+  \lambda_t\|z_t\|_1 .
+\]
+Here $J_t$ is the Jacobian of the attenuation observation map and $\tilde{y}_t$ is the linearized observation vector.
+The first term penalizes disagreement with the dynamic prediction, the second term penalizes attenuation mismatch after linearization, and the third term enforces sparsity.
+The constraint imposes nonnegative rainfall.
+
+\paragraph{Comparison with our formulation.}
+This is one of the closest formulations to our constrained optimization language.
+It explicitly combines attenuation mismatch, nonnegativity, and additional prior structure.
+The main difference is that Roy et al. solve a dynamic state-estimation problem and use a sparsity penalty in a basis representation, while our current solver is static for each benchmark patch and uses first-difference, second-difference, and total-rain penalties.
+
+\section{D'Amico, Manzoni, and Solazzi (2016): operational CML tomography}
+\textbf{Reference.}
+M. D'Amico, A. Manzoni, and G. L. Solazzi,
+\emph{Use of operational microwave link measurements for the tomographic reconstruction of 2-D maps of accumulated rainfall},
+IEEE Geoscience and Remote Sensing Letters, 2016.
+DOI: \href{https://doi.org/10.1109/LGRS.2016.2614326}{10.1109/LGRS.2016.2614326}.
+
+\paragraph{Decision variable.}
+The unknown is again a basis expansion of the specific attenuation field,
+\[
+  \hat{\gamma}(x,y)=\sum_{n=1}^N \gamma_n b_n(x,y).
+\]
+The estimated specific attenuation is converted to rainfall accumulation.
+
+\paragraph{Forward model.}
+The link measurements form the same linear tomographic system used in the Giuli-type approach,
+\[
+  p=A\gamma+e,
+\]
+where $p$ contains measured link attenuations and $A_{mn}$ is obtained by integrating basis function $b_n$ along link $m$.
+
+\paragraph{Optimization problem.}
+The paper applies the recursive tomographic reconstruction algorithm
+\[
+  \gamma^{(l+1)}
+  =
+  \gamma^{(l)}
+  +
+  \frac{1}{k}
+  \left[-(I+b_0B)\gamma^{(l)} + a_0A^\top\bigl(p-A\gamma^{(l)}\bigr)\right].
+\]
+This is equivalent to an iterative descent method for a regularized attenuation-mismatch problem of the form
+\[
+  \min_\gamma
+  \frac{a_0}{2}\|p-A\gamma\|_2^2
+  +
+  \frac{1}{2}\gamma^\top(I+b_0B)\gamma .
+\]
+The parameters $a_0$ and $b_0$ are calibrated using rainy days for which gauge information is available.
+
+\paragraph{Comparison with our formulation.}
+D'Amico et al. demonstrate that attenuation-based tomography can be applied to operational links, not only to simulated dedicated networks.
+The method fits link attenuation directly, but it reconstructs specific attenuation through a linear tomographic basis expansion.
+Our method reconstructs the rain-rate field directly on the benchmark pixel grid and treats the ITU-R power law inside the attenuation term.
+
+\section*{Summary table}
+\begin{center}
+\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.20\textwidth}>{\raggedright\arraybackslash}p{0.21\textwidth}>{\raggedright\arraybackslash}p{0.22\textwidth}>{\raggedright\arraybackslash}p{0.25\textwidth}}
+\toprule
+Paper & Decision variable & Attenuation fit & Regularization or prior \\
+\midrule
+Giuli et al. (1991) & Rain field $\Rhat$ represented by smooth basis functions & Linearized $A_\ell(\Rhat)-A_\ell$ residual & Recursive regularized tomography \\
+Zinevich et al. (2008) & Rain-rate vector $r$ on a variable-density grid & Nonlinear residuals $f_i(r)=0$ from link attenuation equations & SIRT, smoothing operator, positivity \\
+Bianchi et al. (2013) & Rain-rate state plus calibration parameters & Microwave-link observation term in a variational cost & Radar background covariance and observation-error covariance \\
+Roy et al. (2016) & Dynamic rain-rate vector $u_t=\Psi_tz_t$ & Linearized attenuation residual in each correction step & Dynamic prediction, sparsity, nonnegativity \\
+D'Amico et al. (2016) & Field represented by basis coefficients & Linearized $A_\ell(\Rhat)-A_\ell$ residual & Recursive tomography with calibrated regularization \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section*{Takeaway for our manuscript}
+It is not accurate to claim that attenuation-mismatch inversion is new.
+The safer claim is that our work revisits attenuation-consistent reconstruction in a controlled benchmark and compares it directly with IDW-type virtual-gauge baselines.
+A possible manuscript sentence is:
+
+\begin{quote}
+Previous tomographic and variational methods have reconstructed rainfall fields by fitting path-integrated microwave attenuation measurements directly.
+Our contribution is to place this attenuation-consistent inverse formulation in a controlled noise-free benchmark, to compare it systematically with IDW-type virtual-gauge baselines, and to study the effect of link geometry through distance-to-link stratification.
+\end{quote}
+
+\end{document}

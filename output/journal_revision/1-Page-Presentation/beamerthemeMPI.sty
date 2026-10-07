@@ -1,0 +1,42 @@
+\ProvidesPackage{beamerthemeMPI}
+\mode<presentation>
+
+\RequirePackage{graphicx}
+\RequirePackage{tikz}
+\RequirePackage{xcolor}
+\usetikzlibrary{calc}
+
+% Colors extracted from PPTX footer shapes
+\definecolor{MPIFooterBlue}{HTML}{29485D}
+\definecolor{MPIFooterGreen}{HTML}{C6D325}
+
+% Background (drawn behind all content)
+\usebackgroundtemplate{%
+  \begin{tikzpicture}[remember picture,overlay]
+    % Footer bars (so white footer logos are visible)
+    \path[fill=MPIFooterBlue] (current page.north west) ++(0,-0.947455\paperheight)
+      rectangle ++(\paperwidth,-0.053127\paperheight);
+    \path[fill=MPIFooterGreen] (current page.north west) ++(0,-0.940839\paperheight)
+      rectangle ++(\paperwidth,-0.007906\paperheight);
+
+\ifnum\value{framenumber}=1\relax
+\node[anchor=north west,inner sep=0pt,xshift=0.228284\paperwidth,yshift=-0.040821\paperheight] at (current page.north west){\includegraphics[height=0.101964\paperheight]{logos/header_logo_1.png}};
+\node[anchor=north west,inner sep=0pt,xshift=0.522220\paperwidth,yshift=-0.048408\paperheight] at (current page.north west){\includegraphics[height=0.081890\paperheight]{logos/header_logo_2.png}};
+\fi
+\node[anchor=north west,inner sep=0pt,xshift=0.017372\paperwidth,yshift=-0.953503\paperheight] at (current page.north west){\includegraphics[height=0.041032\paperheight]{logos/footer_logo_1.png}};
+\node[anchor=north west,inner sep=0pt,xshift=0.153238\paperwidth,yshift=-0.962769\paperheight] at (current page.north west){\includegraphics[height=0.026203\paperheight]{logos/footer_logo_2.png}};
+  \end{tikzpicture}%
+}
+
+% Keep head/foot spacing modest
+\setbeamertemplate{headline}{\vspace*{1.5ex}}
+\setbeamertemplate{footline}{%
+  \begin{tikzpicture}[remember picture,overlay]
+    \node[anchor=south east,inner sep=2pt] at (current page.south east){\scriptsize\color{white}\insertframenumber};
+  \end{tikzpicture}%
+  \vspace*{2.0ex}%
+}
+
+\setbeamertemplate{navigation symbols}{}
+
+\mode<all>

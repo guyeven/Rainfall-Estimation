@@ -1,0 +1,53 @@
+{
+  "source_manuscript": "/Users/isoto/Projects/Rainfall-Estimation/output/journal_revision/Journal.tex",
+  "source_sha256": "26e9e72a8bf39fd73f13ef77e23cf058deb3874b35932f04013415f13a99f087",
+  "cache": "/Users/isoto/Projects/Rainfall-Estimation/Compute-Link-Attenuations/HundredPatches/pipeline/batch_analyze_output_roy_dct/stats_report_cache.json",
+  "cache_sha256": "340395c77f00b4f43b2ac3141b43bc0f9d1699aec8f6b46f3a3715603f5b9849",
+  "patches": 100,
+  "methods": 7,
+  "roy_stopping_counts": {
+    "False:max_outer": 100
+  },
+  "roy_settings_counts": {
+    "{\"dct_layout\": \"2d\", \"lam\": 2.0, \"noise_variance\": 1e-05, \"settings\": {\"cg_maxiter\": 500, \"cg_rtol\": 1e-08, \"initial_rain\": 0.6, \"inner_atol\": 1e-06, \"inner_maxiter\": 2000, \"inner_rtol\": 1e-05, \"max_backtracks\": 30, \"max_outer\": 50, \"outer_rtol\": 1e-05, \"rho\": 1.0}}": 100
+  },
+  "paired_rmse_tests": [
+    {
+      "method": "ILDW",
+      "mean_difference": -0.06767570986660121,
+      "p_one_sided": 2.4227336454192117e-12,
+      "upper_99": -0.047309140480955254
+    },
+    {
+      "method": "Solver(ILDW)",
+      "mean_difference": -0.24771917936282567,
+      "p_one_sided": 6.047415353890874e-21,
+      "upper_99": -0.19818782571104215
+    },
+    {
+      "method": "Solver(GT)",
+      "mean_difference": -0.8036462353036227,
+      "p_one_sided": 2.1977054072354842e-11,
+      "upper_99": -0.547044902970694
+    },
+    {
+      "method": "Convex solver",
+      "mean_difference": -0.46145918048670553,
+      "p_one_sided": 1.884831346045676e-15,
+      "upper_99": -0.3440694365451915
+    },
+    {
+      "method": "Homotopy solver",
+      "mean_difference": -0.46141967569727704,
+      "p_one_sided": 1.8961898934922696e-15,
+      "upper_99": -0.34402486125028037
+    },
+    {
+      "method": "Roy DCT (limited)",
+      "mean_difference": 2.2470930941217784,
+      "p_one_sided": 1.0,
+      "upper_99": 2.4375363853670615
+    }
+  ],
+  "metric_validation": "All 700 raw-field metrics match cache within 1e-7 relative tolerance"
+}

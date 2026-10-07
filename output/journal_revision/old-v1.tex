@@ -1,0 +1,126 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{cite}
+\usepackage{hyperref}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\disk}{\text{disk}}
+\DeclareMathOperator{\argmin}{argmin}
+
+\title{Estimation of Rainfall Maps Based on Link Attenuations}
+\author{Guy Even\thanks{MPI for Informatics Email: guyeven@mpi-inf.mpg.de} 
+\and
+Andreas Karrenbauer\thanks{MPI for Informatics Email: karrenba@mpi-inf.mpg.de}
+\and Jonatan Ostrometzky\thanks{School of EE, Tel-Aviv University Email: jonatano@tauex.tau.ac.il}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+File from meeting 12.11.25: 
+
+[Specific attenuation model for rain for use in prediction methods]
+
+\url{https://www.itu.int/dms_pubrec/itu-r/rec/p/R-REC-P.838-3-200503-I!!PDF-E.pdf}
+
+\section{Problem Description: Estimated Rainfall Map Based on Microwave Link Attenuation}
+In this section, we define the problem of estimating rainfall maps based on measurements of commercial microwave link attenuation. These links are line-of-sight connections between base-stations and are used as part of the backhaul of modern cellular and smart cities wireless communication networks. These links, although installed and used for communication purposes, operate at frequencies of 5 GHz - 90 GHz, and therefore, their signals are attenuated by water in the atmosphere \cite{ITU,ITU530}. Therefore, it was shown that using the signals collected by such links can be used in an \emph{opportunistic} manner for precipitation monitoring (See \cite{RemkoCountry2,ostrometzky2020statistical,chwala2015real} among others).
+\subsection{Input}
+\begin{enumerate}
+    \item A set of links $\{\ell_i\}_{i=1}^n$, where each link $\ell_i$ is a pair of points in $\R^2$, representing the two endpoints of the link's path.
+    \item A sequence of attenuations $\{\alpha_i\}_{i=1}^n$, where $\alpha_i\in\R$ is the attenuation measured\footnote{In reality, the attenuation is often calculated from the transmitted (Tx) and the Received (Rx) values, which are the values actually sampled.} along link $\ell_i$.
+    \item An influence radius $\rho$.
+\end{enumerate}
+
+Let $C_i$ denote the \emph{area of influence defined by the link $\ell_i$}. Namely, $C_i$ is the union of disks of radius $\rho$ centered at points $p$ along the line segment $\ell_i$. 
+Let $\mathcal{C}=\bigcup_{i=1}^n C_i$ denote the area of influence defined by the set of links.
+
+\subsection{Output}
+An estimated rainfall map $R:\mathcal{C} \rightarrow \R$ of the rainfall in the area of influence $\mathcal{C}$.
+
+\subsection{Current Method}
+The current method for computing an estimated rainfall map from link attenuation is based on a reduction to the problem of estimating a rainfall map based on gauge measurements.
+
+\section{Algorithm for Estimated Rainfall from Gauge Measurements}
+
+This algorithm uses weighted averages to estimate rainfall from gauge measurements.
+
+\subsection{Input}
+\begin{enumerate}
+    \item A set of gauges $\{g_i\}_{i=1}^n$, where each gauge is a point in $\R^2$.
+    \item A sequence of rainfall measurements $\{r_i\}_{i=1}^n$, where $r_i\in\R$ is the rainfall measured by gauge $g_i$.
+    \item An influence radius $\rho$.
+\end{enumerate}
+
+Let $\disk(g_i,\rho)$ denote the disk of radius $\rho$ centered at $g_i$. Let $\mathcal{D}=\bigcup_{i=1}^n \disk(g_i,\rho)$ denote the union of disks of radius $\rho$ centered at the gauges.
+
+\subsection{Output}
+An estimated rainfall map $R:\mathcal{D} \rightarrow \R$ of the rainfall in the area of influence $\mathcal{D}$.
+
+\subsection{Current Method}
+Currently, the dominant rainfall map estimation method is based on the inverse distance weighting (IDW) approach - a popular approach used in the creation of maps from point-measurements in the meteorological and hydrological fields. The approach is as follows: For a point $q\in\mathcal{D}$, let
+\begin{align}
+I(q) &\triangleq \{i\mid q\in\disk(g_i,\rho)\}, \\
+w_i(q) &\triangleq \frac{1}{\|g_i-q\|_2^2}, \\
+W(q) &\triangleq \sum_{i \in I(q)} w_i(q).
+\end{align}
+Define $R(q)$ by
+\begin{equation}
+R(q) \triangleq \sum_{i\in I(q)} \frac{w_i(q)}{W(q)} \cdot r_i.
+\end{equation}
+
+\paragraph{Remark:} This method is limited by the fact that $\max_{p\in \mathcal{D}} R(p) \leq \max_i r_i$.
+
+
+\subsection{Reduction from Links to Gauges}
+The reduction from links to gauges is based on creating a virtual gauge $g_i$ at the midpoint of every link $\ell_i$. The estimated rainfall $r_i$ measured at every gauge $g_i$ is set so that the attenuation $\alpha_i$ agrees with the weighted average rainfall along the link $\ell_i$.
+
+A further refinement is based on creating multiple evenly spaced virtual gauges along every link. The estimated rainfall at the virtual gauges is used to create an estimated rainfall map based on the weighted average algorithm in an iterative manner \cite{goldshtein2009rain}. Using such multiple virtual gauges was shown to improve the resulting rainfall map accuracy, especially when the rain-cell size is on par with the length of the links \cite{eshel2019spatial}. Furthermore, it was further presented that splitting each link to a number of virtual gauges can be beneficial also when interpolating the rainfall map via the ordinary kriging approach, which is another approach used in the field of meteorology which uses the correlation between each gauge to its neighbors as a weighting function to create rainfall maps \cite{cressie1990origins_krigorigin}. 
+
+\section{Our Suggested Approach}
+
+We propose to view the problem as filling a partial map to a complete map with the objective of minimizing entropy.
+
+To this end, we assume that a rainfall map can be represented as a sum of rainfall distributions. For example the Gamma distributions and the log-normal distributions which have been used to model the rain-intensity statistics \cite{GammaLog}, as well as using a sum of Gaussians which can simulate a rainfield. We assume that there is an underlying distribution over these rainfall distributions. This distribution can be estimated from empirical data. For example, there is a probability distribution over all 2-dimensional Gaussians that assigns a probability to each triple (mean and standard deviation in each axis). The goal is to find the minimum-entropy realization that explains the measurements.
+
+This means that the estimated rainfall map is the solution of the following optimization problem:
+\begin{center}
+\textit{Find the minimum-entropy combination of distributions that agrees with the measurements.}
+\end{center}
+
+A key advantage of this approach is that it can be used to \emph{explain} ML-derived solutions. Indeed, statistical learning theory tends to find minimum-entropy solutions~\cite{grandvalet2005entropy}. Moreover, by solving an optimization problem, we can compute the entropy of the map proposed by an ML algorithm. We can then compare its entropy with the entropy of the minimum-entropy solution. A large gap either decreases our trust in the ML-computed solution or indicates that we are missing a domain-specific criterion.
+
+\section{Extension to Fusion of Measurements}
+
+In practice, we are not limited to measurements of attenuation of microwave links. Rain radars provide rainfall measurements in polar voxels, and gauges provide point-wise sparse rainfall measurements.
+
+The proposed method can be used to compute a minimum-entropy solution that agrees with all these measurements.
+
+\section{Prize-Collecting Versions}
+
+Current estimation efforts require filtering of measurements to ignore so-called outliers. Different techniques are applied to determine which measurements should be ignored. Instead, we can consider a budget of outliers and let the optimization ignore a subset of measurements whose ``value'' is upper bounded by the budget. This approach is called \emph{prize collection} in optimization problems.
+
+\section{Estimation of Dynamic Rainfall Maps}
+
+So far we have focused on the static case in which we are given a snapshot of measurements at a given time,\footnote{In practice, these measurements are not simultaneous for gauges or rain radars.} and our goal is to estimate a rainfall map for the time of that snapshot.
+
+Here, we consider a setting in which we are given a time-series of measurements. Our goal is to estimate a time-series of rainfall maps. Now we are not only addressing the problem of finding the best explanation per snapshot, but the best explanation over a sequence of snapshots. To this end, we would like the sequence of estimated rainfall maps to be ``smooth'' and physically viable.
+
+We propose to augment the objective function of minimum-entropy per time step with a cost term that is proportional to the sum of energies required to transform between consecutive rainfall maps. These energies are based on diffusion and advection costs between consecutive maps.
+
+
+\section{Nowcasting}
+Prediction of rainfall maps based on a given sequence of rainfall maps can also be based on the same principles. For example, if we are given a time-series of rainfall maps that are $5$ minutes apart, then we can predict the next map so that it minimizes the total cost (minimum-entropy plus movement energy). Such predictions - not for rainfall maps but rather for the sensors themselves (e.g., the attenuation) were proposed as part of improving the network QoS \cite{jacoby2021short,kadota2022switching,jacoby2025spatio}).
+
+\bibliographystyle{unsrt}
+\bibliography{mybibCML,guy}
+
+%\begin{thebibliography}{9}
+%\bibitem{goldstein2009}
+%Goldstein, Messer, and Zinovitch (2009).
+%\end{thebibliography}
+
+\end{document}

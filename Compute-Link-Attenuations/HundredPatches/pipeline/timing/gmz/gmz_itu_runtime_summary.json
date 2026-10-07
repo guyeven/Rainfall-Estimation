@@ -1,0 +1,52 @@
+{
+  "generated_at_utc": "2026-09-24T23:25:08.029049+00:00",
+  "solver_name": "gmz_itu",
+  "solver_label": "GMZ (ITU adaptation)",
+  "timing_scope": "End-to-end wall time includes input loading, initialization, optimization, diagnostics, and output writing.",
+  "hardware_note": "",
+  "system": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "processor": "arm",
+    "python": "3.14.3",
+    "numpy": "2.5.3",
+    "scipy": "1.18.1"
+  },
+  "configuration": {
+    "config_file": "/Users/isoto/Projects/Rainfall-Estimation/Compute-Link-Attenuations/HundredPatches/pipeline/batch_solve_gmz.yaml",
+    "solver_config_sha256": "2c48a7cc9385d3b58b27774df29e0a4bd8143ea4d52841dd4786312142a7455d",
+    "solver_workers": 1,
+    "patch_workers": 1
+  },
+  "patches": {
+    "expected": 100,
+    "recorded": 100,
+    "completed": 100,
+    "failed": 0,
+    "optimizer_converged": 15
+  },
+  "end_to_end_seconds": {
+    "count": 100,
+    "mean": 132.65687114831962,
+    "sample_std": 35.57921273879131,
+    "median": 125.74119162499846,
+    "q1": 102.86381328101561,
+    "q3": 157.01590237523487,
+    "iqr": 54.152089094219264,
+    "min": 80.41312741700676,
+    "max": 240.10140474999207,
+    "total": 13265.687114831962
+  },
+  "optimizer_seconds": {
+    "count": 100,
+    "mean": 132.56004697536991,
+    "sample_std": 35.55363276835322,
+    "median": 125.64984322901,
+    "q1": 102.7900325415103,
+    "q3": 156.88987752023968,
+    "iqr": 54.09984497872938,
+    "min": 80.3506563330011,
+    "max": 239.93244699999923,
+    "total": 13256.004697536991
+  }
+}

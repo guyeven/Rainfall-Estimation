@@ -1,0 +1,135 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\title{A $3\times3$ Counterexample to Convexity}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+This example isolates the source of nonconvexity in the physical CML
+data-fidelity term. For one link,
+\begin{equation}
+    \widehat{A}(R)
+    = \sum_{p\in\ell} d_p k R_p^\alpha,
+    \qquad
+    J_{\mathrm{atten}}(R)
+    = \frac{\bigl(\widehat{A}(R)-A_{\mathrm{obs}}\bigr)^2}{L}.
+\end{equation}
+This is the one-link normalization used by the normalized solver.
+
+\section{Toy Link}
+
+The example has the following parameters:
+\begin{itemize}
+    \item a $3\times3$ pixel grid;
+    \item one horizontal link crossing the three pixels in the middle row;
+    \item a crossed length of $0.125\,\mathrm{km}$ in each pixel, giving a
+          total link length of $L=0.375\,\mathrm{km}$;
+    \item a frequency of $38.003\,\mathrm{GHz}$ with horizontal polarization;
+    \item the ITU-R P.838-3 coefficients
+          $k=0.400171594750$ and $\alpha=0.881535333268$.
+\end{itemize}
+
+Consider two strictly positive rain fields, measured in
+$\mathrm{mm}/\mathrm{h}$, that are left-right reflections of each other
+across the vertical centerline of the grid. In $R^{(L)}$, the heavy-rain
+value is in the middle-left pixel. In $R^{(R)}$, the same value is in the
+middle-right pixel:
+\begin{equation}
+    R^{(L)} =
+    \begin{bmatrix}
+        1 & 1 & 1 \\
+        20 & 1 & 1 \\
+        1 & 1 & 1
+    \end{bmatrix},
+    \qquad
+    R^{(R)} =
+    \begin{bmatrix}
+        1 & 1 & 1 \\
+        1 & 1 & 20 \\
+        1 & 1 & 1
+    \end{bmatrix}.
+\end{equation}
+
+Either field could be chosen as the ground truth. If $R^{(L)}$ is the ground
+truth, it generates the observation below, but $R^{(R)}$ produces exactly the
+same observation. The same statement holds with the roles reversed. The
+single horizontal link therefore cannot distinguish these two rain fields.
+Because the link crosses the reflected pixels over equal distances, their
+predicted attenuations are equal:
+\begin{equation}
+    \widehat{A}\bigl(R^{(L)}\bigr)
+    = \widehat{A}\bigl(R^{(R)}\bigr)
+    = A_{\mathrm{obs}}
+    = 0.801595407171\,\mathrm{dB}.
+\end{equation}
+It follows that
+\begin{equation}
+    J_{\mathrm{atten}}\bigl(R^{(L)}\bigr)
+    = J_{\mathrm{atten}}\bigl(R^{(R)}\bigr)
+    = 0.
+\end{equation}
+
+The arithmetic mean of the two fields is
+\begin{equation}
+    R^{(M)}
+    = \frac{R^{(L)}+R^{(R)}}{2}
+    =
+    \begin{bmatrix}
+        1 & 1 & 1 \\
+        10.5 & 1 & 10.5 \\
+        1 & 1 & 1
+    \end{bmatrix}.
+\end{equation}
+
+\section{Why the Power Law Is Strictly Concave}
+
+To see why the power law is strictly concave, define $g(r)=r^\alpha$ for
+$r>0$. Its second derivative is
+\begin{equation}
+    g''(r)=\alpha(\alpha-1)r^{\alpha-2}.
+\end{equation}
+Here, $\alpha>0$, $\alpha-1<0$, and $r^{\alpha-2}>0$. Therefore,
+$g''(r)<0$ for every $r>0$, which means that $g$ is strictly concave. In
+particular,
+\begin{equation}
+    \left(\frac{20+1}{2}\right)^\alpha
+    > \frac{20^\alpha+1^\alpha}{2}.
+\end{equation}
+In the arithmetic-mean field, the two reflected rain rates $20$ and $1$
+become $10.5$ and $10.5$. The strict-concavity inequality shows that their
+combined attenuation contribution increases. Consequently,
+\begin{equation}
+    \widehat{A}\bigl(R^{(M)}\bigr)
+    = 0.845082934781\,\mathrm{dB}
+    > A_{\mathrm{obs}},
+\end{equation}
+and
+\begin{equation}
+    J_{\mathrm{atten}}\bigl(R^{(M)}\bigr)
+    = 0.005043106820
+    > 0.
+\end{equation}
+
+Therefore,
+\begin{equation}
+    J_{\mathrm{atten}}\!\left(
+        \frac{R^{(L)}+R^{(R)}}{2}
+    \right)
+    >
+    \frac{
+        J_{\mathrm{atten}}\bigl(R^{(L)}\bigr)
+        + J_{\mathrm{atten}}\bigl(R^{(R)}\bigr)
+    }{2}
+    = 0.
+\end{equation}
+This violates the defining inequality for a convex function. Therefore, the
+physical attenuation data term is nonconvex.
+
+\end{document}

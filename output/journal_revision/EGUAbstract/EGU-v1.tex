@@ -1,0 +1,82 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{cite}
+\usepackage{hyperref}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\disk}{\text{disk}}
+\DeclareMathOperator{\argmin}{argmin}
+
+\usepackage{xcolor}
+\newcommand{\rex}[1]{\textcolor{blue}{[rex: #1]}}
+
+\title{Discrete Learning Algorithms for Precipitation Estimation from Commercial Microwave Links}
+\author{Guy Even\thanks{MPI for Informatics, Email: guyeven@mpi-inf.mpg.de} 
+\and
+Andreas Karrenbauer\thanks{MPI for Informatics, Email: karrenba@mpi-inf.mpg.de}
+\and Jonatan Ostrometzky\thanks{School of ECE, Tel-Aviv University, Email: jonatano@tauex.tau.ac.il}
+\and Rex Lei \thanks{MPI for Informatics, Email: rexlei@mpi-inf.mpg.de}
+\and Christian Sohler \thanks{University of Cologne, Email: sohler@cs.uni-koeln.de}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+Estimating rainfall from commercial microwave links (CML) has been established in the recent years as a powerful opportunistic sensing approach. Precipitation influences the attenuation along the microwave links and the latter can therefore provide  in many regions of this planet a dense set of near-ground measurements that can be used for precipitation estimation.
+
+In this paper, we develop a new algorithm for learning a precipitation map 
+from microwave link attenuation data. We model the algorithmic/ML problem as follows. We are given a set of microwave links
+$\{\ell_i\}_{i=1}^n$ where each link is defined by a pair of points in $\mathbb{R}^2$. For each link we measure an attenuation that, in principle, can be determined from the amount of precipitation along the link.
+We discretize the underlying space into pixels and assume that the precipitation is constant on a pixel and it generates attenuation on each link that intersects the pixel proportional to the length of the intersection. We then fit precipitation values to the pixels and aim to minimize the squared error between the attenuation predicted by a forward-model and the corresponding measurements. We use a regularization term that 'punishes' large value differences of log-rainfall rates between neighboring pixels. 
+\footnote{\rex{I wonder if this is too much (even high-level) detail for the abstract. Will the audience of this abstract be convinced about the value of this (new?) approach?}} 
+\footnote{Maybe we need to spend a few more sentences in the abstract justifying the approach (and fewer sentences describing it, so that the justification appears earlier).}
+\footnote{
+For example: in prior work, maybe individual links are used as individual estimates. Whereas we are (hopefully) interpolating between nearby links in the optimization?}
+
+In order to evaluate the quality of our algorithm on a sufficiently large number of different data sets, we generate two sets of 100 nature-inspired precipitation maps and superimpose the topology of microwave links.\footnote{\rex{I am generally confused about how we exactly are evaluating the algorithm; besides that, is this sentence an accurate summary of our approach?}} Here we present a first evaluation of our algorithm on these datasets.
+
+
+\subsubsection{Suugested edit (Rex)}
+
+
+Using commercial microwave links (CML) to estimate rainfall is a recently established and powerful approach to opportunistic sensing. Precipitation influences the attenuation along the mircorwave links. And, microwave links form a dense set of measurements in many places worldwide. 
+
+In this paper, we develop a new algorithm for learning a precipitation map 
+from microwave link attenuation data. We start from a set of microwave links
+$\{\ell_i\}_{i=1}^n$, each composed of two points in $\mathbb{R}^2$. Each link yields an attenuation measurement, influenced by the amount of precipitation along the link.
+Then, we discretize the underlying space into pixels and fit them with precipitation values consistent with the link data.
+We aim to minimize the squared error between the attenuation predicted by a forward-model and the corresponding measurements. We use a regularization term that penalizes large  differences of log-rainfall rates between neighboring pixels.
+In short, our algorithm provides a new methodology to model rainfall between microwave links, not just near them. 
+
+
+In order to evaluate the quality of our algorithm on a sufficiently large number of different data sets, we generate two sets of 100 nature-inspired precipitation maps and superimpose the topology of microwave links.\footnote{\rex{I am generally confused about how we exactly are evaluating the algorithm; besides that, is this sentence an accurate summary of our approach?}} Here we present a first evaluation of our algorithm on these datasets.
+
+
+\rex{My main goals were to shrink sentences, as well as argue more about the advantages of our approach. My biggest uncertainty is not knowing what portion of this work is interesting to the EGU community, and how to tailor the abstract to that.}
+
+
+\section{Jonatan version}
+
+Commercial microwave links (CMLs) form the infrastructure of wireless networks, and have been addressed and studied as an opportunistic source of weather monitoring, exploiting weather-induced signal attenuation to detect and monitor tempo-spatial rainfall, as well as other atmospheric phenomena. Using CMLs as opportunistic tools for weather monitoring is beneficial both as additional sensors - used to enhance the tempo-spatial accuracy and resolution of existing weather monitoring instruments, and as stand-alone weather monitoring devices, in places in which dedicated weather monitoring devices are scarce or do not exist.
+
+Current techniques for 2D rainfall map reconstruction usually reduce  CMLs measurements to virtual point observations and rely on interpolation techniques such as inverse distance weighting or Kriging. While effective in many scenarios, these methods are inherently sub-optimal, as they do not address the unavoidable mis-modeling of the CML reduction from a line-projection to a single point.
+
+In this study, we revisit the rainfall map reconstruction problem from CML signal attenuation measurements, under a principled optimization perspective. We formulate the pråoblem of the partial-to-complete field reconstruction as a physics-informed optimization problem. The rainfall field is quantized and represented by pixel-rainfall variables whose values are constrained to agree with the observed CMLs signal attenuations. The resulting solution minimizes a weighted sum of the attenuation errors along the links, spatial differences between neighboring pixels, and total rainfall in all the pixels of the map. 
+
+To evaluate our approach, we create a benchmark by automating the extraction
+of rain events from EURADCLIM rain maps (the European climatological high-resolution gauge-adjusted radar precipitation dataset). We identify hundreds of rain events expressed by patches of roughly $50\times 50$ $\text{km}^2$ over various terrain types and rain patterns.
+%
+We overlay CMLs on each patch based on the free four-year commercial microwave link dataset for the Netherlands, pubilcly available in the 4TU.ResearchData platfrom 
+
+
+
+
+%Beyond static reconstruction, the proposed framework supports several important extensions. First, it enables a unified treatment of heterogeneous observations, allowing CMLs measurements to be fused with point gauges and radar-derived rainfall estimates within a single optimization problem. Second, by explicitly defining the entropy of reconstructed fields, the framework provides a quantitative reference for assessing machine-learning-based rainfall reconstructions, enabling comparison against a theoretically grounded minimum-entropy baseline. Finally, the formulation can be extended to the tempo-spatial domain (e.g., include time-dependency) by incorporating physically motivated smoothness constraints in time, enabling consistent estimation and short-term prediction of evolving rainfall maps.
+
+Overall, this study reframes rainfall reconstruction from opportunistic sensing networks as a well-posed inverse problem with explicit regularization and uncertainty control, contributing to the development of transparent and extensible retrieval methodologies for environmental observation systems.
+
+
+\end{document}

@@ -1,0 +1,45 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{cite}
+\usepackage{hyperref}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\disk}{\text{disk}}
+\DeclareMathOperator{\argmin}{argmin}
+
+\usepackage{xcolor}
+\newcommand{\rex}[1]{\textcolor{blue}{[rex: #1]}}
+
+\title{Discrete Learning Algorithms for Precipitation Estimation from Commercial Microwave Links}
+\author{Guy Even\thanks{MPI for Informatics, Email: guyeven@mpi-inf.mpg.de} 
+\and
+Andreas Karrenbauer\thanks{MPI for Informatics, Email: karrenba@mpi-inf.mpg.de}
+\and Jonatan Ostrometzky\thanks{School of ECE, Tel-Aviv University, Email: jonatano@tauex.tau.ac.il}
+\and Rex Lei \thanks{MPI for Informatics, Email: rexlei@mpi-inf.mpg.de}
+\and Christian Sohler \thanks{University of Cologne, Email: sohler@cs.uni-koeln.de}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+Commercial microwave links (CMLs) are part of the infrastructure of wireless networks.  Their measured attenuations have been studied as an opportunistic source for monitoring spatiotemporal rainfall and other atmospheric phenomena. CML attenuation measurements can enhance the spatiotemporal accuracy and resolution of existing weather monitoring instruments. In addition, they serve as stand-alone weather monitoring devices in places where dedicated weather monitoring devices are scarce or do not exist.
+
+Current techniques for 2D rainfall map reconstruction usually reduce CML measurements to virtual rain-gauges (i.e., point measurements) and rely on interpolation techniques such as inverse distance weighting or Kriging. While effective in many scenarios, these methods are suboptimal because they do not address the mis-modeling due to the reduction from a link-path attenuation integration to a single point rain-intensity measurement.
+
+In this study, we revisit the rainfall map reconstruction problem from CML signal attenuation measurements as a principled optimization approach. We formulate the problem of the partial-to-complete field reconstruction as a physics-informed optimization problem. The reconstructed rainfall field is quantized and represented by pixel-rainfall variables whose values are constrained to agree with the observed CML signal attenuations. The resulting solution minimizes a weighted sum of the attenuation errors along the links, spatial differences between neighboring pixels, and the total rainfall in all the pixels of the map. 
+
+To evaluate our approach, we create a benchmark of hundreds of rainfall maps and CML locations and attenuations.
+Rainfall maps are algorithmically extracted by identifying rain events in EURADCLIM rain maps (the European climatological high-resolution gauge-adjusted radar precipitation dataset). We identify rain events consisting of patches of about $50\times 50$ $\text{km}^2$ over various terrain types and rain patterns.
+We overlay CMLs on each patch using the free ``Four-year commercial microwave link dataset for the Netherlands'' (publicly available in the 4TU.ResearchData platfrom).
+We then apply the ITU-R P.838 model at a pixel level to compute the CML attenuations based on the rainfall to obtain noiseless attenuation measurements. 
+
+We apply the inverse optimization procedure to the CML attenuations to reconstruct the rainfall maps. The accuracy of the reconstructed rainfall map is evaluated and compared with the inverse distance weighting approach.
+Overall, this study reframes rainfall reconstruction from opportunistic sensing networks as a well-posed inverse problem with an explicit objective function.
+Our reconstruction framework can also assist in explaining AI-solutions in the absence of ground truth. 
+
+
+
+\end{document}

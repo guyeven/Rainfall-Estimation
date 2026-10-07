@@ -1,0 +1,102 @@
+\documentclass[aspectratio=169]{beamer}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{textcomp} % for \texteuro
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
+
+\usetheme{MPI}
+
+\title{
+{\texorpdfstring{\centering Principled Estimation of Weather Variables\\ from\\ Dedicated and Opportunistic Measurements}{Principled Estimation of Weather Variables from Dedicated and Opportunistic Measurements}}}
+
+
+\author{Guy Even}
+\institute{MPI-INF}
+
+
+\setbeamertemplate{footline}{
+  \leavevmode%
+  \hbox{%
+    \begin{beamercolorbox}[wd=\paperwidth,ht=2.5ex,dp=1ex,leftskip=1em]{footline}
+      % your footer content here, but no page number
+    \end{beamercolorbox}
+  }
+}
+\begin{document}
+%\begin{frame}
+%  \titlepage
+%\end{frame}
+
+\begin{frame}{Estimation of Rainfall Maps Based on Microwave Link Attenuations\textsuperscript{*}}
+  %\vspace{\headheight}
+
+  \footnotesize
+
+  % tighten list spacing locally
+  \setlength{\parskip}{0pt}
+  \setlength{\itemsep}{0.15em}
+  \setlength{\topsep}{0.2em}
+  \setlength{\partopsep}{0pt}
+  \setlength{\parsep}{0pt}
+
+  \begin{columns}[T,onlytextwidth]
+
+    %-------------------- LEFT --------------------
+    \begin{column}{0.62\textwidth}
+
+      %\textbf{Story (5G backhaul).}\\
+      \textbf{Opportunity:} Rain attenuates 5G Microwave backhaul links
+      \\
+      \vspace{0.25em}
+      \textbf{Forward Model (Rain $\Rightarrow$ Attenuation).}
+      For link $\ell$
+      \[
+        A_\ell = \int_{\ell} k(r(x))\,ds,
+        \qquad k(r)=\alpha r^\beta.
+      \]
+
+      \vspace{0.25em}
+      \textbf{Question (Inverse Problem).}
+      Recover the rain field?
+      \\
+      \vspace{0.35em}
+      \textbf{Method.}
+      \begin{itemize}
+        \item Create Real Benchmark: \\200 rainfall scenes on $\sim 60\times 60$ km rectangles
+        \item Overlay real NL microwave links on each scene
+        \item Compute attenuations $\{A_\ell\}$ (forward model)
+        \item Inverse problem: Estimate rain field.
+      \end{itemize}
+
+      $*$ Guy Even,
+      Andreas Karrenbauer,
+      Rex Lei,
+      Jonatan Ostrometzky,
+      Christian Sohler,
+      Iván Soto
+    \end{column}
+
+    %-------------------- RIGHT --------------------
+    \begin{column}{0.38\textwidth}
+
+      \vspace{-0.5cm}
+      \begin{center}
+        \includegraphics[width=\linewidth]{0200_patch000.png}
+      \end{center}
+
+      \vspace{-2.2em}
+      \textbf{Contributions.}
+      \begin{itemize}
+        \item Benchmark of \textbf{200} rain events
+        \item \textbf{5\%} error in rainy/dry pixel classification
+        \item Beats baseline heuristic (inverse distance weighting)
+        \item Explainability via nonlinear multi-objective optimization
+      \end{itemize}
+
+    \end{column}
+  \end{columns}
+\end{frame}
+\end{document}
