@@ -50,10 +50,24 @@ for r in C['ordered_sheets'].get('PatchMapMetrics_BySolver',[]):
     d.append([label,r.get('n_patches','')]+[f(r.get(k)) for k in ks])
 
 def extra_metrics(label, dirname):
-    vals=json.loads(Path('/tmp/extra_metrics.json').read_text()).get(label)
-    if vals is None and label == 'ILDW-init Roy DCT':
-        vals=json.loads(Path('/tmp/extra_metrics.json').read_text()).get('Roy DCT')
-    if vals: d.append([label]+[str(vals[0])]+[f(x) for x in vals[1:]])
+    # Named metric groups avoid the old metric-major/statistic-major mix-up.
+    metrics = []
+    for gp in sorted((PIPE.parent/'gt_dir').glob('gt_*.npz')):
+        sp = PIPE/'solutions'/dirname/f'est_input_{gp.stem[3:]}_solution.npz'
+        if not sp.exists():
+            raise FileNotFoundError(sp)
+        with np.load(gp) as z: gt = np.asarray(z['R_gt'], dtype=float)
+        with np.load(sp) as z: pred = np.asarray(z['R_hat'], dtype=float)
+        if gt.shape != pred.shape: raise ValueError(f'Shape mismatch: {sp}')
+        mask = np.isfinite(gt) & np.isfinite(pred)
+        gt, pred = gt[mask], pred[mask]
+        if not gt.size: raise ValueError(f'No finite pairs: {sp}')
+        diff = pred - gt
+        corr = float(np.corrcoef(gt, pred)[0, 1]) if gt.size >= 2 and np.std(gt) > 0 and np.std(pred) > 0 else np.nan
+        metrics.append((np.sqrt(np.mean(diff**2)), np.mean(diff), corr))
+    arr = np.asarray(metrics)
+    values = [float(fn(arr[np.isfinite(arr[:, i]), i])) for i in range(3) for fn in (np.mean, np.min, np.max)]
+    d.append([label, str(len(metrics))] + [f(x) for x in values])
 extra_metrics('Solver(ILDW) light shrinkage','sol_dir_solver_ildw_timing')
 extra_metrics('Solver(ILDW) no shrinkage','sol_dir_solver_ildw_no_shrinkage')
 extra_metrics('ILDW-init Roy DCT','sol_dir_roy_dct_ildw_outer50')
