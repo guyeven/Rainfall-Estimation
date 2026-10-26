@@ -1,0 +1,13 @@
+\begin{table}[H]\centering\scriptsize\setlength{\tabcolsep}{3pt}\resizebox{\textwidth}{!}{\begin{tabular}{lrrrrrrrrrrl}
+\toprule
+Comparison & $n$ & wins A:\IDW & mean A & mean \IDW & mean diff & SD diff & SE & $t$ & one-sided $p$ & 99\% upper bound & decision \\
+\midrule
+\ILDW - \IDW & 200 & 138:62 & 0.19 & 0.21 & -0.02 & 0.05 & 0.00 & -6.59 & $1.91 \times 10^{-10}$ & -0.02 & reject \\
+\solverILDW - \IDW & 200 & 149:51 & 0.17 & 0.21 & -0.05 & 0.09 & 0.01 & -7.32 & $2.91 \times 10^{-12}$ & -0.03 & reject \\
+\ConvexSolver - \IDW & 200 & 159:41 & 0.09 & 0.21 & -0.12 & 0.20 & 0.01 & -8.90 & $1.75 \times 10^{-16}$ & -0.09 & reject \\
+\Homotopy - \IDW & 200 & 159:41 & 0.09 & 0.21 & -0.13 & 0.20 & 0.01 & -8.91 & $1.62 \times 10^{-16}$ & -0.09 & reject \\
+\solverGT - \IDW & 200 & 183:17 & 0.01 & 0.21 & -0.20 & 0.25 & 0.02 & -11.49 & $4.53 \times 10^{-24}$ & -0.16 & reject \\
+\bottomrule\end{tabular}}
+\caption{One-sided paired $t$ tests of patchwise absolute-bias differences against \IDW\ across all 200 patches. Negative differences favor method A.}
+\label{tab:paired-absolute-bias-test}
+\end{table}

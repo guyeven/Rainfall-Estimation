@@ -1,0 +1,928 @@
+\documentclass[a4paper,fleqn]{cas-sc}
+
+
+
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{siunitx}
+\sisetup{round-mode=places, round-precision=3}
+\usepackage[authoryear,round]{natbib}
+\setcitestyle{aysep={, },citesep={; }}
+\usepackage[all]{hypcap}
+\usepackage{cleveref}
+\crefname{appendix}{appendix}{appendices}
+\Crefname{appendix}{Appendix}{Appendices}
+\crefname{algocf}{algorithm}{algorithms}
+\Crefname{algocf}{Algorithm}{Algorithms}
+
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+%\SetAlgoSkip{0pt}   % put once in preamble
+\SetAlgoNoEnd
+\input{main_paths.tex}
+
+\newcommand{\notebox}[3]{%
+  \begingroup
+  \setlength{\fboxsep}{2pt}%
+  \fcolorbox{#1}{#2}{\textsf{\footnotesize #3}}%
+  \endgroup
+}
+
+\DeclareRobustCommand{\editnote}[1]{%
+  \texorpdfstring{%
+    \nobreak\hfill
+    \mbox{\notebox{red!50!black}{red!10}{#1}}%
+  }{}%
+}
+
+\DeclareRobustCommand{\inlinenote}[1]{%
+  \mbox{\notebox{red!50!black}{red!10}{#1}}%
+}
+
+\newcommand{\editsection}[2]{\section[#1]{#1\editnote{#2}}}
+\newcommand{\editsubsection}[2]{\subsection[#1]{#1\editnote{#2}}}
+
+
+%algs
+\DeclareRobustCommand{\IDW}{\textsc{idw}}
+\DeclareRobustCommand{\ILDW}{\textsc{ildw}}
+\DeclareRobustCommand{\solverILDW}{\textsc{solver(ildw)}}
+\DeclareRobustCommand{\solverGT}{\textsc{solver(gt)}}
+\DeclareRobustCommand{\solverConvex}{\textsc{convex solver}}
+\DeclareRobustCommand{\solverHomotopy}{\textsc{homotopy solver}}
+\DeclareRobustCommand{\ConvexSolver}{\solverConvex}
+\DeclareRobustCommand{\Homotopy}{\solverHomotopy}
+\DeclareRobustCommand{\LBFGSB}{\textsc{lbfgsb}}
+\DeclareRobustCommand{\OPTILDW}{\solverILDW}
+
+% Column labels and compact numeric notation.
+\newcommand{\RMSE}{RMSE}
+\newcommand{\Bias}{Bias}
+\newcommand{\Pearson}{Pearson $r$}
+\newcommand{\meanPixels}{mean pixels}
+\newcommand{\pmv}[2]{#1\,$\pm$\,#2}
+
+
+\begin{document}
+\let\WriteBookmarks\relax
+\def\floatpagepagefraction{1}
+\def\textpagefraction{.001}
+
+\shorttitle{Precipitation Estimation from Commercial Microwave Links}
+\shortauthors{G. Even et al.}
+
+\title[mode=title]{Discrete Learning Algorithms for Precipitation Estimation from Commercial Microwave Links}
+
+\author[mpi]{Guy Even}
+\ead{guyeven@mpi-inf.mpg.de}
+
+\author[mpi]{Andreas Karrenbauer}
+\ead{andreas.karrenbauer@mpi-inf.mpg.de}
+
+\author[mpi]{Rex Lei}
+\ead{rexlei@mpi-inf.mpg.de}
+
+\author[tau]{Jonatan Ostrometzky}
+\ead{jonatano@tauex.tau.ac.il}
+
+\author[cologne]{Christian Sohler}
+\ead{sohler@cs.uni-koeln.de}
+
+\author[mpi]{Iv\'an Soto}
+\ead{ivanalisv@gmail.com}
+
+\affiliation[mpi]{organization={MPI for Informatics},
+  city={Saarbr\"ucken},
+  country={Germany}}
+
+\affiliation[tau]{organization={School of Electrical Engineering, Tel-Aviv University},
+  city={Tel Aviv},
+  country={Israel}}
+
+\affiliation[cologne]{organization={University of Cologne},
+  city={Cologne},
+  country={Germany}}
+
+\begin{abstract}
+  Commercial microwave links (CMLs) are part of the infrastructure of wireless networks. Their measured attenuations have been studied as an opportunistic source for monitoring spatiotemporal rainfall and other atmospheric phenomena. CML attenuation measurements can enhance the spatiotemporal accuracy and resolution of existing weather monitoring instruments. In addition, they serve as stand-alone weather monitoring devices in places where dedicated weather monitoring devices are scarce or do not exist.
+
+  Current techniques for 2D rainfall map reconstruction usually reduce CML measurements to virtual rain gauges, namely point measurements, and rely on interpolation techniques such as inverse distance weighting or Kriging. While effective in many scenarios, these methods are suboptimal because they do not address the modeling error introduced when a path-integrated attenuation measurement is replaced by a single-point rain-intensity value.
+
+  In this study, we revisit the rainfall map reconstruction problem from CML signal attenuation measurements with a principled optimization approach. We formulate the problem of partial-to-complete field reconstruction as a physics-informed optimization problem. The reconstructed rainfall field is quantized and represented by pixel rainfall variables whose values are constrained to agree with the observed CML signal attenuations. The resulting solution minimizes a weighted sum of attenuation errors along the links, spatial differences between neighboring pixels, and the total rainfall over the map.
+
+  To evaluate our approach, we create a benchmark of 200 rainfall maps and CML configurations, comprising 100 winter and 100 summer patches. Rainfall maps are extracted from EURADCLIM by identifying rain events across diverse terrain types and precipitation patterns. The selected patches have side lengths between 50 and 94 km. CMLs are overlaid using a publicly available Netherlands dataset, and attenuations are computed using the ITU-R P.838 model.
+
+  We then solve the inverse problem to reconstruct rainfall maps from attenuations and compare the results with inverse distance weighting. Overall, this study reframes rainfall reconstruction from opportunistic sensing networks as a well-posed inverse problem with an explicit objective function. The framework also provides interpretability benefits compared to purely data-driven approaches.
+\end{abstract}
+
+\begin{highlights}
+  \item Rainfall reconstruction from CMLs is formulated as an explicit inverse optimization problem.
+  \item A benchmark is built from EURADCLIM rain maps and synthetic link attenuations.
+  \item The formulation preserves path geometry instead of collapsing links to point measurements.
+\end{highlights}
+
+\begin{keywords}
+  Commercial microwave links \sep Rainfall estimation \sep Inverse problems \sep Optimization \sep Remote sensing
+\end{keywords}
+
+\maketitle
+
+\section{Introduction}
+
+Accurate rainfall estimation is a major tool used for accurate hydrology studies, weather prediction, flood forecasting, and urban drainage management. Reliable information on the spatial and temporal structure of precipitation is particularly important in urban and densely populated environments, where short-duration convective events may produce strong local gradients and rapid hydrological response. Conventional weather monitoring tools, primarily rain gauges and weather radars, provide valuable information but also have well-known limitations. Rain gauges offer direct point measurements, and are considered very accurate when properly installed, but their spatial density is often insufficient for resolving localized rainfall variability. Weather radars provide wide-area coverage, yet their estimates are not at ground level, and are prone to many uncertainties such as scattering, blockages, unaccounted vertical variability of rainfall, and limited near-ground representativeness.
+
+Commercial microwave links (CMLs) offer a complementary source of rainfall information. These links are widely deployed as part of cellular telecommunication backhaul networks and continuously transmit electromagnetic signals between fixed antennas in a line-of-sight installments, nowadays at frequencies of 10 GHz to 90 GHz. During rainfall, raindrops affect the microwave radiation, causing measurable attenuation of the received signal. Since the frequencies range of operational links are sensitive to rain-induced attenuation \cite{ITU,gunn1954microwave,olsen1978rain}, the same infrastructure for communication was shown to also serve as an opportunistic environmental sensing network \cite{RemkoCountry2,chwala2019cml,fencl2015commercial}. As the CMLs are already deployed at large scale, often form dense networks in urban and suburban areas (especially in recent times, where dedicated CMLs networks for smart-city management are being deployed \cite{ostrometzky2024opportunistic,janco2022rain}, and are gaining attention as part of the integrated sensing and communication (ISAC) paradigm \cite{han2023potential}), they can provide near-ground measurements integrated along their paths, which span between tens of meters to several kilometers. Note that CMLs can be used in combination with satellite microwave links (SML) to further enhance their capabilities \cite{nebuloni2025review}. %Not sure we need the last sentence, it is for us to be able to shove a citation...
+
+The physical basis for CML rainfall sensing is based on the attenuation of the signal that is caused by precipitation \cite{gunn1954microwave, olsen1978rain}, and is described by the ITU-R power-law relation\editnote{AK: We should cite the standard here, but which one is the right one?} between rain rate and specific attenuation. Given the frequency and polarization of a link, the rain-induced attenuation accumulated along the link can be modeled as the path integral of the specific attenuation over the rainfall field. Thus, unlike a rain gauge, which measures rainfall at a point, a CML provides a path-integrated measurement. This distinction is fundamental. A single link does not directly observe the rainfall value at one location; rather, it constrains the average attenuation, and hence the rainfall intensity, along its propagation path. Consequently, rainfall reconstruction from CMLs is an inverse problem: the objective is to estimate a spatial rainfall field from a collection of line-integral-like measurements.
+
+Many practical CML-based reconstruction methods simplify this inverse problem by first converting each link measurement into a single representative rain-rate value, often interpreted as a virtual rain gauge located at the link midpoint or at an assumed other point along the link path. Standard spatial interpolation techniques can then be applied to these virtual point observations. This approach is simple, computationally efficient, and often useful in practice. However, it also discards part of the geometric information contained in the link measurement. In particular, the fact that the attenuation is accumulated along an extended path is replaced by a point approximation. This simplification may introduce modeling errors, especially in heterogeneous rainfall fields or in regions where the geometry and density of the link network strongly influence the information available for reconstruction \cite{gat2019comparative,Leijnse2008}. %TODO: Add some references about paths
+
+A more faithful treatment of CML data should account for the coupling between the unknown rainfall field and the measured attenuation along each link path. This coupling depends on the link geometry, length, frequency, polarization, and the spatial distribution of rain along the path. Reconstruction methods that explicitly incorporate this structure have the potential to use the available information more effectively, but they also lead to more challenging estimation problems. In particular, because the attenuation--rain-rate relation is nonlinear, the corresponding inverse problem may be formulated as a constrained nonconvex optimization problem over the rainfall field.
+
+Evaluating such reconstruction methods is difficult in real operational settings because the true rainfall field is generally unknown. Real CML measurements also include additional effects that complicate the analysis, such as wet-antenna attenuation, baseline drift, quantization, hardware-dependent sampling, and measurement noise. While these effects are essential in operational systems, they make it difficult to isolate the intrinsic performance of the reconstruction algorithm itself. A controlled benchmark, in which the ground-truth rainfall field is known and the corresponding CML attenuations are generated through a forward physical model, provides a useful way to study this core inverse problem.
+
+In this paper, we introduce such a benchmark framework. Starting from hourly EURADCLIM rainfall maps, we construct synthetic but physically grounded rain-event patches and generate corresponding noise-free CML attenuation measurements using the ITU-R forward model. This creates a controlled evaluation setting in which different reconstruction algorithms can be compared directly against the known rainfall field. By removing confounding measurement artifacts while preserving realistic spatial rainfall patterns, the proposed benchmark isolates the reconstruction problem and enables systematic analysis of the role of link geometry, interpolation assumptions, and optimization-based estimation.
+
+We use this framework to compare standard inverse-distance weighting (IDW), a link-aware extension tailored to CML measurements, and a nonconvex optimization formulation that directly couples the estimated rainfall field to the measured attenuations.\editnote{AK: We should cite something for the other two methods} In addition, we analyze reconstruction quality as a function of distance from the available links, thereby quantifying how the spatial arrangement of the CML network affects estimation accuracy.
+
+\subsection{Contributions}
+\begin{enumerate}
+  \item Introduction of a methodology for generating rain-event benchmarks for evaluation of rainfall estimation based on noise-free CML attenuation.
+  \item Creation of a 200-patch benchmark comprising 100 winter and 100 summer patches.
+  \item Introduction of a new algorithm ILDW - version of IDW tailored for CML's.
+  \item Introduction of rain-rate estimation as a nonconvex constrained optimization problem. Improve coupling between the estimation and measured attenuation.
+  \item Systematic evaluation of IDW, ILDW, and nonconvex optimization algorithms.
+  \item Evidence of quality of estimates as a function of distance from links.
+
+\end{enumerate}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Background and Related Work}
+\subsection{ITU-R Forward Model: Rain-Induced Attenuation }
+
+During a rain event, the signal along a commercial microwave link experiences attenuation because raindrops absorb and scatter electromagnetic energy.
+We use Recommendation ITU-R P.838-3 for converting rain-rate into specific attenuation~\citep{ITU}. The ITU-R model relates the rain rate $R$ (in \si{\milli\meter\per\hour})
+to the \emph{specific attenuation} $\gamma_R$ (in \si{\deci\bel\per\kilo\meter}) through the power law
+\begin{equation}\label{eq:ITU}
+  \gamma_R = \kappa R^{\alpha},
+\end{equation}
+where the coefficients $\kappa$ and $\alpha$ depend on the link frequency and polarization \citep{ITU}. See Table~\ref{tab:itu_coeffs} for the coefficient values and resulting attenuation for horizontal polarization and rain rates of $1$--$8$ \si{\milli\meter\per\hour}.
+
+The total rain-induced attenuation is the integral of $\gamma_R$ along the link. Thus, longer links accumulate more attenuation, and links operating at different frequencies or polarizations respond differently to the same rainfall field.
+For a horizontal terrestrial link of length $L$ with uniform rain rate $R$ along the path, the total rain-induced attenuation is therefore $A=\gamma_R \cdot L$.
+If the rain-rate field is discretized into pixels, the total rain-induced attenuation is the sum of the attenuations over the segments obtained by intersecting the link with the pixels it traverses.
+
+
+%%%
+\begin{table}[t]
+  \centering
+  \caption{ITU-R P.838-3 coefficients for horizontal polarization and resulting specific attenuation $\gamma_R$ for selected rain rates (\si{\milli\meter\per\hour}).}
+  \label{tab:itu_coeffs}
+  \begin{tabular}{
+      S[table-format=2.0, round-mode=places, round-precision=0]
+      S[table-format=1.5]
+      S[table-format=1.3]
+      S[table-format=1.3]
+      S[table-format=1.3]
+      S[table-format=1.3]
+      S[table-format=1.3]
+    }
+    \hline
+    \multicolumn{1}{c}{$f$}                            &
+    \multicolumn{1}{c}{$\kappa_H$}                     &
+    \multicolumn{1}{c}{$\alpha_H$}                     &
+    \multicolumn{1}{c}{$\gamma_R(R=1)$}                &
+    \multicolumn{1}{c}{$\gamma_R(R=2)$}                &
+    \multicolumn{1}{c}{$\gamma_R(R=4)$}                &
+    \multicolumn{1}{c}{$\gamma_R(R=8)$}                                                                               \\
+    \multicolumn{1}{c}{(\si{\giga\hertz})}             &
+    \multicolumn{1}{c}{}                               &
+    \multicolumn{1}{c}{}                               &
+    \multicolumn{1}{c}{(\si{\decibel\per\kilo\meter})} &
+    \multicolumn{1}{c}{(\si{\decibel\per\kilo\meter})} &
+    \multicolumn{1}{c}{(\si{\decibel\per\kilo\meter})} &
+    \multicolumn{1}{c}{(\si{\decibel\per\kilo\meter})}                                                                \\
+    \hline
+    10                                                 & 0.01217 & 1.257  & 0.01217 & 0.0290861 & 0.069515 & 0.166140 \\
+    15                                                 & 0.04481 & 1.1233 & 0.04481 & 0.0976162 & 0.212652 & 0.463251 \\
+    20                                                 & 0.09164 & 1.0568 & 0.09164 & 0.1906398 & 0.396590 & 0.825032 \\
+    25                                                 & 0.1571  & 0.9991 & 0.1571  & 0.3140041 & 0.627616 & 1.254450 \\
+    30                                                 & 0.2403  & 0.9485 & 0.2403  & 0.4637466 & 0.894968 & 1.727168 \\
+    40                                                 & 0.4431  & 0.8673 & 0.4431  & 0.8083232 & 1.474580 & 2.689996 \\
+    \hline
+  \end{tabular}
+\end{table}
+%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Benchmark Construction\editnote{GE:stable}}
+In this section, we describe how we constructed our benchmark of rain-event patches combined with CML rain-attenuation.  The resulting benchmark instances combine realistically derived rainfall maps with real-world link configurations, from which noise-free rain-induced attenuation measurements are generated for every link.
+\subsection{Data Source}
+We extract rain events from the European climatological gauge-adjusted radar precipitation dataset EURADCLIM \citep{overeem2023euradclim}. EURADCLIM is derived from OPERA European radar composites and provides hourly precipitation fields at 2 \si{\kilo\meter} spatial resolution over a large fraction of Europe. The dataset are distributed in HDF5 format according to the OPERA Data Information Model (ODIM) convention \citep{odimh5}. File-level access and documentation are provided through the KNMI data platform \citep{knmi_euradclim_project}.
+
+\subsection{Automatic Extraction of Rain Events}
+Each hourly EURADCLIM map is processed independently. We first average the rainfall field over a $4 \times 4$ window of native 2 \si{\kilo\meter} pixels, then retain the pixels whose smoothed rain rate is at least 3 \si{\milli\meter\per\hour}. The retained pixels are partitioned into connected components under $8$-neighborhood connectivity. The event-selection criterion requires both side lengths of a component's axis-aligned bounding box to fall between 50 \si{\kilo\meter} and 95 \si{\kilo\meter}; in the resulting 200-patch benchmark, the observed side lengths range from 50 to 94 \si{\kilo\meter}. The accepted bounding box defines the extent of the benchmark patch, so patch dimensions follow the rain events themselves. Fixing a common patch size would instead require cropping the larger events or padding the smaller ones with dry area.
+
+
+%The extraction procedure is:
+%\begin{enumerate}
+%\item Compute a local mean version of the rainfall field using a $4 \times 4$ uniform averaging window.
+%\item Keep pixels whose smoothed rainfall exceeds a threshold of 3.0 mm.
+%\item Partition the retained pixels into connected components.
+%\item Keep only those components whose bounding boxes have side lengths between 50 km and 95 km.
+%\end{enumerate}
+
+
+\subsection{Refinement and Smoothing}
+We refine and smooth each rain patch derived from EURADCLIM rainfall maps by subdividing each pixel into $16 \times 16$ subpixels (each $125 \times 125$ m$^2$), followed by Gaussian smoothing with $\sigma = 1$ in subpixel units.
+The resulting rain patches are treated as the ground-truth rainfall field.
+
+\subsection{CML Dataset}
+CML metadata (including link locations, lengths, and frequencies) are obtained from the publicly available 4TU dataset~\citep{overeem2016cml} (we assumed horizontal polarization for all links). For each rainfall patch, the set of links is cropped to the patch extent and overlaid on the rainfall field. The ITU-R rain-attenuation model is then applied along each link path to compute the corresponding attenuation values.
+
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Patch size (km) & \# links & 1-multiplicity & 2-multiplicity \\
+    \midrule
+    $50 \times 50$  & 939      & 99             & 420            \\
+    $62 \times 60$  & 1254     & 128            & 563            \\
+    $72 \times 70$  & 1507     & 157            & 675            \\
+    \bottomrule
+  \end{tabular}
+  \caption{Representative link multiplicities for three patch dimensions.
+    The multiplicity of a link is defined as the number of frequencies assigned to it.
+    The second column reports the total number of link--frequency pairs.
+    In the data set, link multiplicities were either 1 or 2, with approximately $10\%$ of links having multiplicity 1.
+  }
+  \label{tbl:4TU link multiplicities}
+\end{table}
+
+
+
+\section{Benchmark Statistics}
+In this section, we summarize key properties of the benchmark patches and their associated link geometry. We describe the geographic distribution and size range of the selected rain events, illustrate representative patch instances, summarize link statistics and topology, and report how rainy and dry pixels are distributed with respect to distance from the third-closest link.
+%%%%%%%%%
+%%%%%
+%%
+\paragraph{Patches.}
+\begin{description}
+
+  \item[Time.] The rain patches were extracted from hourly EURADCLIM maps between 18 and 31 January 2023 (winter) and from June 2023 (summer).
+
+  \item[Geographic distribution.] See \Cref{fig:patches_europe_overview} for a depiction of the geographic locations of all 200 rain patches.
+
+        \begin{figure}[!htbp]
+          \centering
+          \includegraphics[width=0.5\textwidth]{\patcheuropeoverview}
+          \caption{Geographic locations of the 100 summer patches (red) and 100 winter patches (blue).}
+          \label{fig:patches_europe_overview}
+        \end{figure}
+
+  \item[Patch sizes.]
+        A scatter diagram of patch side lengths is depicted in \Cref{fig:patch scatter}. The selected benchmark patches have side lengths ranging from $50$ to $94$ \si{\kilo\meter}.
+
+
+        \begin{figure}[!htbp]
+          \centering
+          \includegraphics[width=0.50\textwidth]{\patchgeometryplot}
+          \caption{Patch width versus patch height for all 200 benchmark patches: winter patches are blue and summer patches are red. The mean patch area is 280,649 pixels (SD 83,607; pixel side length $125$ m).}
+          \label{fig:patch scatter}
+        \end{figure}
+\item[Patch statistics.]
+\input{tables/patch_rain_patterns}
+  \item[Sample patches.] Sample rain-events from the benchmark are depicted in \Cref{fig:case_gt_convex_202301280900,fig:case_gt_convex_202301310900} together with their geographic location.
+\end{description}
+%%%%%%%%%
+%%%%%
+%%
+
+%%%%%%%%%
+%%%%%
+%%
+\paragraph{Links.}
+The largest patch overall by area is a summer patch from 19 June 2023 at 22:00, measuring $88\times 94$ \si{\kilo\meter}. Its link geometry appears in \Cref{fig:largest_patch_distance_bins}.
+The pixels in this figure are binned according to their distance to the third-closest link. For a pixel $p$, let $d_3(p)$ denote the distance from the pixel center to the third-closest link. Equivalently, $d_3(p)$ is the smallest radius such that a disk centered at $p$ intersects at least three links.
+
+\Cref{tab:largest_patch_distributions} summarizes link lengths, frequencies and endpoint degrees in this patch (endpoint degree is the number of link--frequency observations incident to the endpoint). See \Cref{tbl:4TU link multiplicities} for the number of links and their multiplicities for typical patch sizes (multiplicity 2 means a link operating at two frequencies).
+
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.88\textwidth]{images/largest_patch_distance_bins/largest_patch_distance_bins_summer_largest_k3.png}
+  \caption{$d_3$-bin map for the largest patch overall by area: the summer patch from 19 June 2023 at 22:00 ($88\times 94$ \si{\kilo\meter}). Each pixel is colored according to its distance bin, and the complete link geometry is overlaid in white.}
+
+  \label{fig:largest_patch_distance_bins}
+\end{figure}
+
+
+\begin{table}[!htbp]
+  \centering
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \scriptsize
+    \begin{tabular}{lrr}
+      \toprule
+      Length bin (km) & Count & \%   \\
+      \midrule
+      $[0,1)$         & 366   & 17.5 \\
+      $[1,2)$         & 571   & 27.3 \\
+      $[2,4)$         & 608   & 29.0 \\
+      $[4,8)$         & 423   & 20.2 \\
+      $[8,16)$        & 118   & 5.6  \\
+      $[16,24]$       & 7     & 0.3  \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \scriptsize
+    \begin{tabular}{lrr}
+      \toprule
+      Frequency bin (GHz) & Count & \%   \\
+      \midrule
+      $[10,15)$           & 20    & 1.0  \\
+      $[15,20)$           & 74    & 3.5  \\
+      $[20,25)$           & 87    & 4.2  \\
+      $[25,30)$           & 284   & 13.6 \\
+      $[30,35)$           & 106   & 5.1  \\
+      $[35,40)$           & 1433  & 68.5 \\
+      $[40,60]$           & 89    & 4.3  \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.31\textwidth}
+    \centering
+    \scriptsize
+    \begin{tabular}{lrr}
+      \toprule
+      Endpoint-degree bin & Count & \%   \\
+      \midrule
+      $1$                 & 188   & 15.1 \\
+      $2$                 & 617   & 49.7 \\
+      $3,4$               & 268   & 21.6 \\
+      $5,6$               & 78    & 6.3  \\
+      $7..10$             & 45    & 3.6  \\
+      $11..20$            & 28    & 2.3  \\
+      $\geq 21$          & 18    & 1.4  \\
+      \bottomrule
+    \end{tabular}
+  \end{minipage}
+  \caption{Link statistics for the largest patch overall by area: the summer patch from 19 June 2023 at 22:00 ($88\times 94$ \si{\kilo\meter}; 2,093 link--frequency observations). The first panel counts observations by path-length interval, the second by carrier-frequency interval, and the third counts 1,242 endpoints by degree.}
+  \label{tab:largest_patch_distributions}
+\end{table}
+
+
+
+\paragraph{Rainy/Dry Pixel Distance Stratification.}
+We considered all 200 benchmark patches and classified the pixels in each patch as rainy or dry using a rainfall threshold of \SI[round-mode=none]{0.6}{\milli\meter\per\hour}.
+Each of these two pixel sets was then partitioned into bins according to the pixel-level distance $d_3(p)$.
+The mean and standard deviation of the rainy-pixel and dry-pixel counts in each distance bin, computed across all patches, are reported in \Cref{tab:rainy_nonrain_counts}.
+
+
+\input{tables/rainy_nonrain_counts_200}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Inverse Solvers: From Link Attenuations to Rainfall Maps\editnote{GE:stable}}
+In this section, we present three solvers for the inverse problem: IDW, ILDW, and a nonconvex optimization model.
+
+\subsection{Problem Formulation}
+The inputs for the inverse problem consists of a set of links $\mathcal{L}$ in a patch $P$ (set of pixels). Every link $\ell$ has an attenuation $A_{\ell}$ and the following attributes: frequency, polarization, endpoints and length $|\ell|$.
+
+The output is an estimated rain-rate field $\hat{R}:P\rightarrow \mathbb{R}_{\geq 0}$.
+
+\subsection{Rain Equivalent for Link Attenuation}\label{sec:rain rate equivalent}
+The \emph{rain-rate equivalent} $R_{\ell}$ of link $\ell$ is the uniform rain-rate along the link that would cause the link total attenuation $A_\ell$. This rain-rate is derived from the ITU-R model by:
+\[
+  R_\ell \triangleq \left(\frac{A_\ell/|\ell|}{\kappa_\ell}\right)^{1/\alpha_\ell}\;,
+\]
+where $(\kappa_\ell,\alpha_\ell)$ the ITU-R P.838-3 coefficients corresponding to the link's frequency and polarization.
+
+\subsection{IDW}
+Inverse-distance weighting (IDW) is one of the standard interpolation strategies used in commercial-microwave-link rainfall reconstruction
+\citep{zimmerman1999experimental,jin2003comparison_krigbetter,chen2012estimation_idwforrain,chwala2019cml,eshel2020idw,eshel2021quantitative}.
+The input consists of a set of links, where each link $\ell$ carries a total attenuation, frequency, and polarization.
+
+IDW for CML's replaces every link $\ell$ with a virtual rain-gauge $g_{\ell}$ positioned at the midpoint between the endpoints of $\ell$. The rain-rate associated with $g_{\ell}$ is simply the rain-rate equivalent $R_{\ell}$. Inverse-distance weighting is applied with the virtual gauges positions and rain-rates as inputs.
+
+We consider a setting in which the weight of a gauge decreases quadratically (i.e., decay exponent equals $2$) and the maximum radius of influence $r_{\max}$ is set to $15$ \si{\kilo\meter}. Distances to pixels are measured to the center of the pixel.
+If one or more link midpoints lie inside pixel $p$, then the estimated rainfall in pixel $p$ is set to the mean of their rainfall estimates. The pseudocode for IDW appears in \Cref{alg:idw}.
+
+
+\begin{algorithm}[H]
+  \caption{Discretized IDW. Each link is replaced with a virtual gauge located at the midpoint of the link. The rain-rate at the gauge is set to the rain-rate equivalent of its link. IDW is then applied with respect to these virtual gauges. We set the exponent of the decay to $2$. }
+  \label{alg:idw}
+  \DontPrintSemicolon
+  \KwData{link set $\mathcal{L}$, a patch $P$, and a maximum influence distance $r_{\max}$}
+  \KwResult{rainfall field $\hat R:P\rightarrow\mathbb{R}_{\geq 0}$}
+  \ForEach(\tcp*[f]{compute rain-rate equivalent per link}){link $\ell \in \mathcal{L}$}{%
+    $(\ell.\kappa,\ell.\alpha) \gets \mathrm{ITU838}(\ell.\mathrm{freq},\ell.\mathrm{polarization})$\;
+    $R_\ell\gets \left(\dfrac{A_\ell/|\ell|}{\ell.\kappa}\right)^{1/\ell.\alpha}$\;
+  }
+  \ForEach(\tcp*[f]{compute rain $\hat{R}(p)$}){pixel $p \in {P}$}{
+    $M_p \gets \{\ell \in \mathcal{L} : \ell.\mathrm{midpoint} \in p\}$\;
+    \eIf{$M_p \neq \emptyset$}{
+      $\hat{R}(p) \gets \dfrac{1}{|M_p|}\sum_{\ell \in M_p} R_\ell$\tcp*[r]{pixel contains a link endpoint}
+    }{
+      $N_p \gets \{\ell \in \mathcal{L} : \|\ell.\mathrm{midpoint}-p.\mathrm{center}\|_2 \le r_{\max}\}$\;
+      \eIf{$N_p = \emptyset$}{
+        $\hat{R}(p) \gets 0$\tcp*[r]{pixel far from links}
+      }{
+        $\hat{R}(p) \gets \sum_{\ell \in N_p}\dfrac{\|\ell.\mathrm{midpoint}-p.\mathrm{center}\|_2^{-2}}{\sum_{\ell' \in N_p}\|\ell'.\mathrm{midpoint}-p.\mathrm{center}\|_2^{-2}} \cdot R_\ell$\;
+      }
+    }
+  }
+\end{algorithm}
+
+
+\subsubsection{ILDW}
+We propose a variation of IDW that alleviates the mismatch between measured link attenuation and attenuation computed from the IDW-estimated rainfall field.
+We refer to this variation as inverse link-distance weighting (ILDW).
+ILDW assigns a weight to every link that is inversely proportional to the distance between the pixel and the link, where
+\[
+  \operatorname{dist}(p,\ell) \triangleq \min_{q\in \ell} \|p.\textrm{center}-q\|\;.
+\]
+
+As in IDW, we set the decay exponent to $2$ and the maximum radius of influence $r_{\max}$ is set to $15$ \si{\kilo\meter}.
+If one or more links cross the pixel, the estimated rain-rate is taken to be the mean of the corresponding link rain-rate equivalents. Otherwise, the estimate is a weighted average over links within distance $r_{\max}$ (set to 15km). The pseudocode for ILDW is shown in \Cref{alg:ildw}, with lines that differ from IDW highlighted in red.
+
+\begin{algorithm}[H]
+  \caption{Discretized ILDW. Rainfall is averaged by inverse squared distance to a link. Lines that are different from their corresponding lines in IDW are colored red. }
+  \label{alg:ildw}
+  \DontPrintSemicolon
+  \KwData{link set $\mathcal{L}$, a patch $P$, and a maximum influence distance $r_{\max}$}
+  \KwResult{rainfall field $\hat R:P\rightarrow\mathbb{R}_{\geq 0}$}
+  \ForEach(\tcp*[f]{compute rain-rate equivalent per link}){link $\ell \in \mathcal{L}$}{%
+    $(\ell.\kappa,\ell.\alpha) \gets \mathrm{ITU838}(\ell.\mathrm{freq},\ell.\mathrm{polarization})$\;
+    $R_\ell\gets \left(\dfrac{A_\ell/|\ell|}{\ell.\kappa}\right)^{1/\ell.\alpha}$\;
+  }
+  \ForEach(\tcp*[f]{compute rain $\hat{R}(p)$}){pixel $p \in {P}$}{
+    \textcolor{red}{$X_p \gets \{\ell \in \mathcal{L} : \ell\cap p \neq \emptyset\}$}\;
+    \eIf{\textcolor{red}{$X_p$} $\neq \emptyset$}{
+      \textcolor{red}{$\hat{R}(p) \gets \dfrac{1}{|X_p|}\sum_{\ell \in X_p} R_\ell$\tcp*[r]{at least one link traverses the pixel}
+      }}{
+      \textcolor{red}{$N_p \gets \{\ell \in \mathcal{L} : \mathrm{dist}(p,\ell) \le r_{\max}\}$}\;
+      \eIf{$N_p = \emptyset$}{
+        $\hat{R}(p) \gets 0$\tcp*[r]{pixel far from links}
+      }{\textcolor{red}{
+          $\hat{R}(p) \gets \sum_{\ell \in N_p}\dfrac{\mathrm{dist}^{-2}(p, \ell)}{\sum_{\ell' \in N_p}\mathrm{dist}^{-2}(p, \ell')} \cdot R_\ell$\;}
+      }
+    }
+  }
+\end{algorithm}
+
+\newpage
+\subsubsection{Nonconvex Formulation}
+
+We formulate the inverse problem as a constrained optimization problem. The decision variables are the estimated rain-rates \(\hat{R}(p)\) for all pixels \(p \in P\). The constraints are simply nonnegativity constraints that reflect the physical requirement that rainfall is nonnegative. The objective is to minimize $J(\hat{R})$, where the cost function $J$ consists of the $4$ weighted terms:
+\[
+  J(\hat{R}) =
+  w_{\mathrm{atten}} \cdot J_{\mathrm{atten}}(\hat{R})
+  +
+  w_{1d} \cdot J_{1d}(\hat{R})
+  +
+  w_{2d} \cdot J_{2d}(\hat{R})
+  +
+  w_{\mathrm{total}} \cdot J_{\mathrm{total}}(\hat{R})\;.
+\]
+The terms in $J(\hat{R})$ are as follows:
+\begin{enumerate}
+  \item The attenuation term $J_{\mathrm{atten}}$ quantifies disagreement between observed and estimated link attenuations.
+        For a rain-rate field estimate $\hat{R}:P \rightarrow \mathbb{R}_{\geq 0}$ and a link $\ell$, let $A_{\ell}(\hat{R})$ denote the attenuation induced on $\ell$ by $\hat{R}$.
+        This attenuation is computed using the ITU-R forward model with the link's frequency and polarization.
+        The attenuation term $J_{\mathrm{atten}}$ is defined by
+        \[
+          J_{\mathrm{atten}}(\hat{R}) \triangleq
+          \frac{1}{|\mathcal{L}|}
+          \sum_{\ell \in \mathcal{L}}
+          \frac{\bigl( A_\ell(\hat{R}) - A_\ell \bigr)^2}{|\ell|}\;.
+        \]
+  \item
+        The first-difference term $J_{1d}$ enforces spatial smoothness, and is defined by
+        \[
+          J_{1d}(\hat{R}) \triangleq
+          \frac{1}{|P|}
+          \sum_{(u,v)\in\mathcal{E}(P)} (\hat{R}(u) - \hat{R}(v))^2\;,
+        \]
+        where $\mathcal{E}(P)$ is the set of horizontally and vertically adjacent pixel pairs in patch $P$.
+  \item
+        The second-difference term $J_{2d}$ penalizes curvature, and is defined by
+        \[
+          J_{2d}(\hat{R}) =
+          \frac{1}{|P|}
+          \sum_{(p,q,t)\in\mathcal{T}(P)} \bigl((\hat{R}(q) - \hat{R}(p)) - (\hat{R}(t) - \hat{R}(q))\bigr)^2,
+        \]
+        where $\mathcal{T}(P)$ is the set of horizontal and vertical triples of collinear pixels in patch $P$.
+  \item
+        The shrinkage term $J_{\mathrm{total}}$ biases the solution toward smaller overall rainfall values, and is defined by
+        \[
+          J_{\mathrm{total}}(\hat{R}) \triangleq
+          \frac{1}{|P|}
+          \sum_{p \in P} \hat{R}(p)^2.
+        \]
+\end{enumerate}
+
+\paragraph{Implementation Details:}
+\begin{enumerate}
+  \item
+        The weight of each term is set to the reciprocal of its value evaluated at the ILDW solution.
+        We further divide $w_{2d}$ by $2$ and $w_{\mathrm{total}}$ by $|P|$.
+        This normalizes the objective instance-by-instance.
+  \item
+        We use the L-BFGS-B algorithm \citep{byrd1995limited,zhu1997algorithm}, a limited-memory quasi-Newton method for smooth constrained optimization, as implemented in SciPy \citep{scipy}.
+\end{enumerate}
+
+\paragraph{Nonconvex Cost Function:}
+The ITU-R forward model (\Cref{eq:ITU}) attaches an attenuation exponent $\alpha$ to every link based on its frequency and polarization.
+When $\alpha=1$, the predicted attenuation is linear in the rain-rate variables, so
+$J_{\mathrm{atten}}$ is a sum of squares of linear residuals and is convex.
+For $\alpha\neq 1$, the power-law attenuation makes the residual nonlinear,
+and the attenuation term is generally nonconvex.
+The nonconvexity emphasizes the importance of the initial solution used by the solver because local minima need not be global minima. We illustrate this nonconvexity with a concrete $3\times3$ single-link example in \Cref{appendix:nonconvexity-example}.
+
+\paragraph{Summary of the Nonconvex Inverse Solver.}
+The input to the inverse solver is a patch $P$ and a set $\mathcal{L}$ of links.
+We treat each link $\ell\in\mathcal{L}$ as a record containing its geometry and physical attributes that include its frequency $f_\ell$, polarization, length $|\ell|$, and measured attenuation $A_\ell$.
+The L-BFGS-B solver also takes an initial rain-rate field $\hat{R}_{\mathrm{init}}$ as input.
+We write
+\[
+  \hat{R}\gets \LBFGSB(\mathcal{L},P,\hat{R}_{\mathrm{init}})
+\]
+to denote one invocation of the solver and the resulting rain-rate field estimate.
+
+%%%%
+\paragraph{Coping with nonconvexity.}
+We use three strategies to deal with the nonconvexity of $J_{\mathrm{atten}}$:
+\begin{enumerate}
+  \item Use ILDW as the initial solution. We refer to this solver as \solverILDW.
+  \item We initialize the nonconvex solver with the ground-truth rainfall field. This configuration, denoted \solverGT, serves as a best-case reference for the nonconvex formulation.
+  \item Obtain a convex surrogate objective by replacing each link with a virtual link that keeps the same geometry but changes its frequency to $f^0$, chosen so that the attenuation exponent equals $1$ (i.e., $f^0=25\,\si{\giga\hertz}$ for horizontal polarization). We refer to this solver as \ConvexSolver.
+  \item Apply homotopy continuation to smoothly transition from the convex surrogate to the original nonconvex formulation. We refer to this solver as \Homotopy.
+\end{enumerate}
+We elaborate on the last two strategies below.
+
+%%%%%%%%%%%%%%%%%
+%%%%%%%%%%
+%%%%%
+\subsection{\ConvexSolver: Convex Surrogate Inverse Solver}
+We construct a virtual link set $\mathcal{L}^0$ from the original link set $\mathcal{L}$.
+For each link $\ell\in\mathcal{L}$, the corresponding virtual link $\ell^0\in\mathcal{L}^0$ keeps the same geometry and length, but uses the frequency $f^0$ for which the ITU-R attenuation exponent equals $1$.\footnote{Note that $f^0$ depends on the link's polarization. For simplicity, we consider a single polarization.}
+The attenuation of the virtual link $\ell^0$ is set to
+\[
+  A^0_{\ell}\triangleq \kappa_0 \cdot R_{\ell}\cdot |\ell|,
+\]
+where $\kappa_0$ is the ITU-R coefficient at frequency $f^0$ and $R_{\ell}$ is the rain-rate equivalent of the original link $\ell$ (see \Cref{sec:rain rate equivalent}).
+For $\mathcal{L}^0$, the attenuation error term $J_{\mathrm{atten}}$ is a sum of squares and is therefore convex.
+We write
+\[
+  \hat{R}^0\gets \LBFGSB(\mathcal{L}^0,P,\hat{R}_{\mathrm{init}})
+\]
+to denote applying L-BFGS-B to the convex surrogate inverse problem.
+The surrogate objective is convex and includes the strictly convex $J_{\mathrm{total}}$, so it has a single local minimum, which is also the global minimum.
+Thus, the initial solution $\hat{R}_{\mathrm{init}}$ affects only the convergence speed of L-BFGS-B (In our implementation, $\hat{R}_{\mathrm{init}}=0.6$ for all pixels.).
+We refer to the resulting solver as \ConvexSolver.
+
+%%%%%%%%%%%%%%
+%%%%%%%
+%%%
+\subsection{\Homotopy: Smooth Transition from Convex to Nonconvex}
+
+We extend the virtual-link construction to a parameter $\lambda\in[0,1]$.
+For each $\lambda$, let
+\[
+  \mathcal{L}^{\lambda}\triangleq \{\ell^{\lambda}:\ell\in\mathcal{L}\}.
+\]
+The virtual link $\ell^{\lambda}$ keeps the geometry, length, and polarization of $\ell$, but has frequency
+\[
+  f_\ell^{\lambda}\triangleq (1-\lambda)f^0+\lambda f_\ell .
+\]
+Let $(\kappa_\ell(\lambda),\alpha_\ell(\lambda))$ be the ITU-R coefficients at frequency $f_\ell^{\lambda}$.
+The attenuation of $\ell^\lambda$ is set to
+\[
+  A_\ell^{\lambda}\triangleq |\ell|\cdot \kappa_\ell(\lambda) \cdot R_\ell^{\alpha_\ell(\lambda)} .
+\]
+
+
+
+\begin{algorithm}[H]
+  \caption{\Homotopy - a solver that applies a smooth transition from convex optimization to optimizing the nonconvex objective. Assume the same polarization for all the links.}
+  \label{alg:homotopy}
+  \DontPrintSemicolon
+  \KwData{link set $\mathcal{L}$, patch $P$, initial field $\hat{R}_{\mathrm{init}}$, number of homotopy steps $n$}
+  \KwResult{rainfall field $\hat R:P\rightarrow\mathbb{R}_{\geq 0}$}
+
+  $\hat{R}^0 \gets \LBFGSB(\mathcal{L}^0,P,\hat{R}_{\mathrm{init}})$\;
+  \For{$i=1,\ldots,n$}{
+    $\hat{R}^{i/n} \gets \LBFGSB(\mathcal{L}^{i/n},P,\hat{R}^{(i-1)/n})$\;
+  }
+  \Return{$\hat{R}^1$}\;
+\end{algorithm}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+
+%\input{experimental-results.tex}
+\section{Experimental Results and Analysis}
+We evaluated IDW, ILDW, Solver(ILDW), Convex Solver, Homotopy Solver, and Solver(GT) on all 200 benchmark patches: 100 winter and 100 summer rain events.
+%We treat the IDW algorithm as the baseline algorithm. 
+The ground-truth in these experiments is the rain-rate fields of the benchmark (from which link attenuations were derived).
+
+\subsection{Notation}
+For a patch $P$ and solver $s$, let
+$R_P(p)$ denote the ground-truth for pixel $p$.
+Let $\widehat{R}_{P,s}(p)$ denote the estimate returned by solver $s$ for the pixel $p\in P$.
+Define the means:
+\[
+  \overline{\widehat{R}}_{P,s}\triangleq \frac{1}{|P|}\sum_{p\in P}\widehat{R}_{P,s}(p),
+  \qquad
+  \overline{R}_P\triangleq \frac{1}{|P|}\sum_{p\in P}R_P(p).
+\]
+For a patch $P$ and solver $s$, we  compute three values: the root mean squared error
+\[
+  \mathrm{RMSE}_{P,s}\triangleq
+  \sqrt{\frac{1}{|P|}\sum_{p\in P}\bigl(\widehat{R}_{P,s}(p)-R_P(p)\bigr)^2}\;,
+\]
+the signed bias
+\[
+  \mathrm{Bias}_{P,s}\triangleq
+  \frac{1}{|P|}\sum_{p\in P}\bigl(\widehat{R}_{P,s}(p)-R_P(p)\bigr)\;,
+\]
+and the Pearson correlation coefficient
+\[
+  r_{P,s}\triangleq
+  \frac{\sum_{p\in P}\bigl(\widehat{R}_{P,s}(p)-\overline{\widehat{R}}_{P,s}\bigr)\bigl(R_P(p)-\overline{R}_P\bigr)}
+  {\sqrt{\sum_{p\in P}\bigl(\widehat{R}_{P,s}(p)-\overline{\widehat{R}}_{P,s}\bigr)^2}\,
+    \sqrt{\sum_{p\in P}\bigl(R_P(p)-\overline{R}_P\bigr)^2}}\;.
+\]
+For a pixel $p$, the absolute error (AE) is defined by
+\[
+  AE_{P,s}(p) \triangleq |\widehat{R}_{P,s}(p)-R_P(p)|\;,
+\]
+and the relative absolute error (RAE) is defined by
+\[
+  RAE_{P,s}(p) \triangleq \frac{AE_{P,s}(p)}{R_P(p)}\;.
+\]
+To avoid division by zero, we use the absolute error for nonrainy pixels.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{RMSE, Bias, and Pearson Correlation Results and Analysis}
+
+
+The overall patchwise reconstruction metrics across all 200 patches are summarized in Table~\ref{tab:overall-solver-summary}. The corresponding metrics stratified by distance to the third-closest link ($d_3$) are reported in Table~\ref{tab:d3-solver-summary}. The \solverGT\ results provide a best-case reference for the nonconvex formulation when the solver is initialized with the ground truth.
+
+\input{tables/RMSE-bias-Pearson}
+\input{tables/d3_solver_summary_200}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section*{Paired $t$ analysis for RMSE}
+\Cref{tab:paired-rmse-t-test} summarizes the paired $t$ tests for patchwise RMSE differences relative to \IDW. Negative differences indicate that method A has lower RMSE than \IDW, which is the one-sided alternative tested here. The paired results show lower RMSE than \IDW\ for all alternatives; \ILDW\ wins in 195 of 200 patches, while \ConvexSolver\ and \Homotopy\ win in all 200. Their mean patchwise RMSE reduction relative to \IDW\ is $0.64$ \si{\milli\meter\per\hour}. Table~\ref{tab:paired-rmse-t-test} reports the full paired comparisons.
+
+
+\input{tables/paired_rmse_200}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section*{Paired $t$ analysis for absolute bias}
+
+\Cref{tab:paired-absolute-bias-test} summarizes the paired mean tests for patchwise absolute-bias differences relative to \IDW. Negative differences indicate that method A is closer to zero bias than \IDW, which is the one-sided alternative tested here. The paired results show that all alternatives significantly reduce absolute bias relative to \IDW. The reduction is heterogeneous across patches: \ConvexSolver\ and \Homotopy\ have smaller absolute bias than \IDW\ in 157 of 200 patches, reducing mean absolute bias from $0.21$ to about $0.09$ \si{\milli\meter\per\hour}. Table~\ref{tab:paired-absolute-bias-test} reports the paired comparisons.
+
+%Most importantly, the $99\%$ one-sided upper confidence bound for \ConvexSolver\ is $-0.06$ \si{\milli\meter\per\hour}. Thus, even under this conservative bound, the mean patchwise reduction in absolute bias relative to \IDW\ is at least $0.06$ \si{\milli\meter\per\hour}.
+
+\input{tables/paired_bias_200}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section*{Paired comparison of Pearson correlation}
+
+\Cref{tab:paired-pearson-sign-test} summarizes patchwise wins for Pearson correlation relative to \IDW, where higher $r$ indicates better spatial agreement with the ground-truth rainfall field.  The results show that all alternatives improve this measure in most patches. The evidence is strongest for \ConvexSolver, \Homotopy, and \solverGT, which have higher $r$ than \IDW\ in all 200 patches. This indicates that the optimization-based methods improve not only RMSE and bias, but also the spatial agreement of the reconstructed rainfall fields.
+
+\input{tables/pearson_wins_200}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Taylor Diagrams}
+The per-solver Taylor diagrams show one point per patch, with summer patches in red and winter patches in blue.
+\begin{figure}[!htbp]\centering
+\includegraphics[width=\textwidth]{\taylorsixpanel}
+\caption{Per-solver Taylor diagrams for the six reconstruction methods, with one point per patch in each panel (winter blue, summer red). The radius is the reconstructed-field standard deviation normalized by the ground-truth standard deviation (ground truth is at radius 1); the angle represents Pearson correlation. Green dashed contours indicate centered RMSE.}
+\label{fig:taylor-per-patch}
+\end{figure}
+% Pooled Taylor summary temporarily omitted:
+% \begin{figure}[!htbp]\centering
+% \includegraphics[width=0.78\textwidth]{\taylorsummary}
+% \caption{Pooled Taylor summary across all 200 patches, with one aggregate point per solver.}
+% \label{fig:taylor-summary}
+% \end{figure}
+
+\subsection{Confusion Summaries}
+\Cref{tab:wet-dry-confusion-merged} summarizes wet/dry classification at the $0.6$ \si{\milli\meter\per\hour} threshold across all 200 patches. By the fraction-of-all-pixels columns, \ConvexSolver\ reduces false-wet pixels from 0.082 for \IDW\ to 0.047, while false-dry pixels change from 0.004 to 0.005. Among dry ground-truth pixels, the false-wet conditional rate falls from 0.488 to 0.307.
+
+\input{tables/wet-dry-confusion-matrix}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Attenuation Error}
+\Cref{tab:attenuation-fit-summary} summarizes the error between the ground-truth attenuation and the attenuation reconstructed from the estimated rainfall field using the forward model. The main quantity is attenuation MAE, reported in \si{\deci\bel\per\kilo\meter}. The table also reports the attenuation cost-function term $J_{\mathrm{atten}}$.
+For a given patch $P$ and solver $s$, the attenuation MAE per kilometer equals $\frac{1}{|\mathcal{L}_P|}\sum_{\ell \in \mathcal{L}_P} \frac{\left|\hat{A}_{\ell,s} - A_\ell\right|}{|\ell|}$, where $\hat{A}_{\ell,s}$ is the attenuation implied on link $\ell$ by the ITU-R forward model according to the rain-rate solution $\hat{R}_{P,s}$, $A_\ell$ is the ground-truth attenuation, and $|\ell|$ is the link length in kilometers.
+
+Across the 200 patches, \ConvexSolver\ and \Homotopy\ fit the link attenuations more closely than the interpolation baselines; \Homotopy\ has the lowest mean attenuation MAE ($1.4\times10^{-3}$ \si{\deci\bel\per\kilo\meter}). The same ordering is reflected in $J_{\mathrm{atten}}$, as expected because this term is part of the cost function. \inlinenote{GE: discuss the error compared to ITU attenuation per km for various freqs.}
+
+
+\input{tables/attenuation_fit_200}
+%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Median RAE for wet pixels and median AE for dry pixels}
+Because pixel-level errors within a patch are spatially dependent, we do not treat individual pixels as independent replicates. Instead, for each patch, stratum, and solver, we summarize the pixel-level errors by a single median value, using median RAE for rainy pixels and median AE for non-rainy pixels.  The median is used because within-patch error distributions are often asymmetric and can have long upper tails or rare large errors, so it provides a robust summary of typical performance within each patch.
+
+
+We partitioned the pixels in every patch into rainy and non-rainy pixels according to the ground-truth using a threshold of $0.6$ \si{\milli\meter\per\hour}. For rainy pixels, we compute the relative absolute error, and for non-rainy pixels, we compute the absolute error. We summarize the medians of these results per patch after binning pixels by $d_3(p)$.
+\Cref{fig:rae_distance,fig:ae_distance} depict the resulting medians for various solvers.
+\Cref{tab:distance-bin-win-counts} reports the corresponding patchwise win counts for \ConvexSolver\ relative to \IDW. \ConvexSolver\ has lower median RAE/AE than \IDW\ in a vast majority of the patches.  Some patches have no pixels in strata with large $d_3$ distances.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{\distanceboxplot}
+  \caption{Rainy-pixel $d_3$-profile box-and-whisker summary across the 200-patch benchmark. Each patch with rainy pixels in a bin contributes one median relative absolute error. Boxes span the 25th to 75th percentiles across patches; whiskers show the minimum and maximum. The number of contributing patches varies by bin, and rainy-pixel counts are summarized in Table~\ref{tab:rainy_nonrain_counts}.}
+  \label{fig:rae_distance}
+\end{figure}
+
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{\nonrainydistanceboxplot}
+  \caption{Non-rainy-pixel $d_3$-profile box-and-whisker summary across the 200-patch benchmark. Each patch with non-rainy pixels in a bin contributes one median absolute error. Boxes span the 25th to 75th percentiles across patches; whiskers show the minimum and maximum. The number of contributing patches varies by bin, and non-rainy-pixel counts are summarized in Table~\ref{tab:rainy_nonrain_counts}.}
+  \label{fig:ae_distance}
+\end{figure}
+
+\input{tables/distance_bin_win_counts_200}
+
+
+
+%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%
+%%%%%%%%%
+%%%%%
+%%%
+%
+
+
+%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%
+%%%%%%%%%
+%%%%%
+%%%
+%
+%\input{appendix-case-studies.tex}
+\section{Case Study Figures and Objective Evolution}
+
+In this section, we present two case studies, in which we compare  \IDW, \solverGT, and \solverConvex.
+In the first case study, \solverGT\ almost equals the ground-truth while \solverConvex\ slightly improves over \IDW.
+
+To quantify how often these two qualitative patterns occur, we use the simple
+ratio
+\[
+q(P)\triangleq
+\frac{\mathrm{RMSE}_{P,\ConvexSolver}}
+     {\mathrm{RMSE}_{P,\solverGT}}.
+\]
+We assign patch $P$ to Case~1 (the Case Study~I pattern) when $q(P)\geq2$ and
+to Case~2 (the Case Study~II pattern) when $q(P)<2$.  Of the 200 benchmark
+patches, 24 are in Case~1 and 176 are in Case~2.  The smallest Case~1 ratio
+is $2.6310$, whereas the largest Case~2 ratio is $1.9767$; thus no observed
+patch lies immediately at the threshold.
+
+For this patch,  $J(\solverGT)=1.485$ and  RMSE$(\solverGT)=0.102$, while
+$J(\ConvexSolver)=0.265$ and RMSE$(\ConvexSolver)=0.702$.
+This example shows that a lower value of the objective does not necessarily imply a more accurate reconstruction of the ground-truth rainfall field.
+For Case Study I, \Cref{fig:case_gt_convex_202301280900} shows the reconstructed rainfall fields and relative errors, and \Cref{fig:jtrace_gt_convex_202301280900} shows the evolution of the weighted objective over L-BFGS-B iterations.
+
+
+\begin{figure}[!htbp]
+  \centering
+  \makebox[\textwidth][c]{\includegraphics[width=1.08\textwidth]{\gtconvexcaseone}}
+  \caption{Case Study I: \solverGT\ is visually close to the ground truth. The three upper-right panels show the rainfall fields reconstructed by \IDW, \solverGT, and \solverConvex. The corresponding lower-right panels show the relative error of each reconstruction.}
+  \label{fig:case_gt_convex_202301280900}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{minipage}[t]{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{\jgtcaseone}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{\jconvexcaseone}
+  \end{minipage}
+  \caption{Evolution of the weighted objective over L-BFGS-B  iterations for Case Study I. Left: \solverGT, initialized from the ground-truth field, converges to final $J=1.485$. Right: \ConvexSolver\ reaches a lower final weighted objective, $J=0.265$, but its reconstruction is farther from the ground truth by RMSE.}
+  \label{fig:jtrace_gt_convex_202301280900}
+\end{figure}
+%%%%%%%%%%%%%%
+In the second case study, \solverGT\ and \solverConvex\ are visually similar in the reconstruction panels.
+For this patch, $J(\solverGT)=0.289$ and RMSE$(\solverGT)=0.552$, while
+$J(\ConvexSolver)=0.290$ and RMSE$(\ConvexSolver)=0.565$.
+This example shows a case in which the two solutions have almost the same objective value and almost the same reconstruction error.
+For Case Study II, \Cref{fig:case_gt_convex_202301310900} shows the reconstructed rainfall fields and relative errors, and \Cref{fig:jtrace_gt_convex_202301310900} shows the evolution of the weighted objective over L-BFGS-B iterations.
+
+\begin{figure}[!htbp]
+  \centering
+  \makebox[\textwidth][c]{\includegraphics[width=1.08\textwidth]{\gtconvexcasetwo}}
+  \caption{Case Study II: \solverGT\ and \solverConvex\ produce visually similar reconstructions. The three upper-right panels show the rainfall fields reconstructed by \IDW, \solverGT, and \solverConvex. The corresponding lower-right panels show the relative error of each reconstruction.}
+  \label{fig:case_gt_convex_202301310900}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{minipage}[t]{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{\jgtcasetwo}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.49\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{\jconvexcasetwo}
+  \end{minipage}
+  \caption{Evolution of the weighted objective over L-BFGS-B iterations for Case Study II. Left: \solverGT, initialized from the ground-truth field, converges to final $J=0.289$. Right: \ConvexSolver\ reaches a very similar final weighted objective, $J=0.290$, and a similar RMSE.}
+  \label{fig:jtrace_gt_convex_202301310900}
+\end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Discussion}
+The benchmark isolates the geometric inversion problem and thereby provides a clear setting for method development. At the same time, several sources of uncertainty remain outside the scope of the current construction, including wet-antenna effects, baseline estimation, quantization, mixed-phase precipitation, and temporal dynamics. These factors matter in operational deployments and should be incorporated in later stages once the benchmarked inverse methods are well understood.
+
+The proposed framework also offers interpretability advantages over purely data-driven alternatives. Because the objective function makes the tradeoff between attenuation consistency, spatial smoothness, and rainfall shrinkage explicit, the resulting reconstructions can be inspected and explained in terms of physically meaningful quantities.
+
+
+The resulting optimization problem is nonconvex due to the nonlinear attenuation model. We therefore compute a locally optimal solution using L-BFGS-B, initialized from the ILDW estimate. In practice, the combination of strong data constraints and regularization yields stable and consistent reconstructions across instances.
+
+The results highlight the importance of the initialization for the nonconvex optimization procedure. In many instances, the ILDW solution lies close to a stationary point of the objective, and the optimizer produces only marginal changes. This indicates that ILDW already achieves a strong balance between attenuation consistency and spatial regularity. Consequently, the role of the nonconvex optimization is primarily to refine the estimate in instances where these objectives are in stronger conflict. In contrast, IDW provides a weaker initialization due to its simplified geometric representation of links, leading to larger discrepancies with the attenuation model.
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Conclusion}
+This journal draft integrates a benchmark-oriented view of rainfall reconstruction from commercial microwave links. Starting from hourly EURADCLIM maps, we extract rain events, simulate CML attenuations through a forward model, and evaluate inverse reconstruction methods against known ground truth. The resulting setup reframes rainfall reconstruction from opportunistic sensing networks as a well-posed inverse problem with an explicit and interpretable objective.
+
+\bibliographystyle{plainnat}
+%\nocite{*}
+\bibliography{references,mybibCML}
+\appendix
+\crefalias{section}{appendix}
+
+\section{Illustrative Examples}
+
+This appendix presents a minimal example that isolates an important property of the inverse problem. Namely, we give a concrete counterexample showing that $J_{\text{atten}}$ is nonconvex.
+
+\subsection{A $3\times3$ Counterexample to Convexity}
+\label{appendix:nonconvexity-example}
+Consider one horizontal link $\ell$ crossing the three middle-row pixels of a
+$3\times3$ grid.  The crossed length is $0.125$~km in each pixel, so
+$|\ell|=0.375$~km.  Let the link use horizontal polarization at
+$38.003$~GHz, for which the ITU-R coefficients used here are
+$\kappa=0.400171594750$ and $\alpha=0.881535333268$.  For this one-link
+instance,
+\[
+\widehat A(R)=\sum_{p\in\ell}d_p\kappa R(p)^\alpha,
+\qquad
+J_{\mathrm{atten}}(R)=
+\frac{\bigl(\widehat A(R)-A_{\mathrm{obs}}\bigr)^2}{|\ell|}.
+\]
+
+Take the two strictly positive fields
+\[
+R^{(L)}=\begin{bmatrix}1&1&1\\20&1&1\\1&1&1\end{bmatrix},
+\qquad
+R^{(R)}=\begin{bmatrix}1&1&1\\1&1&20\\1&1&1\end{bmatrix}
+\quad \si{\milli\meter\per\hour}.
+\]
+They are left-right reflections across the grid's vertical centerline.  Either
+field could be the ground truth: the link crosses the reflected pixels over
+equal lengths, so both fields produce
+\[
+\widehat A\bigl(R^{(L)}\bigr)=\widehat A\bigl(R^{(R)}\bigr)
+=A_{\mathrm{obs}}=0.801595407171\ \si{\deci\bel},
+\]
+and hence
+$J_{\mathrm{atten}}(R^{(L)})=J_{\mathrm{atten}}(R^{(R)})=0$.
+Their arithmetic mean is
+\[
+R^{(M)}=\frac{R^{(L)}+R^{(R)}}{2}
+=\begin{bmatrix}1&1&1\\10.5&1&10.5\\1&1&1\end{bmatrix}.
+\]
+For $g(r)=r^\alpha$, we have
+$g''(r)=\alpha(\alpha-1)r^{\alpha-2}<0$ because $0<\alpha<1$; hence $g$ is
+strictly concave and
+$2(10.5)^\alpha>20^\alpha+1$.  Consequently,
+\[
+\widehat A(R^{(M)})=0.845082934781\ \si{\deci\bel}>A_{\mathrm{obs}},
+\qquad
+J_{\mathrm{atten}}(R^{(M)})=0.005043106820>0.
+\]
+Therefore,
+\[
+J_{\mathrm{atten}}\!\left(\frac{R^{(L)}+R^{(R)}}{2}\right)
+>
+\frac{J_{\mathrm{atten}}(R^{(L)})+J_{\mathrm{atten}}(R^{(R)})}{2}=0,
+\]
+which violates the defining inequality for a convex function.
+
+\end{document}

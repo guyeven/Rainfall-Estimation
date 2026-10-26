@@ -1,0 +1,18 @@
+\begin{table}[!htbp]\centering\small\setlength{\tabcolsep}{3pt}\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lrrrrrr@{}}
+\toprule & \multicolumn{3}{c}{Rainy pixels} & \multicolumn{3}{c}{Non-rainy pixels} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+$d_3$ bin (m) & Mean count & Mean \% & SD & Mean count & Mean \% & SD \\
+\midrule
+$\leq$125 & 3905.3 & 1.80 & 1067.8 & 1053.3 & 1.67 & 967.8 \\
+(125,375] & 15353.2 & 7.05 & 4225.3 & 4183.0 & 6.60 & 3763.6 \\
+(375,750] & 24845.0 & 11.29 & 7280.0 & 6401.2 & 10.26 & 5763.7 \\
+(750,1500] & 48587.4 & 21.88 & 15505.5 & 12184.0 & 18.92 & 11231.5 \\
+(1500,3125] & 83847.9 & 37.38 & 29719.7 & 20272.2 & 31.78 & 19209.7 \\
+(3125,6000] & 42951.5 & 18.98 & 16795.7 & 11518.4 & 19.75 & 11019.5 \\
+(6000,9000] & 3314.4 & 1.46 & 2567.1 & 1631.6 & 3.61 & 2045.8 \\
+>9000 & 385.8 & 0.17 & 787.5 & 214.9 & 0.41 & 573.9 \\
+\midrule Total & 223268.6 & 100 & 74239.5 & 57324.8 & 100 & 52090.6 \\
+\bottomrule\end{tabular*}
+\caption{Ground-truth rainy and non-rainy pixel counts by $d_3$ bin. Counts and within-class percentages are first computed per patch and then averaged across all 200 patches.}
+\label{tab:rainy_nonrain_counts}
+\end{table}

@@ -1,0 +1,54 @@
+\begin{table}[p]\centering\scriptsize
+\setlength{\tabcolsep}{4pt}\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrr}
+\toprule & & \multicolumn{3}{c}{\IDW} & \multicolumn{3}{c}{\ILDW}\\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}
+$d_3$ bin (m) & $n_P$ & RMSE & Bias & Pearson $r$ & RMSE & Bias & Pearson $r$\\
+\midrule
+$\leq$125 & 200 (4959) & \shortstack[c]{$1.11\pm 0.92$\\[-2pt]{\tiny NRMSE: $0.301\pm 0.213$}} & \shortstack[c]{$-0.04\pm 0.10$\\[-2pt]{\tiny N-bias: $-0.010\pm 0.024$}} & $0.958\pm 0.023$ & \shortstack[c]{$1.28\pm 1.09$\\[-2pt]{\tiny NRMSE: $0.346\pm 0.255$}} & \shortstack[c]{$0.01\pm 0.07$\\[-2pt]{\tiny N-bias: $0.003\pm 0.017$}} & $0.939\pm 0.033$\\
+(125,375] & 200 (19536) & \shortstack[c]{$1.25\pm 1.01$\\[-2pt]{\tiny NRMSE: $0.338\pm 0.233$}} & \shortstack[c]{$-0.04\pm 0.10$\\[-2pt]{\tiny N-bias: $-0.010\pm 0.025$}} & $0.948\pm 0.026$ & \shortstack[c]{$1.23\pm 1.02$\\[-2pt]{\tiny NRMSE: $0.333\pm 0.234$}} & \shortstack[c]{$-0.01\pm 0.05$\\[-2pt]{\tiny N-bias: $-0.002\pm 0.012$}} & $0.946\pm 0.028$\\
+(375,750] & 200 (31246) & \shortstack[c]{$1.53\pm 1.20$\\[-2pt]{\tiny NRMSE: $0.416\pm 0.278$}} & \shortstack[c]{$-0.03\pm 0.17$\\[-2pt]{\tiny N-bias: $-0.009\pm 0.042$}} & $0.926\pm 0.037$ & \shortstack[c]{$1.40\pm 1.12$\\[-2pt]{\tiny NRMSE: $0.379\pm 0.258$}} & \shortstack[c]{$-0.01\pm 0.12$\\[-2pt]{\tiny N-bias: $-0.004\pm 0.028$}} & $0.935\pm 0.032$\\
+(750,1500] & 200 (60771) & \shortstack[c]{$1.88\pm 1.41$\\[-2pt]{\tiny NRMSE: $0.512\pm 0.316$}} & \shortstack[c]{$-0.04\pm 0.25$\\[-2pt]{\tiny N-bias: $-0.011\pm 0.061$}} & $0.885\pm 0.056$ & \shortstack[c]{$1.74\pm 1.31$\\[-2pt]{\tiny NRMSE: $0.472\pm 0.294$}} & \shortstack[c]{$-0.02\pm 0.19$\\[-2pt]{\tiny N-bias: $-0.007\pm 0.049$}} & $0.900\pm 0.048$\\
+(1500,3125] & 200 (104120) & \shortstack[c]{$2.37\pm 1.72$\\[-2pt]{\tiny NRMSE: $0.641\pm 0.375$}} & \shortstack[c]{$0.00\pm 0.40$\\[-2pt]{\tiny N-bias: $0.000\pm 0.105$}} & $0.807\pm 0.089$ & \shortstack[c]{$2.26\pm 1.65$\\[-2pt]{\tiny NRMSE: $0.610\pm 0.361$}} & \shortstack[c]{$0.02\pm 0.36$\\[-2pt]{\tiny N-bias: $0.004\pm 0.095$}} & $0.826\pm 0.081$\\
+(3125,6000] & 200 (54470) & \shortstack[c]{$2.62\pm 1.91$\\[-2pt]{\tiny NRMSE: $0.709\pm 0.417$}} & \shortstack[c]{$0.25\pm 0.69$\\[-2pt]{\tiny N-bias: $0.063\pm 0.172$}} & $0.716\pm 0.147$ & \shortstack[c]{$2.54\pm 1.86$\\[-2pt]{\tiny NRMSE: $0.688\pm 0.407$}} & \shortstack[c]{$0.25\pm 0.65$\\[-2pt]{\tiny N-bias: $0.064\pm 0.163$}} & $0.734\pm 0.136$\\
+(6000,9000] & 200 (4946) & \shortstack[c]{$2.20\pm 1.81$\\[-2pt]{\tiny NRMSE: $0.596\pm 0.382$}} & \shortstack[c]{$0.89\pm 1.22$\\[-2pt]{\tiny N-bias: $0.233\pm 0.283$}} & $0.582\pm 0.282$ & \shortstack[c]{$2.17\pm 1.77$\\[-2pt]{\tiny NRMSE: $0.588\pm 0.370$}} & \shortstack[c]{$0.90\pm 1.22$\\[-2pt]{\tiny N-bias: $0.236\pm 0.279$}} & $0.590\pm 0.280$\\
+>9000 & 119 (601) & \shortstack[c]{$1.75\pm 1.93$\\[-2pt]{\tiny NRMSE: $0.469\pm 0.396$}} & \shortstack[c]{$1.19\pm 2.05$\\[-2pt]{\tiny N-bias: $0.290\pm 0.456$}} & $0.269\pm 0.515$ & \shortstack[c]{$1.77\pm 2.03$\\[-2pt]{\tiny NRMSE: $0.469\pm 0.397$}} & \shortstack[c]{$1.26\pm 2.15$\\[-2pt]{\tiny N-bias: $0.305\pm 0.453$}} & $0.246\pm 0.530$\\
+\bottomrule\end{tabular}%
+}
+\vspace{2mm}\hrule\vspace{2mm}
+\setlength{\tabcolsep}{4pt}\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrr}
+\toprule & & \multicolumn{3}{c}{\solverILDW} & \multicolumn{3}{c}{\ConvexSolver}\\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}
+$d_3$ bin (m) & $n_P$ & RMSE & Bias & Pearson $r$ & RMSE & Bias & Pearson $r$\\
+\midrule
+$\leq$125 & 200 (4959) & \shortstack[c]{$0.92\pm 0.92$\\[-2pt]{\tiny NRMSE: $0.248\pm 0.223$}} & \shortstack[c]{$0.00\pm 0.04$\\[-2pt]{\tiny N-bias: $0.001\pm 0.011$}} & $0.970\pm 0.027$ & \shortstack[c]{$0.63\pm 0.54$\\[-2pt]{\tiny NRMSE: $0.171\pm 0.128$}} & \shortstack[c]{$0.00\pm 0.02$\\[-2pt]{\tiny N-bias: $0.000\pm 0.005$}} & $0.985\pm 0.011$\\
+(125,375] & 200 (19536) & \shortstack[c]{$1.02\pm 0.97$\\[-2pt]{\tiny NRMSE: $0.276\pm 0.232$}} & \shortstack[c]{$-0.01\pm 0.04$\\[-2pt]{\tiny N-bias: $-0.002\pm 0.010$}} & $0.965\pm 0.028$ & \shortstack[c]{$0.73\pm 0.61$\\[-2pt]{\tiny NRMSE: $0.198\pm 0.142$}} & \shortstack[c]{$0.00\pm 0.02$\\[-2pt]{\tiny N-bias: $0.000\pm 0.005$}} & $0.981\pm 0.012$\\
+(375,750] & 200 (31246) & \shortstack[c]{$1.26\pm 1.13$\\[-2pt]{\tiny NRMSE: $0.340\pm 0.266$}} & \shortstack[c]{$-0.01\pm 0.11$\\[-2pt]{\tiny N-bias: $-0.003\pm 0.025$}} & $0.950\pm 0.035$ & \shortstack[c]{$0.95\pm 0.78$\\[-2pt]{\tiny NRMSE: $0.258\pm 0.180$}} & \shortstack[c]{$0.00\pm 0.04$\\[-2pt]{\tiny N-bias: $0.001\pm 0.009$}} & $0.969\pm 0.019$\\
+(750,1500] & 200 (60771) & \shortstack[c]{$1.60\pm 1.34$\\[-2pt]{\tiny NRMSE: $0.433\pm 0.310$}} & \shortstack[c]{$-0.02\pm 0.18$\\[-2pt]{\tiny N-bias: $-0.005\pm 0.045$}} & $0.919\pm 0.054$ & \shortstack[c]{$1.24\pm 0.98$\\[-2pt]{\tiny NRMSE: $0.335\pm 0.219$}} & \shortstack[c]{$0.00\pm 0.06$\\[-2pt]{\tiny N-bias: $0.000\pm 0.015$}} & $0.949\pm 0.029$\\
+(1500,3125] & 200 (104120) & \shortstack[c]{$2.12\pm 1.71$\\[-2pt]{\tiny NRMSE: $0.571\pm 0.385$}} & \shortstack[c]{$0.02\pm 0.34$\\[-2pt]{\tiny N-bias: $0.004\pm 0.089$}} & $0.854\pm 0.092$ & \shortstack[c]{$1.66\pm 1.29$\\[-2pt]{\tiny NRMSE: $0.450\pm 0.287$}} & \shortstack[c]{$0.02\pm 0.15$\\[-2pt]{\tiny N-bias: $0.005\pm 0.038$}} & $0.907\pm 0.051$\\
+(3125,6000] & 200 (54470) & \shortstack[c]{$2.43\pm 1.92$\\[-2pt]{\tiny NRMSE: $0.654\pm 0.429$}} & \shortstack[c]{$0.23\pm 0.63$\\[-2pt]{\tiny N-bias: $0.059\pm 0.158$}} & $0.768\pm 0.147$ & \shortstack[c]{$1.97\pm 1.55$\\[-2pt]{\tiny NRMSE: $0.535\pm 0.349$}} & \shortstack[c]{$0.14\pm 0.36$\\[-2pt]{\tiny N-bias: $0.036\pm 0.089$}} & $0.841\pm 0.099$\\
+(6000,9000] & 200 (4946) & \shortstack[c]{$2.10\pm 1.80$\\[-2pt]{\tiny NRMSE: $0.565\pm 0.378$}} & \shortstack[c]{$0.86\pm 1.21$\\[-2pt]{\tiny N-bias: $0.224\pm 0.276$}} & $0.621\pm 0.277$ & \shortstack[c]{$1.63\pm 1.58$\\[-2pt]{\tiny NRMSE: $0.445\pm 0.351$}} & \shortstack[c]{$0.43\pm 0.98$\\[-2pt]{\tiny N-bias: $0.110\pm 0.234$}} & $0.716\pm 0.236$\\
+>9000 & 119 (601) & \shortstack[c]{$1.74\pm 2.06$\\[-2pt]{\tiny NRMSE: $0.458\pm 0.405$}} & \shortstack[c]{$1.25\pm 2.17$\\[-2pt]{\tiny N-bias: $0.302\pm 0.457$}} & $0.251\pm 0.538$ & \shortstack[c]{$1.13\pm 1.80$\\[-2pt]{\tiny NRMSE: $0.311\pm 0.391$}} & \shortstack[c]{$0.57\pm 1.90$\\[-2pt]{\tiny N-bias: $0.133\pm 0.430$}} & $0.323\pm 0.561$\\
+\bottomrule\end{tabular}%
+}
+\vspace{2mm}\hrule\vspace{2mm}
+\setlength{\tabcolsep}{4pt}\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrr}
+\toprule & & \multicolumn{3}{c}{\Homotopy} & \multicolumn{3}{c}{\solverGT}\\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}
+$d_3$ bin (m) & $n_P$ & RMSE & Bias & Pearson $r$ & RMSE & Bias & Pearson $r$\\
+\midrule
+$\leq$125 & 200 (4959) & \shortstack[c]{$0.63\pm 0.53$\\[-2pt]{\tiny NRMSE: $0.171\pm 0.128$}} & \shortstack[c]{$0.00\pm 0.02$\\[-2pt]{\tiny N-bias: $0.000\pm 0.004$}} & $0.985\pm 0.011$ & \shortstack[c]{$0.40\pm 0.34$\\[-2pt]{\tiny NRMSE: $0.107\pm 0.076$}} & \shortstack[c]{$0.00\pm 0.01$\\[-2pt]{\tiny N-bias: $0.000\pm 0.002$}} & $0.992\pm 0.007$\\
+(125,375] & 200 (19536) & \shortstack[c]{$0.73\pm 0.61$\\[-2pt]{\tiny NRMSE: $0.198\pm 0.142$}} & \shortstack[c]{$0.00\pm 0.02$\\[-2pt]{\tiny N-bias: $0.000\pm 0.005$}} & $0.981\pm 0.012$ & \shortstack[c]{$0.44\pm 0.37$\\[-2pt]{\tiny NRMSE: $0.119\pm 0.081$}} & \shortstack[c]{$0.00\pm 0.01$\\[-2pt]{\tiny N-bias: $0.000\pm 0.002$}} & $0.991\pm 0.008$\\
+(375,750] & 200 (31246) & \shortstack[c]{$0.95\pm 0.78$\\[-2pt]{\tiny NRMSE: $0.258\pm 0.180$}} & \shortstack[c]{$0.00\pm 0.04$\\[-2pt]{\tiny N-bias: $0.001\pm 0.009$}} & $0.969\pm 0.019$ & \shortstack[c]{$0.51\pm 0.41$\\[-2pt]{\tiny NRMSE: $0.138\pm 0.091$}} & \shortstack[c]{$0.00\pm 0.01$\\[-2pt]{\tiny N-bias: $0.000\pm 0.004$}} & $0.986\pm 0.013$\\
+(750,1500] & 200 (60771) & \shortstack[c]{$1.24\pm 0.98$\\[-2pt]{\tiny NRMSE: $0.335\pm 0.219$}} & \shortstack[c]{$0.00\pm 0.06$\\[-2pt]{\tiny N-bias: $0.000\pm 0.015$}} & $0.949\pm 0.029$ & \shortstack[c]{$0.57\pm 0.45$\\[-2pt]{\tiny NRMSE: $0.156\pm 0.104$}} & \shortstack[c]{$0.00\pm 0.02$\\[-2pt]{\tiny N-bias: $-0.001\pm 0.007$}} & $0.980\pm 0.022$\\
+(1500,3125] & 200 (104120) & \shortstack[c]{$1.66\pm 1.29$\\[-2pt]{\tiny NRMSE: $0.450\pm 0.287$}} & \shortstack[c]{$0.02\pm 0.15$\\[-2pt]{\tiny N-bias: $0.005\pm 0.038$}} & $0.907\pm 0.051$ & \shortstack[c]{$0.64\pm 0.49$\\[-2pt]{\tiny NRMSE: $0.178\pm 0.115$}} & \shortstack[c]{$0.00\pm 0.04$\\[-2pt]{\tiny N-bias: $0.000\pm 0.010$}} & $0.969\pm 0.036$\\
+(3125,6000] & 200 (54470) & \shortstack[c]{$1.97\pm 1.55$\\[-2pt]{\tiny NRMSE: $0.535\pm 0.349$}} & \shortstack[c]{$0.14\pm 0.36$\\[-2pt]{\tiny N-bias: $0.036\pm 0.089$}} & $0.841\pm 0.099$ & \shortstack[c]{$0.65\pm 0.51$\\[-2pt]{\tiny NRMSE: $0.182\pm 0.127$}} & \shortstack[c]{$0.02\pm 0.07$\\[-2pt]{\tiny N-bias: $0.006\pm 0.020$}} & $0.956\pm 0.057$\\
+(6000,9000] & 200 (4946) & \shortstack[c]{$1.63\pm 1.58$\\[-2pt]{\tiny NRMSE: $0.445\pm 0.351$}} & \shortstack[c]{$0.43\pm 0.98$\\[-2pt]{\tiny N-bias: $0.111\pm 0.234$}} & $0.716\pm 0.235$ & \shortstack[c]{$0.47\pm 0.45$\\[-2pt]{\tiny NRMSE: $0.135\pm 0.120$}} & \shortstack[c]{$0.10\pm 0.21$\\[-2pt]{\tiny N-bias: $0.030\pm 0.062$}} & $0.924\pm 0.143$\\
+>9000 & 119 (601) & \shortstack[c]{$1.13\pm 1.80$\\[-2pt]{\tiny NRMSE: $0.311\pm 0.391$}} & \shortstack[c]{$0.57\pm 1.90$\\[-2pt]{\tiny N-bias: $0.134\pm 0.430$}} & $0.323\pm 0.562$ & \shortstack[c]{$0.26\pm 0.33$\\[-2pt]{\tiny NRMSE: $0.080\pm 0.099$}} & \shortstack[c]{$0.12\pm 0.29$\\[-2pt]{\tiny N-bias: $0.038\pm 0.085$}} & $0.679\pm 0.438$\\
+\bottomrule\end{tabular}%
+}
+\caption{Patchwise reconstruction metrics stratified by distance to the third-closest link ($d_3$), across the 200-patch benchmark. Each metric is computed over all pixels in a patch's distance bin; entries are the mean $\pm$ sample SD across patches with pixels in that bin. NRMSE and normalized bias (N-bias, shown beneath RMSE and bias) use each contributing patch's mean ground-truth rain rate over the full patch as the denominator. $n_P$ is the number of contributing patches; the mean pixel count is shown in parentheses and averaged across all 200 patches, including empty bins.}
+\label{tab:d3-solver-summary}
+\end{table}

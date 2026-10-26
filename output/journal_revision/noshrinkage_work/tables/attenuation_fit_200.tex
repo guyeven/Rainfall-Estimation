@@ -1,0 +1,12 @@
+\begin{table}[H]\centering\small\begin{tabular}{lrrr}
+\toprule Solver & $n$ & Attenuation MAE (dB/km) & $J_{\mathrm{atten}}$ \\
+\midrule
+\IDW & 200 & $0.0819\pm0.0551$ & $0.1068\pm0.1508$ \\
+\ILDW & 200 & $0.0222\pm0.0158$ & $0.0089\pm0.0169$ \\
+\solverILDW & 200 & $0.0046\pm0.0064$ & $0.0007\pm0.0021$ \\
+\ConvexSolver & 200 & $0.0021\pm0.0021$ & $0.0001\pm0.0002$ \\
+\Homotopy & 200 & $0.0014\pm0.0014$ & $0.0000\pm0.0001$ \\
+\bottomrule\end{tabular}
+\caption{Patch-averaged attenuation errors across the 200-patch benchmark. Methods are included when a matching winter and summer solver output is available.}
+\label{tab:attenuation-fit-summary}
+\end{table}

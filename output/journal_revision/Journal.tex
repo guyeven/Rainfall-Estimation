@@ -5,6 +5,7 @@
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{graphicx}
+\usepackage{float}
 \usepackage{siunitx}
 \sisetup{round-mode=places, round-precision=3}
 \usepackage[authoryear,round]{natbib}
@@ -78,7 +79,6 @@
 
 \author[mpi]{Andreas Karrenbauer}
 \ead{andreas.karrenbauer@mpi-inf.mpg.de}
-
 
 \author[mpi]{Rex Lei}
 \ead{rexlei@mpi-inf.mpg.de}
@@ -222,7 +222,8 @@ In this section, we describe how we constructed our benchmark of rain-event patc
 We extract rain events from the European climatological gauge-adjusted radar precipitation dataset EURADCLIM \citep{overeem2023euradclim}. EURADCLIM is derived from OPERA European radar composites and provides hourly precipitation fields at 2 \si{\kilo\meter} spatial resolution over a large fraction of Europe. The dataset are distributed in HDF5 format according to the OPERA Data Information Model (ODIM) convention \citep{odimh5}. File-level access and documentation are provided through the KNMI data platform \citep{knmi_euradclim_project}.
 
 \subsection{Automatic Extraction of Rain Events}
-To obtain benchmark instances of manageable and comparable size, hourly maps are processed independently and rain events are extracted as spatial patches. We threshold a locally averaged rainfall field, compute connected components of the thresholded pixels, and keep only components whose bounding-box side lengths fall within a prescribed size. In this way, each retained event corresponds to a rain patch. \editnote{AK: mention size here}
+Each hourly EURADCLIM map is processed independently. We first average the rainfall field over a $4 \times 4$ window of native 2 \si{\kilo\meter} pixels, then retain the pixels whose smoothed rain rate is at least 3 \si{\milli\meter\per\hour}. The retained pixels are partitioned into connected components under $8$-neighborhood connectivity, and a component is accepted as a rain event when both side lengths of its axis-aligned bounding box fall between 50 \si{\kilo\meter} and 95 \si{\kilo\meter}. The accepted bounding box defines the extent of the benchmark patch, so patch dimensions follow the rain events themselves. Fixing a common patch size would instead require cropping the larger events or padding the smaller ones with dry area.
+
 
 %The extraction procedure is:
 %\begin{enumerate}
@@ -240,24 +241,7 @@ The resulting rain patches are treated as the ground-truth rainfall field.
 \subsection{CML Dataset}
 CML metadata (including link locations, lengths, and frequencies) are obtained from the publicly available 4TU dataset~\citep{overeem2016cml} (we assumed horizontal polarization for all links). For each rainfall patch, the set of links is cropped to the patch extent and overlaid on the rainfall field. The ITU-R rain-attenuation model is then applied along each link path to compute the corresponding attenuation values.
 
-\begin{table}[!htbp]
-  \centering
-  \begin{tabular}{lrrrrr}
-    \toprule
-    Patch size (km) & \# links & 1-multiplicity & 2-multiplicity \\
-    \midrule
-    $50 \times 50$  & 939      & 99             & 420            \\
-    $62 \times 60$  & 1254     & 128            & 563            \\
-    $72 \times 70$  & 1507     & 157            & 675            \\
-    \bottomrule
-  \end{tabular}
-  \caption{Representative link multiplicities for three patch dimensions.
-    The multiplicity of a link is defined as the number of frequencies assigned to it.
-    The second column reports the total number of link–frequency pairs.
-    In the data set, link multiplicities were either 1 or 2, with approximately $10\%$ of links having multiplicity 1.
-  }
-  \label{tbl:4TU link multiplicities}
-\end{table}
+
 
 \section{Benchmark Statistics}
 In this section, we summarize key properties of the benchmark patches and their associated link geometry. We describe the geographic distribution and size range of the selected rain events, illustrate representative patch instances, summarize link statistics and topology, and report how rainy and dry pixels are distributed with respect to distance from the third-closest link.
@@ -267,41 +251,46 @@ In this section, we summarize key properties of the benchmark patches and their 
 \paragraph{Patches.}
 \begin{description}
 
-  \item[Time.] The rain patches were extracted from hourly EURADCLIM maps between 18 and 31 January 2023.
+  \item[Time.] The rain patches were extracted from hourly EURADCLIM maps between 18 and 31 January 2023 (winter) and from June 2023 (summer).
 
-  \item[Geographic distribution.] See \Cref{fig:patches_europe_overview} for a depiction of the geographic locations of the $100$ rain patches.
+  \item[Geographic distribution.] See \Cref{fig:patches_europe_overview} for a depiction of the geographic locations of all 200 rain patches.
 
         \begin{figure}[!htbp]
           \centering
           \includegraphics[width=0.5\textwidth]{\patcheuropeoverview}
-          \caption{Geographic locations of the $100$ benchmark patches.}
+          \caption{Geographic locations of the 100 summer patches (red) and 100 winter patches (blue).}
           \label{fig:patches_europe_overview}
         \end{figure}
 
   \item[Patch sizes.]
-        A scatter diagram of patch side lengths is depicted in \Cref{fig:patch scatter}. The smallest patch is $50 \times 50$ \si{\kilo\meter} and the largest is $88 \times 88$ \si{\kilo\meter}.
+        A scatter diagram of patch side lengths is depicted in \Cref{fig:patch scatter}. Patch side lengths range from $50$ to $95$ \si{\kilo\meter}.
 
 
         \begin{figure}[!htbp]
           \centering
           \includegraphics[width=0.82\textwidth]{\patchgeometryplot}
-          \caption{Patch width versus patch height for the 100 benchmark patches, with one dot per patch.  Across patches, the mean patch area is 269,491 pixels with SD of 76,755 pixels (pixels are squares with side length $125$ m).}
+          \caption{Patch width versus patch height for all 200 benchmark patches: winter patches are blue and summer patches are red. The mean patch area is 280,649 pixels (SD 83,607; pixel side length $125$ m).}
           \label{fig:patch scatter}
         \end{figure}
-
+\item[Patch statistics.]
+\input{tables/patch_rain_patterns}
   \item[Sample patches.] Sample rain-events from the benchmark are depicted in \Cref{fig:case_gt_convex_202301280900,fig:case_gt_convex_202301310900} together with their geographic location.
 \end{description}
 %%%%%%%%%
 %%%%%
 %%
+
+%%%%%%%%%
+%%%%%
+%%
 \paragraph{Links.}
-A depiction of the links in the largest $88\times 88$ \si{\kilo\meter} patch appears in \Cref{fig:largest_patch_distance_bins}.
+A depiction of the links in the largest patch appears in \Cref{fig:largest_patch_distance_bins}.
 The pixels in this figure are binned according to their distance to the third-closest link. For a pixel $p$, let $d_3(p)$ denote the distance from the pixel center to the third-closest link. Equivalently, $d_3(p)$ is the smallest radius such that a disk centered at $p$ intersects at least three links.
 
-\Cref{tab:largest_patch_distributions} provides data about the distribution of link lengths, frequencies and endpoint degrees in this patch (the degree of an endpoint is number of links incident to this endpoint). See \Cref{tbl:4TU link multiplicities} for the number of links and their multiplicities for typical patch sizes (multiplicity $2$ means a link operating in two frequencies).
+\Cref{tab:link-geometry-200} summarizes link geometry across all 200 patches, including the number of link--frequency pairs, unique physical links, path length, carrier frequency, and endpoint degree.
 
 
-\begin{figure}[!b]
+\begin{figure}[t]
   \centering
   \includegraphics[width=0.88\textwidth]{\largestpatchbinsplot}
   \caption{$d_3$-bin map for the largest evaluated patch in the benchmark. Each pixel is colored according to its $d_3$ bin, and the complete link geometry is overlaid in white.}
@@ -309,104 +298,15 @@ The pixels in this figure are binned according to their distance to the third-cl
   \label{fig:largest_patch_distance_bins}
 \end{figure}
 
-\begin{table}[!htbp]
-  \centering
-  \begin{minipage}[t]{0.31\textwidth}
-    \centering
-    \scriptsize
-    \begin{tabular}{lrr}
-      \toprule
-      Length bin (km) & Count & \%   \\
-      \midrule
-      $[0,1)$         & 330   & 17.4 \\
-      $[1,2)$         & 515   & 27.2 \\
-      $[2,4)$         & 546   & 28.8 \\
-      $[4,8)$         & 387   & 20.4 \\
-      $[8,16)$        & 109   & 5.8  \\
-      $[16,24]$       & 7     & 0.4  \\
-      \bottomrule
-    \end{tabular}
-  \end{minipage}
-  \hfill
-  \begin{minipage}[t]{0.31\textwidth}
-    \centering
-    \scriptsize
-    \begin{tabular}{lrr}
-      \toprule
-      Frequency bin (GHz) & Count & \%   \\
-      \midrule
-      $[10,15)$           & 20    & 1.1  \\
-      $[15,20)$           & 67    & 3.5  \\
-      $[20,25)$           & 79    & 4.2  \\
-      $[25,30)$           & 257   & 13.6 \\
-      $[30,35)$           & 84    & 4.4  \\
-      $[35,40)$           & 1306  & 69.0 \\
-      $[40,60]$           & 81    & 4.3  \\
-      \bottomrule
-    \end{tabular}
-  \end{minipage}
-  \hfill
-  \begin{minipage}[t]{0.31\textwidth}
-    \centering
-    \scriptsize
-    \begin{tabular}{lrr}
-      \toprule
-      Endpoint-degree bin & Count & \%   \\
-      \midrule
-      $1$                 & 168   & 15.0 \\
-      $2$                 & 560   & 49.9 \\
-      $3,4$               & 246   & 21.9 \\
-      $5,6$               & 68    & 6.1  \\
-      $7..10$             & 39    & 3.5  \\
-      $11..20$            & 26    & 2.3  \\
-      $\geq 21$           & 16    & 1.4  \\
-      \bottomrule
-    \end{tabular}
-  \end{minipage}
-  \caption{Link statistics for the largest-patch. The first panel counts links by path-length interval, the second counts links by carrier-frequency interval, and the third counts degrees of link endpoints.}
-  \label{tab:largest_patch_distributions}
-\end{table}
+\input{tables/link_geometry_200}
 
 \paragraph{Rainy/Dry Pixel Distance Stratification.}
-We considered all $100$ benchmark patches and classified the pixels in each patch as rainy or dry using a rainfall threshold of \SI[round-mode=none]{0.6}{\milli\meter\per\hour}.
+We considered all 200 benchmark patches and classified the pixels in each patch as rainy or dry using a rainfall threshold of \SI[round-mode=none]{0.6}{\milli\meter\per\hour}.
 Each of these two pixel sets was then partitioned into bins according to the pixel-level distance $d_3(p)$.
 The mean and standard deviation of the rainy-pixel and dry-pixel counts in each distance bin, computed across all patches, are reported in \Cref{tab:rainy_nonrain_counts}.
 
 
-\begin{table}[!htbp]
-  \centering
-  \small
-  \setlength{\tabcolsep}{3pt}
-  \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}
-      >{\raggedright\arraybackslash}p{2.6cm}
-      S[table-format=6.0, round-mode=places, round-precision=0]
-      S[table-format=3.2]
-      S[table-format=5.0, round-mode=places, round-precision=0]
-      S[table-format=6.0, round-mode=places, round-precision=0]
-      S[table-format=3.2]
-      S[table-format=5.0, round-mode=places, round-precision=0]
-      @{}}
-    \toprule
-    & \multicolumn{3}{c}{Rainy pixels} & \multicolumn{3}{c}{Non-rainy pixels} \\
-    \cmidrule(lr){2-4} \cmidrule(lr){5-7}
-    \shortstack[l]{$d_3$ bin\\(m)}
-    & \multicolumn{1}{c}{Mean count} & \multicolumn{1}{c}{Mean \%} & \multicolumn{1}{c}{SD} & \multicolumn{1}{c}{Mean count} & \multicolumn{1}{c}{Mean \%} & \multicolumn{1}{c}{SD} \\
-    \midrule
-    $[0,125]$       & 4267.0  & 1.79 & 960.4  & 563.6  & 1.84 & 777.6 \\
-    $(125,375]$     & 16737.7 & 7.01 & 3803.2 & 2261.1 & 7.40 & 3093.5 \\
-    $(375,750]$     & 26809.9 & 11.22& 6707.0 & 3389.1 & 11.09& 4709.5 \\
-    $(750,1500]$    & 51988.5 & 21.76& 14468.0& 6446.5 & 21.09& 9257.7 \\
-    $(1500,3125]$   & 88839.4 & 37.18& 27531.1& 10776.2& 35.25& 15553.7 \\
-    $(3125,6000]$   & 45929.4 & 19.22& 15679.4& 6197.2 & 20.27& 8990.0 \\
-    $(6000,9000]$   & 3835.8  & 1.61 & 2725.7 & 849.9  & 2.78 & 1289.7 \\
-    $(9000,\infty)$ & 514.4   & 0.22 & 966.9  & 85.5   & 0.28 & 250.9 \\
-    \midrule
-    Total           & 238922.1 & 100 & {} & 30569.2 & 100 & {} \\
-    \bottomrule
-  \end{tabular*}
-  \caption{Ground-truth rainy and non-rainy pixel counts per $d_3$ bin. Values are mean and standard deviation across patches.}
-  \label{tab:rainy_nonrain_counts}
-\end{table}
+\input{tables/rainy_nonrain_counts_200}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Inverse Solvers: From Link Attenuations to Rainfall Maps\editnote{GE:stable}}
 In this section, we present three solvers for the inverse problem: IDW, ILDW, and a nonconvex optimization model.
@@ -563,15 +463,7 @@ When $\alpha=1$, the predicted attenuation is linear in the rain-rate variables,
 $J_{\mathrm{atten}}$ is a sum of squares of linear residuals and is convex.
 For $\alpha\neq 1$, the power-law attenuation makes the residual nonlinear,
 and the attenuation term is generally nonconvex.
-The nonconvexity emphasizes the importance of the initial solution used by the solver because local minima need not be global minima.
-
-% >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-% BEGIN ADDITION: POINTER TO THE APPENDIX NONCONVEXITY EXAMPLE
-% >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-We illustrate this nonconvexity with a concrete $3\times3$ single-link example in \Cref{appendix:nonconvexity-example}.
-% <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-% END ADDITION: POINTER TO THE APPENDIX NONCONVEXITY EXAMPLE
-% <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+The nonconvexity emphasizes the importance of the initial solution used by the solver because local minima need not be global minima. We illustrate this nonconvexity with a concrete $3\times3$ single-link example in \Cref{appendix:nonconvexity-example}.
 
 \paragraph{Summary of the Nonconvex Inverse Solver.}
 The input to the inverse solver is a patch $P$ and a set $\mathcal{L}$ of links.
@@ -659,7 +551,7 @@ The attenuation of $\ell^\lambda$ is set to
 
 %\input{experimental-results.tex}
 \section{Experimental Results and Analysis}
-We executed the three inverse solvers: IDW, ILDW, and the three versions of nonconvex solver on $100$ rain-events patches in the benchmark.
+We evaluated IDW, ILDW, Solver(ILDW), Convex, Homotopy, and Solver(GT) on all 200 benchmark patches: 100 winter and 100 summer rain events.
 %We treat the IDW algorithm as the baseline algorithm. 
 The ground-truth in these experiments is the rain-rate fields of the benchmark (from which link attenuations were derived).
 
@@ -703,93 +595,55 @@ To avoid division by zero, we use the absolute error for nonrainy pixels.
 \subsection{RMSE, Bias, and Pearson Correlation Results and Analysis}
 
 
-The mean and standard deviation of these statistics stratified by $d_3$ bins are summarized in \Cref{tab:d3-solver-summary}.
+The overall patchwise means and standard deviations are reported in \Cref{tab:overall-solver-summary}; the rainy- and dry-pixel distance-stratified summaries appear in \Cref{tab:d3-rainy-summary,tab:d3-dry-summary}.
 The \solverGT\ results provide a best-case reference for the nonconvex formulation when the solver is initialized with the ground truth.
 %
 The main pattern is that errors increase with distance from the CML network for all methods, but the increase is much weaker for \ConvexSolver\ than for \IDW. Across all $d_3$ bins, \ConvexSolver\ has lower mean RMSE than \IDW, with relative reductions of about $28\%$--$44\%$. The improvement is largest in the near-link and intermediate-distance bins, where \ConvexSolver\ also raises Pearson $r$ from $0.967$ to $0.989$ in the closest bin and from $0.844$ to $0.932$ in the $(1500,3125]$ m bin. At larger distances, \IDW\ develops a positive bias, reaching $0.63$--$0.71$ \si{\milli\meter\per\hour} beyond $6000$ m, whereas \ConvexSolver\ reduces this bias to $0.33$ and $0.24$ \si{\milli\meter\per\hour}.\footnote{The last distance bins contain relatively few pixels, so their statistics should be interpreted more cautiously.} Thus, the convex formulation improves both error magnitude and bias relative to \IDW, especially away from the immediate vicinity of the links.
 After rounding, the statistics of \ConvexSolver\ and \Homotopy\ are the same.
 
 
-\include{tables/RMSE-bias-Pearson}
+\input{tables/RMSE-bias-Pearson}
+\input{tables/d3_solver_summary_tables}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section*{Paired $t$ analysis for RMSE}
-\Cref{tab:paired-rmse-t-test} summarizes the paired $t$ tests for patchwise RMSE differences relative to \IDW. Negative differences indicate that method A has lower RMSE than \IDW, which is the one-sided alternative tested here. The results show that all alternatives improve significantly over \IDW. The improvement from \ILDW\ is modest but highly consistent, with lower RMSE in $97$ of the $100$ patches and a mean reduction of $0.07$ \si{\milli\meter\per\hour}. The optimization-based methods show larger gains. In particular, \ConvexSolver\ and \Homotopy\ improve over \IDW\ in all $100$ patches, with a mean RMSE reduction of $0.46$ \si{\milli\meter\per\hour}.
+\Cref{tab:paired-rmse-t-test} summarizes the paired $t$ tests for patchwise RMSE differences relative to \IDW. Negative differences indicate that method A has lower RMSE than \IDW, which is the one-sided alternative tested here. The results show that all alternatives improve significantly over \IDW. The improvement from \ILDW\ is consistent, with lower RMSE in 195 of 200 patches and a mean reduction of $0.10$ \si{\milli\meter\per\hour}. \ConvexSolver\ and \Homotopy\ improve over \IDW\ in all 200 patches, with mean reductions of $0.64$ \si{\milli\meter\per\hour}.
 
-Most importantly, the $99\%$ one-sided upper confidence bound for \ConvexSolver\ is $-0.34$ \si{\milli\meter\per\hour}. Thus, even under this conservative bound, the mean patchwise RMSE reduction relative to \IDW\ is at least $0.34$ \si{\milli\meter\per\hour}.
+The one-sided 99\% upper confidence bound for the \ConvexSolver\ mean RMSE difference is $-0.56$ \si{\milli\meter\per\hour}.
 
 
-\begin{table}[!htbp]
-  \centering
-  \scriptsize
-  \setlength{\tabcolsep}{4pt}
-  \resizebox{\textwidth}{!}{%
-    \begin{tabular}{lrrrrrrrrrrl}
-      \toprule
-      Comparison           & $n$ & wins A:\IDW & mean A & mean \IDW & mean diff & SD diff & SE   & $t$    & one-sided $p$        & 99\% upper bound & decision \\
-      \midrule
-      \ILDW - \IDW         & 100 & 97:3        & 1.24   & 1.31      & -0.07     & 0.09    & 0.01 & -7.86  & $2.42\times10^{-12}$ & -0.05            & reject   \\
-      \solverILDW - \IDW   & 100 & 98:2        & 1.06   & 1.31      & -0.25     & 0.21    & 0.02 & -11.83 & $3.89\times10^{-16}$ & -0.20            & reject   \\
-      \ConvexSolver - \IDW & 100 & 100:0       & 0.85   & 1.31      & -0.46     & 0.50    & 0.05 & -9.30  & $1.17\times10^{-15}$ & -0.34            & reject   \\
-      \Homotopy - \IDW     & 100 & 100:0       & 0.85   & 1.31      & -0.46     & 0.50    & 0.05 & -9.29  & $1.83\times10^{-15}$ & -0.34            & reject   \\
-      \solverGT - \IDW     & 100 & 100:0       & 0.50   & 1.31      & -0.80     & 1.09    & 0.11 & -7.41  & $2.20\times10^{-11}$ & -0.55            & reject   \\
-      \bottomrule
-    \end{tabular}%
-  }
-  \caption{Paired $t$ comparisons for patchwise RMSE differences relative to the \IDW\ baseline. Negative differences indicate lower RMSE for method A. The wins column reports the number of patches for which A or \IDW\ has lower RMSE. No ties occurred. Tests are one-sided and evaluated at $\alpha=0.01$.}
-  \label{tab:paired-rmse-t-test}
-\end{table}
+\input{tables/paired_rmse_200}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section*{Paired $t$ analysis for absolute bias}
 
-\Cref{tab:paired-absolute-bias-test} summarizes the paired mean tests for patchwise absolute-bias differences relative to \IDW. Negative differences indicate that method A is closer to zero bias than \IDW, which is the one-sided alternative tested here. The results show that all alternatives significantly reduce absolute bias relative to \IDW. The reduction is more heterogeneous than for RMSE, as indicated by the win counts. In particular, \ConvexSolver\ and \Homotopy\ have smaller absolute bias than \IDW\ in $78$ of the $100$ patches, and reduce the mean absolute bias from $0.16$ to $0.05$ \si{\milli\meter\per\hour}.
+\Cref{tab:paired-absolute-bias-test} summarizes the paired mean tests for patchwise absolute-bias differences relative to \IDW. Negative differences indicate that method A is closer to zero bias than \IDW, which is the one-sided alternative tested here. The results show that all alternatives significantly reduce absolute bias relative to \IDW. The reduction is more heterogeneous than for RMSE, as indicated by the win counts. For \ConvexSolver\ and \Homotopy, absolute bias is lower than \IDW\ in 157 of 200 patches; mean absolute bias falls from $0.21$ to $0.09$ \si{\milli\meter\per\hour}.
 
 %Most importantly, the $99\%$ one-sided upper confidence bound for \ConvexSolver\ is $-0.06$ \si{\milli\meter\per\hour}. Thus, even under this conservative bound, the mean patchwise reduction in absolute bias relative to \IDW\ is at least $0.06$ \si{\milli\meter\per\hour}.
 
-\begin{table}[!htbp]
-  \centering
-  \scriptsize
-  \setlength{\tabcolsep}{4pt}
-  \resizebox{\textwidth}{!}{%
-    \begin{tabular}{lrrrrrrrrrrl}
-      \toprule
-      Comparison           & $n$   & wins A:\IDW & mean $|\mathrm{Bias}_A|$ & mean $|\mathrm{Bias}_{\IDW}|$ & mean diff & SD diff & SE      & $t$     & one-sided $p$       & $99\%$ upper bound & decision \\
-      \midrule
-      \ILDW - \IDW         & $100$ & $67:33$     & $0.14$                   & $0.16$                        & $-0.02$   & $0.04$  & $0.004$ & $-4.77$ & $3.14\times10^{-6}$ & $-0.01$            & reject   \\
-      \solverILDW - \IDW   & $100$ & $77:23$     & $0.10$                   & $0.16$                        & $-0.05$   & $0.11$  & $0.011$ & $-5.20$ & $5.37\times10^{-7}$ & $-0.03$            & reject   \\
-      \ConvexSolver - \IDW & $100$ & $78:22$     & $0.05$                   & $0.16$                        & $-0.11$   & $0.21$  & $0.021$ & $-5.23$ & $4.67\times10^{-7}$ & $-0.06$            & reject   \\
-      \Homotopy - \IDW     & $100$ & $78:22$     & $0.05$                   & $0.16$                        & $-0.11$   & $0.21$  & $0.021$ & $-5.24$ & $4.62\times10^{-7}$ & $-0.06$            & reject   \\
-      \solverGT - \IDW     & $100$ & $85:15$     & $0.02$                   & $0.16$                        & $-0.14$   & $0.26$  & $0.026$ & $-5.38$ & $2.52\times10^{-7}$ & $-0.08$            & reject   \\
-      \bottomrule
-    \end{tabular}%
-  }
-  \caption{One-sided paired mean comparisons for patchwise absolute-bias differences relative to the \IDW\ baseline. Negative differences indicate that method A is closer to zero bias than \IDW. The wins column reports the number of patches for which A or \IDW\ has smaller absolute bias. No ties occurred. Tests are one-sided and evaluated at $\alpha=0.01$.}
-  \label{tab:paired-absolute-bias-test}
-\end{table}
+\input{tables/paired_bias_200}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section*{Paired comparison of Pearson correlation}
 
-\Cref{tab:paired-pearson-sign-test} summarizes patchwise wins for Pearson correlation relative to \IDW, where higher $r$ indicates better spatial agreement with the ground-truth rainfall field.  The results show that all alternatives improve this measure in most patches. The evidence is strongest for \ConvexSolver, \Homotopy, and \solverGT, which have higher $r$ than \IDW\ in all $100$ patches. This indicates that the optimization-based methods improve not only RMSE and bias, but also the spatial agreement of the reconstructed rainfall fields.
+\Cref{tab:paired-pearson-sign-test} summarizes patchwise wins for Pearson correlation relative to \IDW, where higher $r$ indicates better spatial agreement with the ground-truth rainfall field.  The results show that all alternatives improve this measure in most patches. The evidence is strongest for \ConvexSolver, \Homotopy, and \solverGT, which have higher $r$ than \IDW\ in all 200 patches. This indicates that the optimization-based methods improve not only RMSE and bias, but also the spatial agreement of the reconstructed rainfall fields.
 
-\begin{table}[!htbp]
-  \centering
-  \begin{tabular}{lr}
-    \toprule
-    Comparison           & wins A:\IDW \\
-    \midrule
-    \ILDW - \IDW         & $94:6$      \\
-    \solverILDW - \IDW   & $98:2$      \\
-    \ConvexSolver - \IDW & $100:0$     \\
-    \Homotopy - \IDW     & $100:0$     \\
-    \solverGT - \IDW     & $100:0$     \\
-    \bottomrule
-  \end{tabular}
-  \caption{Patchwise Pearson correlation wins relative to the \IDW\ baseline. The wins column reports the number of patches in which method A or \IDW\ has higher $r$. No ties occurred.}
-  \label{tab:paired-pearson-sign-test}
-\end{table}
+\input{tables/pearson_wins_200}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Taylor Diagrams}
+The per-solver Taylor diagrams show one point per patch, with summer patches in red and winter patches in blue.
+\begin{figure}[!htbp]\centering
+\includegraphics[width=\textwidth]{\taylorsixpanel}
+\caption{Per-solver Taylor diagrams for the six reconstruction methods, with one point per patch in each panel (winter blue, summer red). The radius is the reconstructed-field standard deviation normalized by the ground-truth standard deviation (ground truth is at radius 1); the angle represents Pearson correlation. Green dashed contours indicate centered RMSE.}
+\label{fig:taylor-per-patch}
+\end{figure}
+% Pooled Taylor summary temporarily omitted:
+% \begin{figure}[!htbp]\centering
+% \includegraphics[width=0.78\textwidth]{\taylorsummary}
+% \caption{Pooled Taylor summary across all 200 patches, with one aggregate point per solver.}
+% \label{fig:taylor-summary}
+% \end{figure}
 
 \subsection{Confusion Summaries}
 \Cref{tab:wet-dry-confusion-merged} summarizes the wet/dry classification performance of the methods at the $0.6$ \si{\milli\meter\per\hour} threshold. The \solverGT\ results provide a best-case reference for the nonconvex formulation when the solver is initialized with the ground truth. Relative to \IDW, \ConvexSolver\ reduces false-wet classifications from $4.0\%$ to $2.3\%$ of all pixels, at the cost of increasing false-dry classifications from $0.2\%$ to $0.4\%$.
@@ -802,26 +656,10 @@ The conditional rates show a similar pattern: the false-wet rate over dry ground
 \Cref{tab:attenuation-fit-summary} summarizes the error between the ground-truth attenuation and the attenuation reconstructed from the estimated rainfall field using the forward model. The main quantity is attenuation MAE, reported in \si{\deci\bel\per\kilo\meter}. The table also reports the attenuation cost-function term $J_{\mathrm{atten}}$.
 For a given patch $P$ and solver $s$, the attenuation MAE per kilometer equals $\frac{1}{|\mathcal{L}_P|}\sum_{\ell \in \mathcal{L}_P} \frac{\left|\hat{A}_{\ell,s} - A_\ell\right|}{|\ell|}$, where $\hat{A}_{\ell,s}$ is the attenuation implied on link $\ell$ by the ITU-R forward model according to the rain-rate solution $\hat{R}_{P,s}$, $A_\ell$ is the ground-truth attenuation, and $|\ell|$ is the link length in kilometers.
 
-The results show that the optimization-based methods fit the link attenuations much more closely than the interpolation baselines. \ConvexSolver\ reduces the attenuation MAE from $0.050$ for \IDW\ and $0.014$ for \ILDW\ to $1.1\times10^{-3}$ \si{\deci\bel\per\kilo\meter}, while \Homotopy\ gives the smallest mean value, $7.4\times10^{-4}$ \si{\deci\bel\per\kilo\meter}. The same ordering is reflected in $J_{\mathrm{atten}}$, as expected because this term is part of the cost function. \inlinenote{GE: discuss the error compared to ITU attenuation per km for various freqs.}
+Across the 200 patches, \ConvexSolver\ and \Homotopy\ fit the link attenuations more closely than the interpolation baselines; \Homotopy\ has the lowest mean attenuation MAE ($1.4\times10^{-3}$ \si{\deci\bel\per\kilo\meter}). The same ordering is reflected in $J_{\mathrm{atten}}$, as expected because this term is part of the cost function. \inlinenote{GE: discuss the error compared to ITU attenuation per km for various freqs.}
 
 
-\begin{table}[!t]
-  \centering
-  \begin{tabular}{lcc}
-    \toprule
-    Solver        & \shortstack{attenuation MAE\\(\si{\deci\bel\per\kilo\meter})} & $J_{\mathrm{atten}}$                    \\
-    \midrule
-    \IDW          & $0.050 \pm 0.034$                                             & $0.053 \pm 0.136$                       \\
-    \ILDW         & $0.014 \pm 0.009$                                             & $4.2\times10^{-3} \pm 1.4\times10^{-2}$ \\
-    \solverILDW   & $2.1\times10^{-3} \pm 3.7\times10^{-3}$                       & $3.0\times10^{-4} \pm 1.5\times10^{-3}$ \\
-    \ConvexSolver & $1.1\times10^{-3} \pm 9.9\times10^{-4}$                       & $3.4\times10^{-5} \pm 1.4\times10^{-4}$ \\
-    \Homotopy     & $7.4\times10^{-4} \pm 6.7\times10^{-4}$                       & $1.3\times10^{-5} \pm 5.3\times10^{-5}$ \\
-    \solverGT     & $1.3\times10^{-3} \pm 1.7\times10^{-3}$                       & $5.0\times10^{-5} \pm 1.5\times10^{-4}$ \\
-    \bottomrule
-  \end{tabular}
-  \caption{Patch-averaged attenuation error and attenuation cost-function term. Values are mean $\pm$ SD across patches.  Lower values indicate better agreement with observed link attenuations.}
-  \label{tab:attenuation-fit-summary}
-\end{table}
+\input{tables/attenuation_fit_200}
 %%%%%%%%%%%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -834,27 +672,24 @@ We partitioned the pixels in every patch into rainy and non-rainy pixels accordi
 \Cref{fig:rae_distance,fig:ae_distance} depict the resulting medians for various solvers.
 \Cref{tab:distance-bin-win-counts} reports the corresponding patchwise win counts for \ConvexSolver\ relative to \IDW. \ConvexSolver\ has lower median RAE/AE than \IDW\ in a vast majority of the patches.  Some patches have no pixels in strata with large $d_3$ distances.
 
-% >>> BEGIN SUPPORTING LAYOUT FIX: keep Table 11 with its Section 7 discussion
-\begin{table}[!t]
+\begin{figure}[t]
   \centering
-  \begin{tabular}{lcc}
-    \toprule
-    $d_3$ bin (m)   & Rainy pixels, median RAE & Non-rainy pixels, median AE \\
-    \midrule
-    $\leq 125$      & $100:0$                  & $76:0$                      \\
-    $(125,375]$     & $100:0$                  & $80:1$                      \\
-    $(375,750]$     & $100:0$                  & $82:0$                      \\
-    $(750,1500]$    & $100:0$                  & $83:0$                      \\
-    $(1500,3125]$   & $100:0$                  & $86:0$                      \\
-    $(3125,6000]$   & $100:0$                  & $80:4$                      \\
-    $(6000,9000]$   & $83:17$                  & $50:15$                     \\
-    $(9000,\infty)$ & $38:9$                   & $17:8$                      \\
-    \bottomrule
-  \end{tabular}
-  \caption{Patchwise win counts by $d_3$-bin. Entries report \ConvexSolver:\IDW\ wins. Rainy pixels are compared using median RAE, while non-rainy pixels are compared using median AE. Missing counts occur when a patch has no pixels in the corresponding bin.}
-  \label{tab:distance-bin-win-counts}
-\end{table}
-% <<< END SUPPORTING LAYOUT FIX: keep Table 11 with its Section 7 discussion
+  \includegraphics[width=\textwidth]{\distanceboxplot}
+  \caption{Rainy-pixel $d_3$-profile box-and-whisker summary. Each patch contributes one median rainy-pixel relative absolute error value per $d_3$ bin. Across patches, each box spans the $25$th to $75$th percentiles, and the whiskers show the minimum and maximum values. The corresponding rainy-pixel counts per bin are reported in Table~\ref{tab:rainy_nonrain_counts}.}
+  \label{fig:rae_distance}
+\end{figure}
+
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{\nonrainydistanceboxplot}
+  \caption{Non-rainy-pixel $d_3$-profile box-and-whisker summary. Each patch contributes one median non-rainy-pixel absolute error value per $d_3$ bin. Across patches, each box spans the $25$th to $75$th percentiles, and the whiskers show the minimum and maximum values. The corresponding non-rainy-pixel counts per bin are reported in Table~\ref{tab:rainy_nonrain_counts}.}
+  \label{fig:ae_distance}
+\end{figure}
+
+\input{tables/distance_bin_win_counts_200}
+
+
 
 %%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%
@@ -872,12 +707,10 @@ We partitioned the pixels in every patch into rainy and non-rainy pixels accordi
 %
 %\input{appendix-case-studies.tex}
 \section{Case Study Figures and Objective Evolution}
+
 In this section, we present two case studies, in which we compare  \IDW, \solverGT, and \solverConvex.
 In the first case study, \solverGT\ almost equals the ground-truth while \solverConvex\ slightly improves over \IDW.
 
-% >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-% BEGIN ADDITION: CASE 1 / CASE 2 RATIO CLASSIFICATION
-% >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 To quantify how often these two qualitative patterns occur, we use the simple
 ratio
 \[
@@ -886,35 +719,15 @@ q(P)\triangleq
      {\mathrm{RMSE}_{P,\solverGT}}.
 \]
 We assign patch $P$ to Case~1 (the Case Study~I pattern) when $q(P)\geq2$ and
-to Case~2 (the Case Study~II pattern) when $q(P)<2$.  Of the $100$ benchmark
-patches, $24$ are in Case~1 and $76$ are in Case~2.  The smallest Case~1 ratio
+to Case~2 (the Case Study~II pattern) when $q(P)<2$.  Of the 200 benchmark
+patches, 24 are in Case~1 and 176 are in Case~2.  The smallest Case~1 ratio
 is $2.6310$, whereas the largest Case~2 ratio is $1.9767$; thus no observed
 patch lies immediately at the threshold.
-% <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-% END ADDITION: CASE 1 / CASE 2 RATIO CLASSIFICATION
-% <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 For this patch,  $J(\solverGT)=1.485$ and  RMSE$(\solverGT)=0.102$, while
 $J(\ConvexSolver)=0.265$ and RMSE$(\ConvexSolver)=0.702$.
 This example shows that a lower value of the objective does not necessarily imply a more accurate reconstruction of the ground-truth rainfall field.
 For Case Study I, \Cref{fig:case_gt_convex_202301280900} shows the reconstructed rainfall fields and relative errors, and \Cref{fig:jtrace_gt_convex_202301280900} shows the evolution of the weighted objective over L-BFGS-B iterations.
-
-% >>> BEGIN SUPPORTING LAYOUT FIX: deferred Section 7 summaries
-\begin{figure}[!htbp]
-  \centering
-  \includegraphics[width=\textwidth]{\distanceboxplot}
-  \caption{Rainy-pixel $d_3$-profile box-and-whisker summary. Each patch contributes one median rainy-pixel relative absolute error value per $d_3$ bin. Across patches, each box spans the $25$th to $75$th percentiles, and the whiskers show the minimum and maximum values. The corresponding rainy-pixel counts per bin are reported in Table~\ref{tab:rainy_nonrain_counts}.}
-  \label{fig:rae_distance}
-\end{figure}
-
-\begin{figure}[!htbp]
-  \centering
-  \includegraphics[width=\textwidth]{\nonrainydistanceboxplot}
-  \caption{Non-rainy-pixel $d_3$-profile box-and-whisker summary. Each patch contributes one median non-rainy-pixel absolute error value per $d_3$ bin. Across patches, each box spans the $25$th to $75$th percentiles, and the whiskers show the minimum and maximum values. The corresponding non-rainy-pixel counts per bin are reported in Table~\ref{tab:rainy_nonrain_counts}.}
-  \label{fig:ae_distance}
-\end{figure}
-
-% <<< END SUPPORTING LAYOUT FIX: deferred Section 7 summaries
 
 
 \begin{figure}[!htbp]
@@ -937,10 +750,6 @@ For Case Study I, \Cref{fig:case_gt_convex_202301280900} shows the reconstructed
   \caption{Evolution of the weighted objective over L-BFGS-B  iterations for Case Study I. Left: \solverGT, initialized from the ground-truth field, converges to final $J=1.485$. Right: \ConvexSolver\ reaches a lower final weighted objective, $J=0.265$, but its reconstruction is farther from the ground truth by RMSE.}
   \label{fig:jtrace_gt_convex_202301280900}
 \end{figure}
-% >>> BEGIN SUPPORTING LAYOUT FIX: finish Case Study I before Case Study II
-\clearpage
-\vspace*{2em}
-% <<< END SUPPORTING LAYOUT FIX: finish Case Study I before Case Study II
 %%%%%%%%%%%%%%
 In the second case study, \solverGT\ and \solverConvex\ are visually similar in the reconstruction panels.
 For this patch, $J(\solverGT)=0.289$ and RMSE$(\solverGT)=0.552$, while
@@ -969,11 +778,6 @@ For Case Study II, \Cref{fig:case_gt_convex_202301310900} shows the reconstructe
   \label{fig:jtrace_gt_convex_202301310900}
 \end{figure}
 
-% >>> BEGIN SUPPORTING LAYOUT FIX: finish case-study floats before Discussion
-\clearpage
-\vspace*{2em}
-% <<< END SUPPORTING LAYOUT FIX: finish case-study floats before Discussion
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{Discussion}
 The benchmark isolates the geometric inversion problem and thereby provides a clear setting for method development. At the same time, several sources of uncertainty remain outside the scope of the current construction, including wet-antenna effects, baseline estimation, quantization, mixed-phase precipitation, and temporal dynamics. These factors matter in operational deployments and should be incorporated in later stages once the benchmarked inverse methods are well understood.
@@ -994,120 +798,9 @@ This journal draft integrates a benchmark-oriented view of rainfall reconstructi
 \appendix
 \crefalias{section}{appendix}
 
-% >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-% BEGIN ADDITION: APPENDIX ILLUSTRATIVE EXAMPLES
-% >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 \section{Illustrative Examples}
 
-This appendix presents two minimal examples that isolate important properties
-of the inverse problem.  First, for two parallel links on a $2\times3$ field,
-we show that midpoint \IDW\ underestimates the rain rate at every pixel
-crossed by the second link except at the pixel where the link's midpoint is located, whereas \ILDW\ recovers the
-field exactly.  Second, we give a concrete counterexample showing that $J_{\text{atten}}$ is nonconvex.
-
-\subsection{IDW Underestimates Rain Along a Link}
-\label{appendix:IDW underestimate}
-Consider the following ground-truth field
-\[
-R^{\mathrm{GT}}=
-\begin{bmatrix}
-4&4&4\\
-5&5&5
-\end{bmatrix}\ \si{\milli\meter\per\hour}.
-\]
-Let two equal-length horizontal links $\ell_1$ and $\ell_2$ cross the top and
-bottom rows, respectively.  Their rain-rate equivalents are
-$R_{\ell_1}=4$ and $R_{\ell_2}=5$
-\si{\milli\meter\per\hour}; we focus on the three pixels crossed by
-$\ell_2$.  The link midpoints lie in the middle column, and the search radius
-includes both links.
-
-For either off-center pixel crossed by $\ell_2$, at row-column positions
-$(2,1)$ and $(2,3)$, the distances to the midpoints of $\ell_2$ and $\ell_1$
-are $h$ and $\sqrt{2}h$, where $h = 0.125km$ is the pixel side length.  The normalized inverse-square
-weights in \Cref{alg:idw} therefore give
-\[
-\widehat R^{\IDW}_{2,1}=\widehat R^{\IDW}_{2,3}
-=\frac{5h^{-2}+4(\sqrt{2}h)^{-2}}
-       {h^{-2}+(\sqrt{2}h)^{-2}}
-=\frac{14}{3}\approx4.67\ \si{\milli\meter\per\hour}.
-\]
-The middle pixel contains the midpoint of $\ell_2$, so
-$\widehat R^{\IDW}_{2,2}=5$ \si{\milli\meter\per\hour}.  Repeating the
-calculation over the grid yields
-\[
-\widehat R^{\IDW}=\begin{bmatrix}
-13/3&4&13/3\\
-14/3&5&14/3
-\end{bmatrix}
-\approx\begin{bmatrix}
-4.33&4&4.33\\
-4.67&5&4.67
-\end{bmatrix}.
-\]
-By contrast, every pixel in a row is crossed by that row's link, so the
-crossing-pixel rule in \Cref{alg:ildw} gives
-$\widehat R^{\ILDW}=R^{\mathrm{GT}}$.  Thus the profiles along $\ell_2$ are
-$(14/3,5,14/3)$ for \IDW\ and $(5,5,5)$ for \ILDW.  These calculations apply
-the paper's \IDW\ and
-\ILDW\ procedures exactly as stated in \Cref{alg:idw,alg:ildw}.
-
-\begin{figure}[!htbp]
-  \centering
-  \begin{minipage}[c]{0.35\textwidth}
-    \centering
-    \includegraphics[width=0.76\linewidth]{images/reconstruction_examples/ground_truth_field.png}\\[-0.2ex]
-    \small (a) Ground truth and link geometry
-  \end{minipage}\hfill
-  \begin{minipage}[c]{0.61\textwidth}
-    \centering
-    \includegraphics[width=\linewidth]{images/reconstruction_examples/ground_truth_profile_l2.png}\\[-0.2ex]
-    \small (b) Ground-truth profile along $\ell_2$
-  \end{minipage}
-
-  \vspace{0.7em}
-
-  \begin{minipage}[c]{0.35\textwidth}
-    \centering
-    \includegraphics[width=0.76\linewidth]{images/reconstruction_examples/idw_reconstruction_field.png}\\[-0.2ex]
-    \small (c) \IDW\ reconstruction
-  \end{minipage}\hfill
-  \begin{minipage}[c]{0.61\textwidth}
-    \centering
-    \includegraphics[width=\linewidth]{images/reconstruction_examples/idw_profile_l2.png}\\[-0.2ex]
-    \small (d) \IDW\ profile along $\ell_2$
-  \end{minipage}
-
-  \vspace{0.7em}
-
-  \begin{minipage}[c]{0.35\textwidth}
-    \centering
-    \includegraphics[width=0.76\linewidth]{images/reconstruction_examples/ildw_reconstruction_field.png}\\[-0.2ex]
-    \small (e) \ILDW\ reconstruction
-  \end{minipage}\hfill
-  \begin{minipage}[c]{0.61\textwidth}
-    \centering
-    \includegraphics[width=\linewidth]{images/reconstruction_examples/ildw_profile_l2.png}\\[-0.2ex]
-    \small (f) \ILDW\ profile along $\ell_2$
-  \end{minipage}
-
-  \caption{Geometric difference between midpoint \IDW\ and \ILDW.  Away from
-  the middle column, \IDW\ mixes the $5$ \si{\milli\meter\per\hour}
-  observation from $\ell_2$ with the neighboring $4$
-  \si{\milli\meter\per\hour} observation.  \ILDW\ associates each
-  link-level observation with every pixel crossed by its segment and therefore
-  exactly recovers this row-wise constant field.}
-  \label{fig:idw-ildw-2x3}
-\end{figure}
-
-The second link is essential for this normalized-IDW example: if $\ell_2$ were
-the only link, its single normalized weight would cancel, and \IDW\ would
-return $R_{\ell_2}=5$ at every in-radius pixel.
-The \IDW\ underestimation away from the midpoint and the exact \ILDW\ recovery
-are illustrated by the six panels in \Cref{fig:idw-ildw-2x3}.
-
-\clearpage
-\vspace*{2em}
+This appendix presents a minimal example that isolates an important property of the inverse problem. Namely, we give a concrete counterexample showing that $J_{\text{atten}}$ is nonconvex.
 
 \subsection{A $3\times3$ Counterexample to Convexity}
 \label{appendix:nonconvexity-example}
@@ -1160,10 +853,6 @@ J_{\mathrm{atten}}\!\left(\frac{R^{(L)}+R^{(R)}}{2}\right)
 >
 \frac{J_{\mathrm{atten}}(R^{(L)})+J_{\mathrm{atten}}(R^{(R)})}{2}=0,
 \]
-which violates the defining inequality for a convex function.  Thus the
-physical attenuation term is nonconvex even in this one-link $3\times3$
-instance.
-% <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-% END ADDITION: APPENDIX ILLUSTRATIVE EXAMPLES
-% <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+which violates the defining inequality for a convex function.
+
 \end{document}

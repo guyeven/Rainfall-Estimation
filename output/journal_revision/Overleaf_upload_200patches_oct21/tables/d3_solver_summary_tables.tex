@@ -1,0 +1,30 @@
+\begin{table}[htbp]\centering\scriptsize\setlength{\tabcolsep}{4pt}\resizebox{\textwidth}{!}{\begin{tabular}{lrrrrrr}
+\toprule $d_3$ bin (m) & $n$ & \IDW & \ILDW & \solverILDW & \ConvexSolver & \Homotopy \\
+\midrule
+$\leq$125 & 200 & 0.10 $\pm$ 0.06 & 0.11 $\pm$ 0.06 & 0.07 $\pm$ 0.06 & 0.05 $\pm$ 0.03 & 0.05 $\pm$ 0.03 \\
+(125,375] & 200 & 0.12 $\pm$ 0.06 & 0.11 $\pm$ 0.06 & 0.09 $\pm$ 0.06 & 0.06 $\pm$ 0.04 & 0.06 $\pm$ 0.04 \\
+(375,750] & 200 & 0.16 $\pm$ 0.08 & 0.14 $\pm$ 0.07 & 0.12 $\pm$ 0.08 & 0.09 $\pm$ 0.05 & 0.09 $\pm$ 0.05 \\
+(750,1500] & 200 & 0.21 $\pm$ 0.10 & 0.19 $\pm$ 0.09 & 0.17 $\pm$ 0.10 & 0.12 $\pm$ 0.06 & 0.12 $\pm$ 0.06 \\
+(1500,3125] & 200 & 0.28 $\pm$ 0.13 & 0.26 $\pm$ 0.12 & 0.24 $\pm$ 0.14 & 0.18 $\pm$ 0.09 & 0.18 $\pm$ 0.09 \\
+(3125,6000] & 200 & 0.35 $\pm$ 0.16 & 0.34 $\pm$ 0.16 & 0.31 $\pm$ 0.17 & 0.25 $\pm$ 0.13 & 0.25 $\pm$ 0.13 \\
+(6000,9000] & 200 & 0.61 $\pm$ 0.60 & 0.62 $\pm$ 0.60 & 0.59 $\pm$ 0.59 & 0.38 $\pm$ 0.29 & 0.38 $\pm$ 0.29 \\
+>9000 & 91 & 1.14 $\pm$ 1.82 & 1.16 $\pm$ 1.95 & 1.09 $\pm$ 1.93 & 0.81 $\pm$ 2.30 & 0.81 $\pm$ 2.30 \\
+\bottomrule\end{tabular}}
+\caption{Rainy pixels: median relative absolute error summarized patchwise across all 200 benchmark patches. Each entry is mean $\pm$ sample SD; $n$ gives the number of patches with pixels in the distance bin.}
+\label{tab:d3-rainy-summary}
+\end{table}
+\begin{table}[htbp]\centering\scriptsize\setlength{\tabcolsep}{4pt}\resizebox{\textwidth}{!}{\begin{tabular}{lrrrrrr}
+\toprule $d_3$ bin (m) & $n$ & \IDW & \ILDW & \solverILDW & \ConvexSolver & \Homotopy \\
+\midrule
+$\leq$125 & 176 & 0.11 $\pm$ 0.21 & 0.09 $\pm$ 0.29 & 0.04 $\pm$ 0.07 & 0.03 $\pm$ 0.07 & 0.03 $\pm$ 0.07 \\
+(125,375] & 181 & 0.14 $\pm$ 0.18 & 0.08 $\pm$ 0.12 & 0.05 $\pm$ 0.07 & 0.04 $\pm$ 0.06 & 0.04 $\pm$ 0.06 \\
+(375,750] & 182 & 0.19 $\pm$ 0.23 & 0.13 $\pm$ 0.19 & 0.08 $\pm$ 0.09 & 0.05 $\pm$ 0.08 & 0.05 $\pm$ 0.08 \\
+(750,1500] & 183 & 0.30 $\pm$ 0.34 & 0.23 $\pm$ 0.25 & 0.17 $\pm$ 0.20 & 0.09 $\pm$ 0.16 & 0.09 $\pm$ 0.16 \\
+(1500,3125] & 186 & 0.54 $\pm$ 0.51 & 0.48 $\pm$ 0.45 & 0.39 $\pm$ 0.38 & 0.21 $\pm$ 0.24 & 0.21 $\pm$ 0.24 \\
+(3125,6000] & 184 & 0.82 $\pm$ 0.73 & 0.78 $\pm$ 0.66 & 0.69 $\pm$ 0.63 & 0.40 $\pm$ 0.41 & 0.40 $\pm$ 0.41 \\
+(6000,9000] & 163 & 1.29 $\pm$ 1.78 & 1.35 $\pm$ 1.88 & 1.32 $\pm$ 1.88 & 0.75 $\pm$ 1.10 & 0.75 $\pm$ 1.10 \\
+>9000 & 75 & 1.78 $\pm$ 2.63 & 1.88 $\pm$ 2.75 & 1.90 $\pm$ 2.75 & 1.26 $\pm$ 2.43 & 1.26 $\pm$ 2.43 \\
+\bottomrule\end{tabular}}
+\caption{Non-rainy pixels: median absolute error summarized patchwise across all 200 benchmark patches. Each entry is mean $\pm$ sample SD; $n$ gives the number of patches with pixels in the distance bin.}
+\label{tab:d3-dry-summary}
+\end{table}

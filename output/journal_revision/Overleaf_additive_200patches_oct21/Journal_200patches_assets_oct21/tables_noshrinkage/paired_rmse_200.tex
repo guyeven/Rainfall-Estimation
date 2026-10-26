@@ -1,0 +1,13 @@
+\begin{table}[H]\centering\scriptsize\setlength{\tabcolsep}{3pt}\resizebox{\textwidth}{!}{\begin{tabular}{lrrrrrrrrrrl}
+\toprule
+Comparison & $n$ & wins A:\IDW & mean A & mean \IDW & mean diff & SD diff & SE & $t$ & one-sided $p$ & 99\% upper bound & decision \\
+\midrule
+\ILDW - \IDW & 200 & 195:5 & 2.07 & 2.18 & -0.10 & 0.09 & 0.01 & -15.83 & $2.33 \times 10^{-37}$ & -0.09 & reject \\
+\solverILDW - \IDW & 200 & 196:4 & 1.94 & 2.18 & -0.23 & 0.18 & 0.01 & -17.93 & $1.00 \times 10^{-43}$ & -0.20 & reject \\
+\ConvexSolver - \IDW & 200 & 200:0 & 1.53 & 2.18 & -0.64 & 0.48 & 0.03 & -19.09 & $3.71 \times 10^{-47}$ & -0.56 & reject \\
+\Homotopy - \IDW & 200 & 200:0 & 1.53 & 2.18 & -0.64 & 0.48 & 0.03 & -19.09 & $3.79 \times 10^{-47}$ & -0.56 & reject \\
+\solverGT - \IDW & 200 & 200:0 & 0.61 & 2.18 & -1.57 & 1.38 & 0.10 & -16.06 & $4.61 \times 10^{-38}$ & -1.34 & reject \\
+\bottomrule\end{tabular}}
+\caption{One-sided paired $t$ tests of patchwise RMSE differences against \IDW\ across all 200 patches. Negative differences favor method A; upper bounds are one-sided 99\% bounds.}
+\label{tab:paired-rmse-t-test}
+\end{table}

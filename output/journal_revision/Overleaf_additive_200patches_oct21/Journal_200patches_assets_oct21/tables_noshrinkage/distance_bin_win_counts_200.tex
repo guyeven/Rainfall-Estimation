@@ -1,0 +1,15 @@
+\begin{table}[t]\centering\begin{tabular}{lrrr}
+\toprule $d_3$ bin (m) & Rainy pixels, Convex:IDW & Non-rainy pixels, Convex:IDW & $n$ \\
+\midrule
+$\leq$125 & 200:0 & 175:1 & 176 \\
+(125,375] & 200:0 & 180:1 & 181 \\
+(375,750] & 200:0 & 182:0 & 182 \\
+(750,1500] & 200:0 & 183:0 & 183 \\
+(1500,3125] & 200:0 & 186:0 & 186 \\
+(3125,6000] & 199:1 & 174:10 & 184 \\
+(6000,9000] & 147:53 & 116:47 & 163 \\
+>9000 & 70:21 & 47:28 & 75 \\
+\bottomrule\end{tabular}
+\caption{Patchwise median-error wins by $d_3$ bin across all 200 patches. Rainy pixels are compared by median relative absolute error; non-rainy pixels by median absolute error. $n$ is the number of paired patches with pixels in both strata.}
+\label{tab:distance-bin-win-counts}
+\end{table}

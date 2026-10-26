@@ -1,0 +1,13 @@
+\begin{table}[!htbp]\centering\small\begin{tabular}{lrrrrr}
+\toprule Descriptor & Mean & SD & Min & Median & Max \\
+\midrule
+Wet fraction & 0.803 & 0.157 & 0.329 & 0.816 & 1.000 \\
+Mean wet rain rate ($\mathrm{mm/h}$) & 4.49 & 1.61 & 2.39 & 3.99 & 9.97 \\
+95th percentile wet rain rate ($\mathrm{mm/h}$) & 12.19 & 7.07 & 3.48 & 9.80 & 34.23 \\
+Coefficient of variation, wet pixels & 0.783 & 0.317 & 0.180 & 0.745 & 1.720 \\
+Area fraction above $5\,\mathrm{mm/h}$ & 0.190 & 0.104 & 0.000 & 0.190 & 0.470 \\
+Relative gradient ($\mathrm{km}^{-1}$) & 0.277 & 0.138 & 0.053 & 0.274 & 0.768 \\
+\bottomrule\end{tabular}
+\caption{Rain-pattern descriptors across all 200 benchmark patches, summarized from one value per patch. Wet pixels have rain rate at least 0.6 mm/h. For each patch, the wet-pixel coefficient of variation (CV) is the standard deviation of wet-pixel rain rates divided by their mean.\newline Relative gradient is defined as follows. At each pixel, the local gradient magnitude is $\sqrt{g_x^2+g_y^2}$. Let $h=0.125$ km be the spacing between adjacent pixel centers. At an interior pixel $p$, $g_x(p)=\tfrac12\bigl[(R(p)-R(p_{\leftarrow}))/h+(R(p_{\rightarrow})-R(p))/h\bigr]$, averaging the slope from the left neighbor to $p$ and the slope from $p$ to its right neighbor. Similarly, $g_y(p)=\tfrac12\bigl[(R(p)-R(p_{\uparrow}))/h+(R(p_{\downarrow})-R(p))/h\bigr]$, using the pixel above and the pixel below. At an edge where a neighbor is missing, the available one-sided slope is used. Thus both components have units of $\mathrm{mm\,h^{-1}\,km^{-1}}$. Dividing their patch-average magnitude by the patch mean rain rate cancels the rain-rate unit, so the relative gradient reported in the table has units of $\mathrm{km^{-1}}$.}
+\label{tab:patch_rain_patterns}
+\end{table}

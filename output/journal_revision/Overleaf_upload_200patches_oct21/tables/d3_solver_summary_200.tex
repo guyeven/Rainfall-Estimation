@@ -1,0 +1,44 @@
+\begin{table}[htbp]
+\centering
+\tiny
+\setlength{\tabcolsep}{2.8pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrccccccccc}
+\toprule
+ & & \multicolumn{3}{c}{\IDW} & \multicolumn{3}{c}{\ILDW} & \multicolumn{3}{c}{\solverILDW} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}
+$d_3$ bin (m) & $n_P$ & RMSE & Bias & Pearson $r$ & RMSE & Bias & Pearson $r$ & RMSE & Bias & Pearson $r$ \\
+\midrule
+\mbox{$\leq$125} & 200 (4959) & 1.11 $\pm$ 0.92 & -0.04 $\pm$ 0.10 & 0.958 $\pm$ 0.023 & 1.28 $\pm$ 1.09 & 0.01 $\pm$ 0.07 & 0.939 $\pm$ 0.033 & 0.92 $\pm$ 0.91 & 0.00 $\pm$ 0.04 & 0.970 $\pm$ 0.027 \\
+(125,375] & 200 (19536) & 1.25 $\pm$ 1.01 & -0.04 $\pm$ 0.10 & 0.948 $\pm$ 0.026 & 1.23 $\pm$ 1.02 & -0.01 $\pm$ 0.05 & 0.946 $\pm$ 0.028 & 1.02 $\pm$ 0.97 & -0.01 $\pm$ 0.04 & 0.965 $\pm$ 0.028 \\
+(375,750] & 200 (31246) & 1.53 $\pm$ 1.20 & -0.03 $\pm$ 0.17 & 0.926 $\pm$ 0.037 & 1.40 $\pm$ 1.12 & -0.01 $\pm$ 0.12 & 0.935 $\pm$ 0.032 & 1.25 $\pm$ 1.12 & -0.01 $\pm$ 0.10 & 0.950 $\pm$ 0.035 \\
+(750,1500] & 200 (60771) & 1.88 $\pm$ 1.41 & -0.04 $\pm$ 0.25 & 0.885 $\pm$ 0.056 & 1.74 $\pm$ 1.31 & -0.02 $\pm$ 0.19 & 0.900 $\pm$ 0.048 & 1.60 $\pm$ 1.34 & -0.02 $\pm$ 0.18 & 0.919 $\pm$ 0.054 \\
+(1500,3125] & 200 (104120) & 2.37 $\pm$ 1.72 & 0.00 $\pm$ 0.40 & 0.807 $\pm$ 0.089 & 2.26 $\pm$ 1.65 & 0.02 $\pm$ 0.36 & 0.826 $\pm$ 0.081 & 2.12 $\pm$ 1.71 & 0.02 $\pm$ 0.34 & 0.854 $\pm$ 0.093 \\
+(3125,6000] & 200 (54470) & 2.62 $\pm$ 1.91 & 0.25 $\pm$ 0.69 & 0.716 $\pm$ 0.147 & 2.54 $\pm$ 1.86 & 0.25 $\pm$ 0.65 & 0.734 $\pm$ 0.136 & 2.42 $\pm$ 1.92 & 0.23 $\pm$ 0.63 & 0.769 $\pm$ 0.148 \\
+(6000,9000] & 200 (4946) & 2.20 $\pm$ 1.81 & 0.89 $\pm$ 1.22 & 0.582 $\pm$ 0.282 & 2.17 $\pm$ 1.77 & 0.90 $\pm$ 1.22 & 0.590 $\pm$ 0.280 & 2.09 $\pm$ 1.80 & 0.86 $\pm$ 1.21 & 0.623 $\pm$ 0.277 \\
+>9000 & 119 (601) & 1.75 $\pm$ 1.93 & 1.19 $\pm$ 2.05 & 0.320 $\pm$ 0.547 & 1.77 $\pm$ 2.03 & 1.26 $\pm$ 2.15 & 0.292 $\pm$ 0.567 & 1.74 $\pm$ 2.06 & 1.25 $\pm$ 2.17 & 0.284 $\pm$ 0.568 \\
+\bottomrule
+\end{tabular}%
+}
+\vspace{0.75em}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrccccccccc}
+\toprule
+ & & \multicolumn{3}{c}{\ConvexSolver} & \multicolumn{3}{c}{\Homotopy} & \multicolumn{3}{c}{\solverGT} \\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}
+$d_3$ bin (m) & $n_P$ & RMSE & Bias & Pearson $r$ & RMSE & Bias & Pearson $r$ & RMSE & Bias & Pearson $r$ \\
+\midrule
+\mbox{$\leq$125} & 200 (4959) & 0.63 $\pm$ 0.54 & 0.00 $\pm$ 0.02 & 0.985 $\pm$ 0.011 & 0.63 $\pm$ 0.53 & 0.00 $\pm$ 0.02 & 0.985 $\pm$ 0.011 & 0.39 $\pm$ 0.34 & 0.00 $\pm$ 0.01 & 0.992 $\pm$ 0.007 \\
+(125,375] & 200 (19536) & 0.73 $\pm$ 0.61 & 0.00 $\pm$ 0.02 & 0.981 $\pm$ 0.012 & 0.73 $\pm$ 0.61 & 0.00 $\pm$ 0.02 & 0.981 $\pm$ 0.012 & 0.43 $\pm$ 0.38 & 0.00 $\pm$ 0.01 & 0.991 $\pm$ 0.008 \\
+(375,750] & 200 (31246) & 0.95 $\pm$ 0.78 & 0.00 $\pm$ 0.04 & 0.969 $\pm$ 0.019 & 0.95 $\pm$ 0.78 & 0.00 $\pm$ 0.04 & 0.969 $\pm$ 0.019 & 0.50 $\pm$ 0.43 & 0.00 $\pm$ 0.01 & 0.987 $\pm$ 0.013 \\
+(750,1500] & 200 (60771) & 1.24 $\pm$ 0.98 & 0.00 $\pm$ 0.06 & 0.949 $\pm$ 0.029 & 1.24 $\pm$ 0.98 & 0.00 $\pm$ 0.06 & 0.949 $\pm$ 0.029 & 0.57 $\pm$ 0.49 & 0.00 $\pm$ 0.02 & 0.980 $\pm$ 0.022 \\
+(1500,3125] & 200 (104120) & 1.66 $\pm$ 1.29 & 0.02 $\pm$ 0.15 & 0.907 $\pm$ 0.051 & 1.66 $\pm$ 1.29 & 0.02 $\pm$ 0.15 & 0.907 $\pm$ 0.051 & 0.65 $\pm$ 0.54 & 0.00 $\pm$ 0.04 & 0.969 $\pm$ 0.036 \\
+(3125,6000] & 200 (54470) & 1.97 $\pm$ 1.55 & 0.14 $\pm$ 0.36 & 0.841 $\pm$ 0.099 & 1.97 $\pm$ 1.55 & 0.14 $\pm$ 0.36 & 0.841 $\pm$ 0.099 & 0.66 $\pm$ 0.55 & 0.02 $\pm$ 0.06 & 0.956 $\pm$ 0.057 \\
+(6000,9000] & 200 (4946) & 1.62 $\pm$ 1.58 & 0.43 $\pm$ 0.98 & 0.716 $\pm$ 0.235 & 1.63 $\pm$ 1.58 & 0.44 $\pm$ 0.98 & 0.716 $\pm$ 0.235 & 0.47 $\pm$ 0.44 & 0.10 $\pm$ 0.21 & 0.922 $\pm$ 0.143 \\
+>9000 & 119 (601) & 1.13 $\pm$ 1.77 & 0.58 $\pm$ 1.87 & 0.378 $\pm$ 0.590 & 1.13 $\pm$ 1.77 & 0.58 $\pm$ 1.87 & 0.378 $\pm$ 0.592 & 0.25 $\pm$ 0.30 & 0.13 $\pm$ 0.27 & 0.802 $\pm$ 0.356 \\
+\bottomrule
+\end{tabular}%
+}
+\caption{$d_3$-bin summaries of patchwise RMSE, signed bias, and Pearson correlation across the 200-patch benchmark. For each patch, metrics are recomputed from all finite ground-truth and reconstructed pixels in the distance bin; entries report the mean $\pm$ sample SD across patches. $n_P$ is the number of patches contributing at least one pixel, followed in parentheses by the mean number of pixels per patch averaged across all 200 patches (including zero-pixel bins).}
+\label{tab:d3-solver-summary}
+\end{table}

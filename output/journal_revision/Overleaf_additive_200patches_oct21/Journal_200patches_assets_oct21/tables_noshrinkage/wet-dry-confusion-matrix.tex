@@ -1,0 +1,16 @@
+\begin{table}[htbp]\centering\scriptsize\setlength{\tabcolsep}{3pt}\resizebox{\textwidth}{!}{\begin{tabular}{lrrrrrrrrr}
+\toprule Method & $n$ & \multicolumn{4}{c}{Fraction of all pixels} & \multicolumn{4}{c}{Conditional rate} \\
+\cmidrule(lr){3-6}\cmidrule(lr){7-10}
+& & True wet & False wet & True dry & False dry & True wet & False wet & True dry & False dry \\
+\midrule
+\IDW & 200 & 0.799 & 0.082 & 0.116 & 0.004 & 0.994 & 0.488 & 0.442 & 0.006 \\
+\ILDW & 200 & 0.798 & 0.076 & 0.122 & 0.004 & 0.994 & 0.456 & 0.474 & 0.006 \\
+\solverILDW & 200 & 0.798 & 0.072 & 0.125 & 0.004 & 0.993 & 0.405 & 0.525 & 0.007 \\
+\ConvexSolver & 200 & 0.797 & 0.047 & 0.150 & 0.005 & 0.992 & 0.307 & 0.623 & 0.008 \\
+\Homotopy & 200 & 0.797 & 0.047 & 0.150 & 0.005 & 0.992 & 0.307 & 0.623 & 0.008 \\
+\solverGT & 200 & 0.799 & 0.012 & 0.185 & 0.003 & 0.996 & 0.171 & 0.759 & 0.004 \\
+\\
+\bottomrule\end{tabular}}
+\caption{Patch-averaged wet/dry confusion at the $0.6$ mm/h threshold across all 200 patches. Fraction columns are normalized by each patch's pixel count; conditional TP/FN rates use wet GT pixels and FP/TN rates use dry GT pixels.}
+\label{tab:wet-dry-confusion-merged}
+\end{table}
