@@ -755,6 +755,25 @@ Across the 200 patches, \ConvexSolver\ and \Homotopy\ fit the link attenuations 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+\subsection{Median RAE for wet pixels and median AE for dry pixels}
+Pixelwise errors within a patch are spatially dependent, so we summarize them at the patch level. For each patch, solver, and $d_3$ bin, we compute the median relative absolute error (RAE) over wet pixels and the median absolute error (AE) over dry pixels. Wet pixels have ground-truth rain rate at least $0.6$ \si{\milli\meter\per\hour}; for dry pixels, we use AE to avoid division by zero. Figures~\ref{fig:rae_distance} and~\ref{fig:ae_distance} show the distributions of these patch-level medians across the 200-patch benchmark. The number of contributing patches varies by bin; pixel counts are summarized in Table~\ref{tab:rainy_nonrain_counts}.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{\distanceboxplot}
+  \caption{Wet-pixel $d_3$-profile box-and-whisker summary across the 200-patch benchmark. Each patch with wet pixels in a bin contributes one median relative absolute error (RAE). Boxes span the 25th to 75th percentiles across patches; whiskers show the minimum and maximum. The number of contributing patches varies by bin, and wet-pixel counts are summarized in Table~\ref{tab:rainy_nonrain_counts}.}
+  \label{fig:rae_distance}
+\end{figure}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\textwidth]{\nonrainydistanceboxplot}
+  \caption{Dry-pixel $d_3$-profile box-and-whisker summary across the 200-patch benchmark. Each patch with dry pixels in a bin contributes one median absolute error (AE). Boxes span the 25th to 75th percentiles across patches; whiskers show the minimum and maximum. The number of contributing patches varies by bin, and dry-pixel counts are summarized in Table~\ref{tab:rainy_nonrain_counts}.}
+  \label{fig:ae_distance}
+\end{figure}
+
+\input{Journal_200patches_assets_oct21/tables_noshrinkage/distance_bin_win_counts_200}
+
 \subsection{Patchwise reconstruction metrics by distance to links}
 To show how reconstruction quality changes with distance from the microwave links, we compute RMSE, normalized RMSE, signed bias, normalized bias, and Pearson correlation over all pixels in each $d_3$ bin for every patch and solver. Each patch contributes one value to a bin when it contains pixels in that bin. Figures~\ref{fig:d3-rmse}--\ref{fig:d3-pearson} show the distributions across contributing patches; Table~\ref{tab:d3-solver-summary} reports the corresponding mean and sample standard deviation. Each plot uses small multiples, with a separate vertical scale for each distance bin, to make within-bin solver differences visible. Normalized errors divide by the mean ground-truth rain rate over the full patch. The dashed lines in the bias plots mark zero.
 
