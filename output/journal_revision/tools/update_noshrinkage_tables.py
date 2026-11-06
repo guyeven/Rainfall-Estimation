@@ -84,7 +84,8 @@ def full_patch_metrics():
                 wet=gt>=0.6; predwet=pred>=0.6; dry=~wet
                 tp=int(np.count_nonzero(wet&predwet)); fn=int(np.count_nonzero(wet&~predwet)); fp=int(np.count_nonzero(dry&predwet)); tn=int(np.count_nonzero(dry&~predwet)); n=gt.size
                 rmse=float(np.sqrt(np.mean(d*d))); bias=float(np.mean(d))
-                out[method][season].append({"patch":patch,"rmse":rmse,"bias":bias,"nrmse":rmse/gt_mean if gt_mean else float("nan"),"normalized_bias":bias/gt_mean if gt_mean else float("nan"),"pearson":corr,"tp":tp/n,"fp":fp/n,"tn":tn/n,"fn":fn/n,"fp_dry":fp/max(1,int(dry.sum())),"tn_dry":tn/max(1,int(dry.sum())),"fn_wet":fn/max(1,int(wet.sum())),"tp_wet":tp/max(1,int(wet.sum()))})
+                ndry=int(dry.sum()); nwet=int(wet.sum())
+                out[method][season].append({"patch":patch,"rmse":rmse,"bias":bias,"nrmse":rmse/gt_mean if gt_mean else float("nan"),"normalized_bias":bias/gt_mean if gt_mean else float("nan"),"pearson":corr,"tp":tp/n,"fp":fp/n,"tn":tn/n,"fn":fn/n,"fp_dry":fp/ndry if ndry else float("nan"),"tn_dry":tn/ndry if ndry else float("nan"),"fn_wet":fn/nwet if nwet else float("nan"),"tp_wet":tp/nwet if nwet else float("nan")})
     for method in ALL:
         if len(out[method]["winter"])!=100 or len(out[method]["summer"])!=100: raise RuntimeError(f"Wrong patch count for {method}")
     return out
@@ -161,9 +162,12 @@ def update_tables(metrics):
     conf=[r"\begin{table}[htbp]\centering\scriptsize\setlength{\tabcolsep}{3pt}\resizebox{\textwidth}{!}{\begin{tabular}{lrrrrrrrrr}",r"\toprule Method & $n$ & \multicolumn{4}{c}{Fraction of all pixels} & \multicolumn{4}{c}{Conditional rate} \\",r"\cmidrule(lr){3-6}\cmidrule(lr){7-10}",r"& & True wet & False wet & True dry & False dry & True wet & False wet & True dry & False dry \\",r"\midrule"]
     for m in ALL:
         rr=[x for sea in ("winter","summer") for x in metrics[m][sea]]
-        cells=[statistics.mean(x[k] for x in rr) for k in ("tp","fp","tn","fn","tp_wet","fp_dry","tn_dry","fn_wet")]
+        n_wet=sum(math.isfinite(x["tp_wet"]) for x in rr)
+        n_dry=sum(math.isfinite(x["fp_dry"]) for x in rr)
+        cells=[statistics.mean(x[k] for x in rr) for k in ("tp","fp","tn","fn")]
+        cells += [statistics.mean(x[k] for x in rr if math.isfinite(x[k])) for k in ("tp_wet","fp_dry","tn_dry","fn_wet")]
         conf.append(f"{MACRO[m]} & 200 & "+" & ".join(fmt(x,3) for x in cells)+r" \\")
-    conf += [r"\\",r"\bottomrule\end{tabular}}",r"\caption{Patch-averaged wet/dry confusion at the $0.6$ mm/h threshold across all 200 patches. Fraction columns are normalized by each patch's pixel count; conditional TP/FN rates use wet GT pixels and FP/TN rates use dry GT pixels.}",r"\label{tab:wet-dry-confusion-merged}",r"\end{table}"]
+    conf += [r"\\",r"\bottomrule\end{tabular}}",rf"\caption{{Patch-averaged wet/dry confusion at the $0.6$ mm/h threshold across all 200 patches. Fraction columns are normalized by each patch's pixel count. Conditional TP/FN rates use wet GT pixels and are averaged over the {n_wet} patches containing wet pixels; FP/TN rates use dry GT pixels and are averaged over the {n_dry} patches containing dry pixels.}}",r"\label{tab:wet-dry-confusion-merged}",r"\end{table}"]
     (outdir/"wet-dry-confusion-matrix.tex").write_text("\n".join(conf)+"\n")
 
 
