@@ -20,7 +20,7 @@ DESCRIPTORS = [
     ("p95_wet_rate_mm_h", "95th percentile wet rain rate (mm/h)", "Rain rate (mm/h)"),
     ("wet_cv", "Coefficient of variation, wet pixels", "Coefficient of variation"),
     ("area_fraction_above_5", "Fraction of pixels above 5 mm/h", "Fraction of pixels"),
-    ("relative_gradient_km_inv", "Relative gradient (mm h$^{-1}$ km$^{-1}$)", "Relative gradient (mm h$^{-1}$ km$^{-1}$)"),
+    ("relative_gradient_km_inv", "Relative gradient (km$^{-1}$)", "Relative gradient (km$^{-1}$)"),
 ]
 SEASONS = [("Winter", "#2563eb"), ("Summer", "#dc2626")]
 
@@ -73,11 +73,16 @@ def save_figure(rows, combined=False):
                     label="All patches (n=200)")
             ax.hist(all_values, bins=edges, histtype="step", color="#34495E", linewidth=1.7)
         else:
-            for season, color in SEASONS:
+            bin_width = edges[1] - edges[0]
+            bar_width = bin_width * 0.42
+            offsets = (-bar_width / 2, bar_width / 2)
+            for (season, color), offset in zip(SEASONS, offsets):
                 vals = [r[key] for r in rows if r["season"] == season]
-                ax.hist(vals, bins=edges, histtype="stepfilled", alpha=0.36,
-                        color=color, edgecolor=color, linewidth=1.1, label=f"{season} (n=100)")
-                ax.hist(vals, bins=edges, histtype="step", color=color, linewidth=1.7)
+                counts, _ = np.histogram(vals, bins=edges)
+                centers = (edges[:-1] + edges[1:]) / 2
+                ax.bar(centers + offset, counts, width=bar_width,
+                       color=color, edgecolor=color, linewidth=0.8,
+                       alpha=0.78, label=f"{season} (n=100)")
         ax.set_title(title, loc="left", fontweight="bold", pad=7)
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Patches")
