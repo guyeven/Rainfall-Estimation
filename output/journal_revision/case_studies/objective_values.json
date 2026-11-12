@@ -1,0 +1,44 @@
+{
+  "case1": {
+    "patch": "RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202306120300_patch036",
+    "weights_original_objective": {
+      "w_atten": 195.1662842617966,
+      "w_1d": 13.072844868338986,
+      "w_2d": 6.328911771358767
+    },
+    "w_atten_virtual_links_convex": 701.9487224123202,
+    "J_ground_truth": 5.4862532328288935,
+    "J_ground_truth_J_atten": 2.6145318916799137e-32,
+    "J_solver_gt_final": 3.7119640260716764,
+    "solver_gt_iterations": 12,
+    "J_convex_surrogate_final": 0.2775571638588322,
+    "J_convex_original_objective": 0.29764578369251626,
+    "convex_iterations": 862,
+    "rmse_whole_patch_mm_per_h": {
+      "IDW": 3.047211959004888,
+      "Solver(GT)": 0.21151042674063508,
+      "Convex Solver": 2.476675999654957
+    }
+  },
+  "case2": {
+    "patch": "RAD_OPERA_HOURLY_RAINFALL_ACCUMULATION_202301252200_patch000",
+    "weights_original_objective": {
+      "w_atten": 1293.201461113011,
+      "w_1d": 219.5598299339241,
+      "w_2d": 105.2551854107422
+    },
+    "w_atten_virtual_links_convex": 4876.1492486366915,
+    "J_ground_truth": 2.0992357189280835,
+    "J_ground_truth_J_atten": 1.2528935774214246e-32,
+    "J_solver_gt_final": 0.2204838170116485,
+    "solver_gt_iterations": 566,
+    "J_convex_surrogate_final": 0.22209647044265354,
+    "J_convex_original_objective": 0.22373884897195098,
+    "convex_iterations": 676,
+    "rmse_whole_patch_mm_per_h": {
+      "IDW": 0.6098599755266448,
+      "Solver(GT)": 0.32638695084652447,
+      "Convex Solver": 0.32060110568472416
+    }
+  }
+}
